@@ -1,0 +1,87 @@
+{
+  "$comment": "TEST FIXTURE DATA. Not real HCG products or releases. Used only by automated tests and the `build:fixture` output (dist-fixture/), which displays a fixture banner and can never be built for production.",
+  "schemaVersion": 1,
+  "products": [
+    {
+      "id": "fixture-orbit-notes",
+      "slug": "fixture-orbit-notes",
+      "name": "Fixture Orbit Notes",
+      "monogram": "FN",
+      "summary": "Test fixture product with a current release, previous releases, a withdrawn release and downloadable artifacts.",
+      "description": ["Test fixture. Exercises release ordering, current-release designation and Dropbox download handling."],
+      "category": "productivity",
+      "tags": ["fixture", "notes"],
+      "developmentStatus": "maintained",
+      "developmentNote": null,
+      "platforms": [
+        { "platform": "windows", "support": "confirmed", "architectures": ["x64"], "minimumOs": "Windows 10 22H2" },
+        { "platform": "macos", "support": "confirmed", "architectures": ["arm64"], "minimumOs": "macOS 14" }
+      ],
+      "media": [],
+      "currentReleaseId": "fixture-orbit-notes-1-10-0",
+      "registry": { "status": "provisional", "centralId": null, "references": [] },
+      "catalogueNotes": []
+    },
+    {
+      "id": "fixture-signal-desk",
+      "slug": "fixture-signal-desk",
+      "name": "Fixture Signal Desk",
+      "monogram": "SD",
+      "summary": "Test fixture product whose current release has metadata but no download artifact.",
+      "description": ["Test fixture. Exercises the release-information-only state."],
+      "category": "developer-tools",
+      "tags": ["fixture"],
+      "developmentStatus": "testing",
+      "developmentNote": null,
+      "platforms": [{ "platform": "linux", "support": "in-development" }],
+      "media": [],
+      "currentReleaseId": "fixture-signal-desk-0-3-0",
+      "registry": { "status": "provisional", "centralId": null, "references": [] },
+      "catalogueNotes": []
+    },
+    {
+      "id": "fixture-nebula-pad",
+      "slug": "fixture-nebula-pad",
+      "name": "Fixture Nebula Pad",
+      "monogram": "NP",
+      "summary": "Test fixture product without any release and with an image file that does not exist.",
+      "description": ["Test fixture. Exercises the missing-release and missing-image states."],
+      "category": "analytics",
+      "tags": ["fixture"],
+      "developmentStatus": "in-development",
+      "developmentNote": null,
+      "platforms": [],
+      "media": [
+        {
+          "kind": "concept",
+          "src": "media/fixture/does-not-exist.webp",
+          "width": 1440,
+          "height": 900,
+          "alt": "Missing fixture image",
+          "caption": "Fixture image that intentionally fails to load.",
+          "provenance": "Test fixture"
+        }
+      ],
+      "currentReleaseId": null,
+      "registry": { "status": "provisional", "centralId": null, "references": [] },
+      "catalogueNotes": []
+    },
+    {
+      "id": "fixture-pocket-relay",
+      "slug": "fixture-pocket-relay",
+      "name": "Fixture Pocket Relay",
+      "monogram": "PR",
+      "summary": "Test fixture product with an iOS IPA artifact, to exercise accurate iOS installation guidance.",
+      "description": ["Test fixture. Exercises IPA handling: downloading an IPA does not install it."],
+      "category": "communication",
+      "tags": ["fixture", "mobile"],
+      "developmentStatus": "testing",
+      "developmentNote": null,
+      "platforms": [{ "platform": "ios", "support": "confirmed", "architectures": ["arm64"], "minimumOs": null }],
+      "media": [],
+      "currentReleaseId": "fixture-pocket-relay-0-1-0-beta-2",
+      "registry": { "status": "provisional", "centralId": null, "references": [] },
+      "catalogueNotes": []
+    }
+  ]
+}

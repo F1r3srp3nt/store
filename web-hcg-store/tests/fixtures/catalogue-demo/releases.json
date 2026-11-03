@@ -1,0 +1,139 @@
+{
+  "$comment": "TEST FIXTURE DATA. The Dropbox links below are deliberately fake (FIXTURE identifiers) and do not point at real files.",
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "id": "fixture-orbit-notes-1-2-0",
+      "productId": "fixture-orbit-notes",
+      "version": "1.2.0",
+      "build": "120",
+      "channel": "stable",
+      "status": "approved",
+      "releaseDate": "2026-01-15",
+      "releaseNotes": ["Old fixture release."],
+      "artifacts": [
+        {
+          "id": "win-x64",
+          "platform": "windows",
+          "architectures": ["x64"],
+          "fileName": "fixture-orbit-notes-1.2.0-win-x64.zip",
+          "format": "zip",
+          "sizeBytes": 1048576,
+          "sha256": null,
+          "download": { "provider": "dropbox", "url": "https://www.dropbox.com/scl/fi/FIXTURE0old0000000000/fixture-orbit-notes-1.2.0-win-x64.zip?rlkey=FIXTUREONLYold&dl=0" }
+        }
+      ]
+    },
+    {
+      "id": "fixture-orbit-notes-1-10-0",
+      "productId": "fixture-orbit-notes",
+      "version": "1.10.0",
+      "build": "1100",
+      "channel": "stable",
+      "status": "approved",
+      "releaseDate": "2026-10-01",
+      "releaseNotes": ["Fixture release notes: first line.", "Fixture release notes: second line."],
+      "knownLimitations": ["Fixture limitation: imports larger than 2 GB are not supported."],
+      "artifacts": [
+        {
+          "id": "win-x64",
+          "platform": "windows",
+          "architectures": ["x64"],
+          "fileName": "fixture-orbit-notes-1.10.0-win-x64.zip",
+          "format": "zip",
+          "sizeBytes": 48234496,
+          "sha256": "3f1d2c0b5a4e6f7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d",
+          "minimumOs": "Windows 10 22H2",
+          "signing": { "status": "unsigned", "evidence": null },
+          "download": { "provider": "dropbox", "url": "https://www.dropbox.com/scl/fi/FIXTURE0win0000000000/fixture-orbit-notes-1.10.0-win-x64.zip?rlkey=FIXTUREONLYwin&st=fixture1&dl=0" }
+        },
+        {
+          "id": "macos-arm64",
+          "platform": "macos",
+          "architectures": ["arm64"],
+          "fileName": "fixture-orbit-notes-1.10.0-macos-arm64.dmg",
+          "format": "dmg",
+          "sizeBytes": 61865984,
+          "sha256": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8",
+          "minimumOs": "macOS 14",
+          "signing": { "status": "notarized", "evidence": "Fixture evidence: spctl assessment output recorded in fixture build log #0." },
+          "download": { "provider": "dropbox", "url": "https://www.dropbox.com/scl/fi/FIXTURE0mac0000000000/fixture-orbit-notes-1.10.0-macos-arm64.dmg?rlkey=FIXTUREONLYmac&raw=1" }
+        }
+      ]
+    },
+    {
+      "id": "fixture-orbit-notes-1-9-2",
+      "productId": "fixture-orbit-notes",
+      "version": "1.9.2",
+      "build": null,
+      "channel": "stable",
+      "status": "approved",
+      "releaseDate": null,
+      "releaseNotes": ["Previous fixture release without a supplied date."],
+      "artifacts": []
+    },
+    {
+      "id": "fixture-orbit-notes-1-10-1-beta-1",
+      "productId": "fixture-orbit-notes",
+      "version": "1.10.1-beta.1",
+      "build": null,
+      "channel": "beta",
+      "status": "withdrawn",
+      "withdrawnReason": "Fixture: withdrawn after a data-loss bug was found.",
+      "releaseDate": "2026-10-20",
+      "artifacts": [
+        {
+          "id": "win-x64",
+          "platform": "windows",
+          "architectures": ["x64"],
+          "fileName": "fixture-orbit-notes-1.10.1-beta.1-win-x64.zip",
+          "format": "zip",
+          "download": { "provider": "dropbox", "url": "https://www.dropbox.com/scl/fi/FIXTURE0wdn0000000000/fixture-orbit-notes-1.10.1-beta.1-win-x64.zip?rlkey=FIXTUREONLYwdn&dl=0" }
+        }
+      ]
+    },
+    {
+      "id": "fixture-orbit-notes-2-0-0-beta-1",
+      "productId": "fixture-orbit-notes",
+      "version": "2.0.0-beta.1",
+      "build": null,
+      "channel": "beta",
+      "status": "approved",
+      "releaseDate": "2026-10-28",
+      "releaseNotes": ["Approved beta that has not been designated current."],
+      "artifacts": []
+    },
+    {
+      "id": "fixture-signal-desk-0-3-0",
+      "productId": "fixture-signal-desk",
+      "version": "0.3.0",
+      "build": null,
+      "channel": "alpha",
+      "status": "approved",
+      "releaseDate": null,
+      "releaseNotes": ["Release metadata without a download artifact."],
+      "artifacts": []
+    },
+    {
+      "id": "fixture-pocket-relay-0-1-0-beta-2",
+      "productId": "fixture-pocket-relay",
+      "version": "0.1.0-beta.2",
+      "build": "7",
+      "channel": "beta",
+      "status": "approved",
+      "releaseDate": "2026-10-30",
+      "artifacts": [
+        {
+          "id": "ios",
+          "platform": "ios",
+          "architectures": ["arm64"],
+          "fileName": "fixture-pocket-relay-0.1.0-beta.2.ipa",
+          "format": "ipa",
+          "sizeBytes": 20971520,
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "download": { "provider": "dropbox", "url": "https://www.dropbox.com/s/FIXTURE0ipa000000/fixture-pocket-relay-0.1.0-beta.2.ipa?dl=0" }
+        }
+      ]
+    }
+  ]
+}
