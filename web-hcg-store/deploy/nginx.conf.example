@@ -1,0 +1,41 @@
+# Example nginx configuration for HCG Store (static SPA). Review before use.
+#
+# NOTE: nginx does not inherit server-level add_header directives into a location that has its own
+# add_header. The security headers therefore live in a snippet that EVERY location includes.
+
+# --- /etc/nginx/snippets/hcg-store-headers.conf -------------------------------------------
+# Mirrors the generated dist/_headers for a NON-indexed preview. Copy the CSP from dist/_headers
+# if HCG ERP / HCG Connect origins are configured (connect-src changes).
+#
+# add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+# add_header X-Content-Type-Options "nosniff" always;
+# add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+# add_header X-Frame-Options "DENY" always;
+# add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+# add_header Cross-Origin-Opener-Policy "same-origin" always;
+# add_header X-Robots-Tag "noindex, nofollow" always;           # remove ONLY for the approved production site
+# # add_header Strict-Transport-Security "max-age=31536000" always;   # production only, after HTTPS is verified
+# -----------------------------------------------------------------------------------------
+
+server {
+    listen 443 ssl http2;
+    server_name preview.example.invalid;          # replace with the real host
+    root /var/www/hcg-store/dist;
+    index index.html;
+
+    # ssl_certificate     /etc/letsencrypt/live/<host>/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/<host>/privkey.pem;
+
+    location /assets/ {
+        include snippets/hcg-store-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # SPA fallback: unknown paths serve index.html so deep links (/apps/<slug>) work.
+    location / {
+        include snippets/hcg-store-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri $uri/ /index.html;
+    }
+}
