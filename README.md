@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hcg-store-banner.webp" alt="HCG Store by Hakmi Capital Group: the HCG Store wordmark beside a laptop, tablet and phone showing the store" width="100%">
+</p>
+
 # store
 HCG Appstore because we dont like these 30% fees:)
 
