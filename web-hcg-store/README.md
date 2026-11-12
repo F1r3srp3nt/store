@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../assets/hcg-store-banner.webp" alt="HCG Store by Hakmi Capital Group: the HCG Store wordmark beside a laptop, tablet and phone showing the store" width="100%">
+</p>
+
 # HCG Store (web storefront)
 
 The web storefront for Hakmi Capital Group applications and developer tools. It is intended for
@@ -7,7 +11,9 @@ The web storefront for Hakmi Capital Group applications and developer tools. It 
 HCG Store is **not** the separately planned native *HCG AppStore* application. The two are kept apart
 on purpose.
 
-![HCG Store home](docs/screenshots/home-1440.png)
+Screenshot of the running storefront (home page):
+
+![HCG Store home page screenshot](docs/screenshots/home-1440.png)
 
 ## Status (first working milestone)
 
