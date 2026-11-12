@@ -16,13 +16,17 @@
 .hero__inner {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  align-items: center;
+  gap: clamp(24px, 4vw, 44px);
+  padding-block: clamp(20px, 4vw, 48px) clamp(40px, 6vw, 72px);
+}
+.hero__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: clamp(24px, 4vw, 56px);
-  padding-block: clamp(40px, 7vw, 96px) clamp(40px, 6vw, 80px);
 }
 .hero__title {
-  font-size: clamp(48px, 8vw, 96px);
+  font-size: clamp(40px, 6vw, 72px);
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 0.95;
@@ -43,8 +47,8 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
-  margin: 36px 0 0;
-  max-width: 480px;
+  margin: 0;
+  width: min(100%, 480px);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--line);
@@ -69,47 +73,21 @@
   color: var(--text);
 }
 
-.orbital {
+/* Founder-supplied banner: the hero image. A fixed aspect ratio reserves its space before it loads. */
+.hero-banner {
   position: relative;
-  width: 100%;
-  max-width: 560px;
-  justify-self: center;
-  aspect-ratio: 540 / 480;
+  margin: 0;
+  aspect-ratio: 1774 / 887;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background: #05080f;
+  box-shadow: 0 30px 70px -40px rgba(0, 0, 0, 0.95), 0 0 70px -40px rgba(62, 230, 255, 0.55);
 }
-.orbital__svg {
+.hero-banner__img {
   width: 100%;
   height: 100%;
-}
-.orbital__rings,
-.orbital__spin {
-  transform-origin: 270px 240px;
-  transform-box: view-box;
-}
-.orbital__spin {
-  animation: orbit 60s linear infinite;
-}
-.orbital__rings {
-  animation: orbit 240s linear infinite reverse;
-}
-@keyframes orbit {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.orbital__mark {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 27%;
-  height: auto;
-  transform: translate(-50%, -50%);
-  filter: drop-shadow(0 0 18px rgba(62, 230, 255, 0.35));
-}
-@media (prefers-reduced-motion: reduce) {
-  .orbital__spin,
-  .orbital__rings {
-    animation: none;
-  }
+  object-fit: cover;
 }
 
 /* ---------- Platform nav ---------- */
@@ -662,13 +640,9 @@
 }
 
 @media (max-width: 860px) {
-  .hero__inner {
+  .hero__body {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .orbital {
-    max-width: 420px;
-    order: -1;
-    margin-bottom: -12px;
+    align-items: start;
   }
 }
 @media (max-width: 480px) {

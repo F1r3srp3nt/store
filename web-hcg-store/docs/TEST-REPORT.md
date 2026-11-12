@@ -8,10 +8,10 @@ Run on 3 November 2026 in a Linux container (Node 22.23.4, npm 10.9.9, Chromium 
 |---|---|---|
 | Catalogue validation and unique IDs | `npm run validate:catalogue` | ✔ 14 products, 0 releases; fixture catalogue also valid |
 | Type checking | `npm run typecheck` | ✔ no errors |
-| Unit and component tests | `npm test` | ✔ **111 passed** in 10 files |
+| Unit and component tests | `npm test` | ✔ **112 passed** in 10 files |
 | Production build | `npm run build` | ✔ JS 438.6 kB (134.1 kB gzip), CSS 38.8 kB (8.5 kB gzip) |
 | Bundle secret scan | part of `npm run build` | ✔ 7 text files, 13 patterns, no findings |
-| End-to-end (Chromium, against `vite preview` with production headers) | `npm run test:e2e` | ✔ **33 passed**, 1 skipped (opt-in screenshot capture) |
+| End-to-end (Chromium, against `vite preview` with production headers) | `npm run test:e2e` | ✔ **35 passed**, 1 skipped (opt-in screenshot capture) |
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities |
 
 An e2e run exposed a real defect: the browse search box lost keystrokes during fast typing. It was fixed
@@ -29,7 +29,8 @@ and the test was repeated 10 times without failure.
 | Dropbox conversion preserving parameters | `src/downloads/dropbox.test.ts`; e2e checks the actual navigation request (`dl=1`, `rlkey`, `st` preserved; `raw` removed) |
 | Rejection of unsupported or deceptive URLs | 30 rejection cases: protocols, credentials, `@` tricks, ports, lookalike, trailing-dot and IDN-homograph hosts, backslashes, folders, missing `rlkey`, over-long |
 | Keyboard navigation | e2e: skip link, focus to `<main>` after navigation, reaching and opening a product card by Tab/Enter, mobile menu Enter/Escape, filters by keyboard, header search |
-| Reduced motion | e2e: orbital animation `orbit` normally, `none` under `prefers-reduced-motion`; transitions ≈ 0 |
+| Reduced motion | e2e: hover transitions run normally; under `prefers-reduced-motion` transitions ≈ 0 and no animation is running |
+| Hero banner | UI test and e2e: banner loads eagerly with responsive sizes, is labelled "Illustration", and if it fails to load it is removed while the heading and actions stay visible |
 | Responsive 390 / 768 / 1024 / 1440 px | e2e: no horizontal overflow on 6 pages at **320, 390, 507, 768, 1024, 1440** px (320 and 507 approximate narrow tablet multitasking), plus fixture release pages at 390 px |
 | No fabricated availability, account state or statistics | UI tests and e2e scan every page for download/install/user counts, ratings, reviews, prices, purchase or "signed in" wording, and for Dropbox links in the real catalogue. Catalogue tests assert 0 releases, no URLs, no `confirmed` platforms, no central IDs |
 | No simulated authentication | `hcg-connect.test.ts`: unconfigured, partial and full configuration → no `fetch`, sign-in refused. The Account page shows "HCG Connect not configured" and a disabled button |
