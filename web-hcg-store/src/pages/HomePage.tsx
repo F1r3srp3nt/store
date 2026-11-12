@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CatalogueGate } from "../app/catalogue-context";
 import { IconArrowRight, IconDownload, IconLayers, IconShield, IconTerminal } from "../components/Icons";
-import { OrbitalHero } from "../components/OrbitalHero";
+import { HeroBanner } from "../components/HeroBanner";
 import { PageMeta } from "../components/PageMeta";
 import { ProductCard } from "../components/ProductCard";
 import type { Catalogue } from "../domain/catalogue";
@@ -32,22 +32,25 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
     <>
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero__inner page-width">
-          <div className="hero__copy">
-            <p className="eyebrow eyebrow--accent">Hakmi Capital Group · Software distribution</p>
-            <h1 id="hero-title" className="hero__title">
-              <span className="metal-text">HCG</span> Store
-            </h1>
-            <p className="hero__lead">
-              The home for Hakmi Capital Group applications and developer tools. Every listing shows its real development
-              status. Downloads appear only when HCG has approved a release.
-            </p>
-            <div className="hero__actions">
-              <Link to="/apps" className="button button--primary">
-                Browse apps <IconArrowRight />
-              </Link>
-              <Link to="/getting-started" className="button button--ghost">
-                Getting started
-              </Link>
+          <HeroBanner />
+          <div className="hero__body">
+            <div className="hero__copy">
+              <p className="eyebrow eyebrow--accent">Hakmi Capital Group · Software distribution</p>
+              <h1 id="hero-title" className="hero__title">
+                <span className="metal-text">HCG</span> Store
+              </h1>
+              <p className="hero__lead">
+                The home for Hakmi Capital Group applications and developer tools. Every listing shows its real development
+                status. Downloads appear only when HCG has approved a release.
+              </p>
+              <div className="hero__actions">
+                <Link to="/apps" className="button button--primary">
+                  Browse apps <IconArrowRight />
+                </Link>
+                <Link to="/getting-started" className="button button--ghost">
+                  Getting started
+                </Link>
+              </div>
             </div>
             <dl className="hero__stats" aria-label="Catalogue status">
               <div>
@@ -64,7 +67,6 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
               </div>
             </dl>
           </div>
-          <OrbitalHero />
         </div>
       </section>
 

@@ -6,6 +6,7 @@
 |---|---|---|
 | `public/brand/hcg-mark-240.webp`, `hcg-mark-480.webp` | `F1r3srp3nt/HCG-Mail` → `Windows-executable-Application/assets/branding/hcg-logo-transparent.png` (commit `f39f98c`) | The chrome and cyan "HCG" mark. HCG Executable Maker's branding notes describe it as the **temporary official HCG logo, as provided by the founder**. Trimmed and resized only; the artwork is unchanged. |
 | `public/brand/favicon-32.png`, `apple-touch-icon.png`, `icon-512.png` | Same mark, centred on the obsidian background `#05070c` | **Derived** placeholders. Not an official icon design. |
+| `public/brand/hcg-store-banner-800.webp`, `-1200.webp`, `-1774.webp` | Founder-supplied HCG Store banner (original kept at `assets/hcg-store-banner.webp` in the repository root, 1774×887) | Used as the **home hero image** and at the top of both READMEs. The 800 and 1200 px versions are resized copies for smaller screens. It is marketing artwork: the laptop, tablet and phone show a stylised store screen, not screenshots, so the hero labels it "Illustration". |
 | `public/media/products/hcg-executable-maker/*.webp` | `F1r3srp3nt/HCG-Executable-Maker` → `docs/screenshots/01-dashboard.png`, `10-mobile-build-studio.png` (commit `8cfaeee`) | Real screenshots of the running development build, captured under Xvfb by that project. Resized and converted to WebP. Captions state the development build. |
 
 The header shows the HCG mark followed by the text "STORE" in the site's display font. That is a text
@@ -20,8 +21,8 @@ storefront. The founder may prefer it.
 - **Product identification tiles** (`src/components/ProductTile.tsx`): abstract SVG with the product
   monogram. Shown with a "Generated tile" label, and announced to screen readers as "generated artwork,
   not a screenshot". They are not product icons.
-- **Home hero orbital motif** (`src/components/OrbitalHero.tsx`): decorative SVG. It does not depict any
-  product.
+- The home hero previously used a generated orbital SVG motif. It was replaced by the founder's banner
+  (`src/components/HeroBanner.tsx`).
 
 ## Missing assets (needed from HCG)
 
@@ -34,5 +35,6 @@ storefront. The founder may prefer it.
    source. Until then, products show generated tiles.
 
 To add product screenshots, see [CATALOGUE.md](CATALOGUE.md#adding-a-product). To replace the mark, overwrite
-the files in `public/brand/` at the same pixel sizes, or update `src/components/Layout.tsx` and
-`OrbitalHero.tsx`.
+the files in `public/brand/` at the same pixel sizes, or update `src/components/Layout.tsx`. To replace the
+hero banner, overwrite the three `hcg-store-banner-*.webp` files (keep the 2:1 ratio, or update the sizes in
+`src/components/HeroBanner.tsx` and the `aspect-ratio` in `src/styles/pages.css`).

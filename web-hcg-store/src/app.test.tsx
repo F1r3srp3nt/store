@@ -39,6 +39,18 @@ describe("store pages with the shipped catalogue", () => {
     expectNoFabrication(container);
   });
 
+  it("home hero uses the banner as a labelled illustration and keeps the heading if it fails", async () => {
+    renderAt("/");
+    await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
+    const banner = screen.getByRole("img", { name: /illustration of the HCG Store wordmark/i });
+    expect(banner).toHaveAttribute("loading", "eager");
+    expect(banner.getAttribute("srcset")).toMatch(/hcg-store-banner-800\.webp 800w/);
+    expect(screen.getByText("Illustration")).toBeInTheDocument();
+    fireEvent.error(banner);
+    expect(screen.queryByRole("img", { name: /illustration of the HCG Store wordmark/i })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
+  });
+
   it("product page shows 'No public release supplied' and no download button", async () => {
     const { container } = renderAt("/apps/hcg-mail");
     expect(await screen.findByRole("heading", { level: 1, name: "HCG Mail" })).toBeInTheDocument();

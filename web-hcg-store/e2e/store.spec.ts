@@ -136,20 +136,40 @@ test.describe("keyboard navigation", () => {
 });
 
 test.describe("reduced motion", () => {
-  test("orbital animation runs normally and stops with prefers-reduced-motion", async ({ browser }) => {
-    const anim = async (reducedMotion: "reduce" | "no-preference") => {
+  test("motion is reduced with prefers-reduced-motion", async ({ browser }) => {
+    const motion = async (reducedMotion: "reduce" | "no-preference") => {
       const ctx = await browser.newContext({ reducedMotion });
       const page = await ctx.newPage();
       await page.goto(REAL + "/");
-      const name = await page.locator(".orbital__spin").evaluate((el) => getComputedStyle(el).animationName);
+      await expect(page.locator(".product-card").first()).toBeVisible();
       const transition = await page.locator(".product-card").first().evaluate((el) => getComputedStyle(el).transitionDuration);
+      const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length);
       await ctx.close();
-      return { name, transition };
+      return { transition, running };
     };
-    expect((await anim("no-preference")).name).toBe("orbit");
-    const reduced = await anim("reduce");
-    expect(reduced.name).toBe("none");
+    const normal = await motion("no-preference");
+    expect(normal.transition.split(",").some((d) => parseFloat(d) > 0.05)).toBe(true);
+    const reduced = await motion("reduce");
     expect(reduced.transition.split(",").every((d) => parseFloat(d) < 0.01)).toBe(true);
+    expect(reduced.running).toBe(0);
+  });
+
+  test("home hero shows the banner, labelled as an illustration, loaded eagerly", async ({ page }) => {
+    await page.goto(REAL + "/");
+    const banner = page.locator(".hero-banner img");
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute("loading", "eager");
+    await expect(banner).toHaveAttribute("alt", /illustration/i);
+    await expect(page.locator(".hero-banner").getByText("Illustration")).toBeVisible();
+    expect(await banner.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  });
+
+  test("home hero text remains when the banner cannot load", async ({ page }) => {
+    await page.route(/hcg-store-banner-\d+\.webp$/, (r) => r.abort());
+    await page.goto(REAL + "/");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/HCG\s*Store/);
+    await expect(page.locator(".hero-banner")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Browse apps/ }).first()).toBeVisible();
   });
 
   test("text stays visible when images are blocked", async ({ page }) => {
