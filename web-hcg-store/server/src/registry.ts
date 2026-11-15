@@ -61,6 +61,19 @@ export interface Registry {
   offers: Offer[];
   artifacts: ProtectedArtifact[];
   warnings: string[];
+  /** Releases published through Ship to Store and MANUALLY approved for public delivery (server/src/publishing.ts). */
+  published?: PublishedSource;
+}
+
+export interface PublishedSource {
+  publishedFor(productId: string, editionId: string | null): ProtectedArtifact[];
+  publishedById(id: string): ProtectedArtifact | undefined;
+  publishedMeta(id: string): { version: string; architectures: string[] } | undefined;
+}
+
+/** A deliverable file by ID: the static registry first, then approved Ship to Store releases. */
+export function findArtifact(reg: Registry, id: string): ProtectedArtifact | undefined {
+  return reg.artifacts.find((a) => a.id === id) ?? reg.published?.publishedById(id);
 }
 
 export class RegistryError extends Error {

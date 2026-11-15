@@ -28,7 +28,8 @@ import type { EntitlementAuthority } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
 import { PaymentLedger, signTestEvent, TEST_SIGNATURE_HEADER, verifyTestEvent, type PaymentEventType } from "./payments";
-import { findByRepoKey, findProduct, type Registry } from "./registry";
+import { findArtifact, findByRepoKey, findProduct, type Registry } from "./registry";
+import { createPublishing } from "./publishing";
 import { SessionStore, type Session } from "./sessions";
 import { handleSileo } from "./sileo";
 
@@ -45,6 +46,7 @@ export interface AppDeps {
 
 export interface StoreApp {
   handle: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+  publishing: ReturnType<typeof createPublishing>;
   sessions: SessionStore;
   ledger: PaymentLedger;
   deps: AppDeps;
@@ -216,7 +218,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     if (fresh.unavailable) return errorJson(res, 503, "hcg_unavailable", "Your access could not be checked right now. Try again shortly.");
     if (!fresh.session) return errorJson(res, 401, "sign_in_required", "Sign in with HCG Connect to download.");
     if (!cfg.protectedDownloads) return errorJson(res, 403, "downloads_not_available", DOWNLOADS_NOT_AVAILABLE);
-    const artifact = registry.artifacts.find((a) => a.id === artifactId);
+    const artifact = findArtifact(registry, artifactId);
     const product = artifact ? findProduct(registry, artifact.productId) : undefined;
     if (!artifact || !product) return errorJson(res, 404, "not_found", "Not found.");
     const access = await decideAccess(accessDeps, product, artifact.editionId, fresh.session);
@@ -362,6 +364,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
   // ---------------------------------------------------------------- router
 
   const sileoCtx = { cfg, db, registry, sessions, connect, authority, accessDeps, now, startLogin, streamArtifact, freshSession };
+  const publishing = createPublishing({ cfg, db, registry, connect, authority, now, freshSession, streamArtifact });
+  if (cfg.publishing.enabled) registry.published = publishing;
 
   async function route(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://store.invalid");
@@ -456,6 +460,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         cors,
       );
     }
+    if (await publishing.route(req, res, url)) return;
     if (p.startsWith("/repo-api/v1/sileo/")) return handleSileo.route(sileoCtx, req, res, url);
     if ((match = /^\/repo-api\/v1\/files\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(p)) && m === "GET") return handleSileo.serveFile(sileoCtx, res, match[1]!);
     if (p.startsWith("/api/") || p.startsWith("/auth/") || p.startsWith("/repo-api/")) return errorJson(res, 404, "not_found", "Not found.");
@@ -478,7 +483,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     }
   }
 
-  return { handle, sessions, ledger, deps };
+  return { handle, sessions, ledger, deps, publishing };
 }
 
 export function listen(app: StoreApp, port: number, host: string) {

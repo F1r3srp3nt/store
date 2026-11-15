@@ -28,13 +28,15 @@ export class MockHcgConnect {
   server!: Server;
   origin = "";
   clientId = "11111111-2222-4333-8444-555555555555";
+  /** Other registered public clients (e.g. HCG Executable Maker), each with its own client_id in its tokens. */
+  otherClients = new Set<string>();
   nextUser: MockUser | null = null;
   down = false;
   private key!: CryptoKey;
   private jwk!: JWK;
   private codes = new Map<string, CodeRecord>();
   /** refresh token → { user, session id } */
-  private refresh = new Map<string, { user: MockUser; sid: string }>();
+  private refresh = new Map<string, { user: MockUser; sid: string; clientId: string }>();
   private usedRefresh = new Set<string>();
   private endedSessions = new Set<string>();
   sessionsBySub = new Map<string, string[]>();
@@ -79,17 +81,26 @@ export class MockHcgConnect {
       .sign(this.key);
   }
 
-  private async tokens(user: MockUser, sid: string, nonce?: string) {
+  private async tokens(user: MockUser, sid: string, nonce?: string, clientId = this.clientId) {
     const refresh = randomBytes(24).toString("base64url");
-    this.refresh.set(refresh, { user, sid });
-    const access = await this.sign(
-      { sub: user.sub, email: user.email, role: user.role ?? "authenticated", client_id: this.clientId, session_id: sid, scope: "openid email profile" },
+    this.refresh.set(refresh, { user, sid, clientId });
+    const access = await this.accessToken(user, clientId, sid);
+    const body: Record<string, unknown> = { access_token: access, token_type: "bearer", expires_in: this.accessTtlSeconds, refresh_token: refresh };
+    if (nonce !== undefined) body.id_token = await this.sign({ sub: user.sub, email: user.email, name: user.name, nonce }, clientId, 3600);
+    return body;
+  }
+
+  /** An access token as HCG Connect issues it to `clientId` (tests: a desktop app's bearer token). */
+  accessToken(user: MockUser, clientId: string, sid = randomBytes(8).toString("hex")) {
+    return this.sign(
+      { sub: user.sub, email: user.email, role: user.role ?? "authenticated", client_id: clientId, session_id: sid, scope: "openid email profile" },
       "authenticated",
       this.accessTtlSeconds,
     );
-    const body: Record<string, unknown> = { access_token: access, token_type: "bearer", expires_in: this.accessTtlSeconds, refresh_token: refresh };
-    if (nonce !== undefined) body.id_token = await this.sign({ sub: user.sub, email: user.email, name: user.name, nonce }, this.clientId, 3600);
-    return body;
+  }
+
+  private knownClient(id: string | null) {
+    return id === this.clientId || (!!id && this.otherClients.has(id));
   }
 
   private async handle(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
@@ -108,14 +119,14 @@ export class MockHcgConnect {
     if (url.pathname === "/auth/v1/.well-known/jwks.json") return send(200, { keys: [this.jwk] });
     if (url.pathname === "/auth/v1/oauth/authorize") {
       const q = url.searchParams;
-      if (q.get("client_id") !== this.clientId) return send(400, { error_code: "oauth_client_not_found" });
+      if (!this.knownClient(q.get("client_id"))) return send(400, { error_code: "oauth_client_not_found" });
       if (q.get("code_challenge_method") !== "S256" || !q.get("code_challenge")) return send(400, { error: "invalid_request" });
       const redirect = new URL(q.get("redirect_uri")!);
       if (!this.nextUser) {
         redirect.searchParams.set("error", "access_denied");
       } else {
         const code = randomBytes(16).toString("hex");
-        this.codes.set(code, { user: this.nextUser, clientId: this.clientId, redirectUri: q.get("redirect_uri")!, challenge: q.get("code_challenge")!, nonce: q.get("nonce") ?? "" });
+        this.codes.set(code, { user: this.nextUser, clientId: q.get("client_id")!, redirectUri: q.get("redirect_uri")!, challenge: q.get("code_challenge")!, nonce: q.get("nonce") ?? "" });
         redirect.searchParams.set("code", code);
       }
       redirect.searchParams.set("state", q.get("state") ?? "");
@@ -127,26 +138,26 @@ export class MockHcgConnect {
       let raw = "";
       for await (const c of req) raw += c;
       const f = new URLSearchParams(raw);
-      if (f.get("client_id") !== this.clientId) return send(400, { error_code: "oauth_client_not_found" });
+      if (!this.knownClient(f.get("client_id"))) return send(400, { error_code: "oauth_client_not_found" });
       if (f.get("grant_type") === "authorization_code") {
         const rec = this.codes.get(f.get("code") ?? "");
         this.codes.delete(f.get("code") ?? "");
-        if (!rec || rec.redirectUri !== f.get("redirect_uri")) return send(400, { error: "invalid_grant" });
+        if (!rec || rec.redirectUri !== f.get("redirect_uri") || rec.clientId !== f.get("client_id")) return send(400, { error: "invalid_grant" });
         const challenge = createHash("sha256").update(f.get("code_verifier") ?? "").digest("base64url");
         if (challenge !== rec.challenge) return send(400, { error: "invalid_grant", error_description: "PKCE verification failed" });
         const sid = randomBytes(8).toString("hex");
         this.sessionsBySub.set(rec.user.sub, [...(this.sessionsBySub.get(rec.user.sub) ?? []), sid]);
-        return send(200, await this.tokens(rec.user, sid, rec.nonce));
+        return send(200, await this.tokens(rec.user, sid, rec.nonce, rec.clientId));
       }
       if (f.get("grant_type") === "refresh_token") {
         const token = f.get("refresh_token") ?? "";
         if (this.usedRefresh.has(token)) return send(400, { error_code: "refresh_token_already_used" });
         const rec = this.refresh.get(token);
-        if (!rec) return send(400, { error_code: "refresh_token_not_found" });
+        if (!rec || rec.clientId !== f.get("client_id")) return send(400, { error_code: "refresh_token_not_found" });
         if (this.endedSessions.has(rec.sid)) return send(400, { error_code: "session_not_found" });
         this.usedRefresh.add(token);
         this.refresh.delete(token);
-        return send(200, await this.tokens(rec.user, rec.sid));
+        return send(200, await this.tokens(rec.user, rec.sid, undefined, rec.clientId));
       }
       return send(400, { error: "unsupported_grant_type" });
     }

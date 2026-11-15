@@ -63,11 +63,13 @@ export function publicOffer(o: Offer): PublicOffer {
 }
 
 export function deliverableArtifacts(reg: Registry, product: Product, editionId: string | null): ProtectedArtifact[] {
-  return reg.artifacts.filter((a) => {
+  const fromRegistry = reg.artifacts.filter((a) => {
     if (a.productId !== product.id || a.editionId !== editionId || !a.deliveryApproved) return false;
     const rel = reg.catalogue.releases.find((r) => r.id === a.releaseId);
     return !!rel && rel.status === "approved";
   });
+  // Ship to Store releases count only after a person approved them for public delivery in the Store.
+  return [...fromRegistry, ...(reg.published?.publishedFor(product.id, editionId) ?? [])];
 }
 
 /**

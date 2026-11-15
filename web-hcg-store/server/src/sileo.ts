@@ -25,7 +25,7 @@ import type { Db } from "./db";
 import type { EntitlementAuthority } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
 import { errorJson, json, readJson, redirect } from "./http";
-import { findByPackageId, type Registry } from "./registry";
+import { findArtifact, findByPackageId, type Registry } from "./registry";
 import type { Session, SessionStore } from "./sessions";
 
 export interface SileoCtx {
@@ -147,7 +147,8 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
     const files = deliverableArtifacts(ctx.registry, product, edition.id).filter((f) => {
       const rel = ctx.registry.catalogue.releases.find((r) => r.id === f.releaseId);
       const cat = rel?.artifacts.find((x) => x.id === f.catalogueArtifactId);
-      return cat?.architectures.includes(arch) && (!version || version === rel?.version || version.startsWith(`${rel?.version}-`));
+      const meta = rel ? { version: rel.version, architectures: cat?.architectures ?? [] } : ctx.registry.published?.publishedMeta(f.id);
+      return !!meta && meta.architectures.includes(arch) && (!version || version === meta.version || version.startsWith(`${meta.version}-`));
     });
     const file = files[0];
     if (!file) return fail(res, 404, "No approved file matches this version and layout.");
@@ -168,7 +169,7 @@ async function serveFile(ctx: SileoCtx, res: ServerResponse, token: string) {
   if (!payload || payload.exp < ctx.now()) return errorJson(res, 403, "link_expired", "This download link has expired.");
   const s = ctx.sessions.byHash(payload.h);
   if (!s || s.sub !== payload.s) return errorJson(res, 403, "link_expired", "This download link is no longer valid.");
-  const file = ctx.registry.artifacts.find((x) => x.id === payload.a);
+  const file = findArtifact(ctx.registry, payload.a);
   const product = file ? ctx.registry.catalogue.products.find((p) => p.id === file.productId) : undefined;
   if (!file || !product || !ctx.cfg.protectedDownloads) return errorJson(res, 403, "not_available", DOWNLOADS_NOT_AVAILABLE);
   const a = await decideAccess(ctx.accessDeps, product, file.editionId, s);
