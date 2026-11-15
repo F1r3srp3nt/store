@@ -1,0 +1,4 @@
+{
+  "$comment": "Server-authoritative offers (prices) for HCG Store. EMPTY ON PURPOSE: HCG has not set a price for any product, no product has a confirmed central product ID, and no payment provider is approved. An offer can be approved for sale only for a product edition with an approved current release (no preorder policy exists). See docs/PAYMENTS.md.",
+  "offers": []
+}

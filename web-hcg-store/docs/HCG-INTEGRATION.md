@@ -1,133 +1,107 @@
-# HCG ERP and HCG Connect integration path
+# HCG ERP and HCG Connect integration
 
-Status: **preparation only.** Nothing in this repository connects to, registers with or changes any
-central HCG service. Every item marked **PROPOSED** is for the founder to accept, change or reject.
+Nothing in this repository registers clients with HCG, changes HCG settings or connects to live HCG
+services. Items marked **NEEDS HCG** are for the founder and the main HCG site to decide or issue.
 
-## 1. Governance (unchanged by this project)
+## 1. Responsibilities
 
 | Concern | Authority |
 |---|---|
-| Product registry, approved release metadata | HCG ERP / Executive Control Center |
-| Organisations, licences, App Access and permissions, administrative authorisation | HCG ERP / Executive Control Center |
-| Identity (sign-in, sessions, revocation) | HCG Connect / Auth |
-| This storefront | Reads public data. Holds no user database, role store or permissions |
+| Identity: sign-in, sessions | **HCG Connect** (main HCG site) |
+| Products, central product IDs, approved releases | **HCG ERP** product registry |
+| Entitlements, licences, App Access | **HCG ERP** (`app_entitlements` and related records) |
+| Product discovery, checkout, purchase history, owned-product library | **HCG Store** (this repository: web app and server) |
+| Jailbreak package delivery | **HCG Repo** (see [HCG-REPO.md](HCG-REPO.md)) |
 
-## 2. What was inspected
+HCG Store holds no user accounts or roles of its own. People are identified by their HCG `sub`.
 
-| Source | Finding |
+## 2. What exists centrally (inspected 15 November 2026, read-only)
+
+The main HCG site's source code is not in any reachable repository. These facts come from the handoff
+documents other HCG apps wrote after observing the live systems: HCG LifeOS
+`docs/HCG-CONNECT-LIFEOS-HANDOFF.md` and HCG Executable Maker `docs/hcg-connect/HANDOFF.md`, which are
+marked LIVE-VERIFIED.
+
+- **HCG Connect is live:** the OAuth 2.1 server of HCG's Supabase Auth project. Issuer
+  `https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1`, with `/oauth/authorize`, `/oauth/token`,
+  `/oauth/userinfo` and `/.well-known/jwks.json` (one ES256 key). It supports public clients, PKCE
+  S256, and the `authorization_code` and `refresh_token` grants.
+- **Tokens:** the ID token's `aud` is the client ID. The access token's `aud` is `authenticated`, plus
+  a signed `client_id`. There is **no revocation or end-session endpoint**. Dead refresh tokens return
+  `refresh_token_not_found`, `refresh_token_already_used`, `session_not_found` or `session_expired`.
+- **Clients:** HCG registers them centrally through the ERP App integrations workflow. Each app needs
+  its own; another app's client must not be reused. **HCG Store has no client yet.**
+- **Entitlements:** the ERP has `app_applications`, `app_entitlements` (with status, `expires_at`,
+  `revoked_at`) and `app_effective_entitlements`. The routes
+  `https://beta.hakmicapitalgroup.com/api/public/ecosystem/v1/{me,features,check}` exist (401 without a
+  token), but their response bodies are unconfirmed. **No grant endpoint for purchases is published.**
+- **Product IDs:** only `hcg.executable.maker` is reported as live, and even that repository also uses
+  `executable-maker`. No other central IDs were found. The LifeOS "realm keys" (`hcg.mail`,
+  `hcg.lifeos`, …) are gamification realms, not product IDs. The catalogue now labels them as such.
+- **Payments:** none exist (see [PAYMENTS.md](PAYMENTS.md)).
+- **Role policy:** every app repository states that HCG roles do not grant product access. The ERP
+  has a per-application "company auto-grant" switch that produces ordinary entitlements.
+
+## 3. What HCG Store implements
+
+| Piece | Where |
 |---|---|
-| `docs/hcg-auth-contract.md`, `docs/hcg-authorization-contract.md`, `docs/hcg-connect/handoffs/` | **Not found** in this repository or in the HCG repositories reachable from this session (HCG-One, HCG-LifeOS, HCG-Mail, HCG-News, hcg-cardx, HCG-Executable-Maker, HCG-RePrompter, HCG-ONE-UNLEASHED, HCG-Terminal). The main-site (ERP) repository was not available. |
-| `HCG-LifeOS/docs/HCG-CONNECT-LIFEOS-HANDOFF.md` | A preparation-only handoff for a *native* client. It records the browser login page `https://beta.hakmicapitalgroup.com/auth`, states that it is "a web page, not a documented native protocol", and proposes Authorization Code + PKCE **pending approval**. |
-| `HCG-One/HCG-CARDX-AUTH-INTEGRATION-REPORT.md`, `hcg-cardx` contract | Existing native apps use the central identity backend, and some use an OAuth client registered **for CardX**. |
+| HCG Connect relying party (server side): PKCE, ID-token and access-token verification, refresh rotation, dead-session detection | `server/src/hcg-connect.ts` |
+| Sessions, re-confirmation with HCG before protected actions, logout | `server/src/sessions.ts` |
+| Entitlement authorities: `hcg-ecosystem` (read-only `POST /check`, proposed body) and `test-ledger` (test mode only) | `server/src/entitlements.ts` |
+| One access decision for the website, HCG Repo and Sileo | `server/src/access.ts` |
+| Test-mode checkout, signed events, idempotent ledger | `server/src/payments.ts` |
+| Protected delivery and the Sileo payment-provider API | `server/src/app.ts`, `server/src/sileo.ts` |
+| Account state in the browser (no tokens) | `src/account/` |
 
-Conclusions applied in the code:
+The browser bundle no longer contains any HCG Connect settings. The earlier `VITE_HCG_CONNECT_*`
+variables were removed.
 
-- **No protocol is assumed** from the existence of a login page.
-- **No other app's OAuth client, redirect URI or keys are reused.** HCG Store needs its own reviewed
-  registration.
-- No identity-provider URL, project reference or public key from other apps is embedded in this project.
+## 4. NEEDS HCG: ready-to-paste request for the main HCG site
 
-## 3. What exists in HCG Store
-
-| Piece | Where | Behaviour |
-|---|---|---|
-| `CatalogueProvider` interface | `src/providers/types.ts` | Read-only `load()` returning a validated catalogue or an explicit error |
-| Local provider | `src/providers/local.ts` | Bundled seed data, validated at load and at build |
-| HCG ERP provider | `src/providers/erp.ts` | `GET` of a public HTTPS endpoint, `credentials: "omit"`, 10 s timeout, 5 MB cap, full schema validation. **No silent fallback** to seed data |
-| HCG Connect config | `src/integrations/hcg-connect/config.ts` | Parses 10 public settings. States: `not-configured` / `invalid` (https, redirect-origin and approval checks) / `ready` |
-| HCG Connect adapter | `src/integrations/hcg-connect/adapter.ts` | Tracks configuration, authentication and App Access separately. The only implementation **refuses every operation**, makes **no network requests**, stores no tokens and never reports a signed-in user |
-| Account & Connections page | `/account` | Shows "HCG Connect not configured", the missing settings, a disabled sign-in button, catalogue source and delivery limitations |
-
-Tests prove the unconfigured, partially configured and fully configured adapter all make zero `fetch`
-calls and never report a session (`src/integrations/hcg-connect/hcg-connect.test.ts`).
-
-Public catalogue browsing and public downloads work without any login.
-
-## 4. Configuration handoff
-
-All values are **public** (embedded in the bundle). A client secret must never be configured. The
-build refuses `VITE_` names containing SECRET/TOKEN/PASSWORD/PRIVATE/SERVICE_ROLE/API_KEY.
-
-| Variable | Needed from central HCG |
-|---|---|
-| `VITE_CATALOGUE_PROVIDER` | `hcg-erp` once the endpoint below exists |
-| `VITE_HCG_ERP_CATALOGUE_URL` | Public read-only catalogue endpoint per environment |
-| `VITE_HCG_CONNECT_CONTRACT_VERSION` | Agreed contract version |
-| `VITE_HCG_CONNECT_AUTHORIZATION_ENDPOINT` | Per environment (beta / production) |
-| `VITE_HCG_CONNECT_TOKEN_ENDPOINT` | Per environment |
-| `VITE_HCG_CONNECT_REVOCATION_ENDPOINT` | Per environment |
-| `VITE_HCG_CONNECT_APP_ACCESS_ENDPOINT` | Per environment |
-| `VITE_HCG_CONNECT_CLIENT_ID` | A **public** client registered specifically for HCG Store |
-| `VITE_HCG_CONNECT_REDIRECT_URI` | Must be on the origin serving the build (checked at runtime) |
-| `VITE_HCG_CONNECT_SCOPES` | Approved scopes |
-| `VITE_HCG_CONNECT_APP_IDENTIFIER` | HCG Store's ID in the App Access registry |
-| `VITE_HCG_CONNECT_APPROVED_BY_FOUNDER` | `true` only after approval |
-
-Even with every value set, sign-in stays disabled until a **reviewed protocol implementation** is added
-behind `HcgConnectAdapter`.
-
-## 5. PROPOSED central changes (founder review required; none were applied)
-
-1. **Product registry read endpoint.** A public, read-only, cacheable endpoint, e.g.
-   `GET https://<erp-host>/api/public/store/v1/catalogue`, returning
-   `{ "schemaVersion": 1, "products": [...], "releases": [...] }` with the item schema in
-   `src/domain/schema.ts`, *or* a documented ERP schema that HCG Store maps in a new provider. Only
-   approved, public releases are included. CORS allows the store origins (localhost for development, the
-   preview host, and later the production host).
-2. **Registry IDs.** Assign central IDs for the 14 products and record them as `registry.centralId`.
-   Keep the provisional `id`s as aliases, or tell HCG Store which central IDs supersede them.
-3. **Naming decisions.**
-   - Does `hcg.one` refer to HCG ONE or HCG ONE: Unleashed? Should HCG ONE (iOS/web) be listed?
-   - Confirm the categories for HCG RePrompter, HCG Terminal and HCG Virtualisation (provisionally
-     *HCG Development Tools*).
-   - Describe HCG Studio, Jailbreak Directory, Jailbreak Unleashed, Office Suite and Analytics & Measure.
-4. **Release approval workflow.** Who approves a release, and how ERP records version, build, channel,
-   artifacts, SHA-256 and signing evidence.
-5. **HCG Connect web client for HCG Store**, if and when sign-in is wanted:
-   - protocol and flow (for a browser SPA, typically Authorization Code + PKCE with a public client; to be
-     confirmed by central HCG);
-   - a **new** public client registration for HCG Store (not CardX's or another app's);
-   - allowed redirect URIs: `http://localhost:5173/account/callback` (development),
-     `https://<preview-host>/account/callback` (preview) and later
-     `https://store.hakmicapitalgroup.com/account/callback` (production, only when the domain is live);
-   - scopes, token lifetimes, refresh rotation and revocation semantics;
-   - an App Access read endpoint returning status (granted / denied / revoked / unlicensed), organisation,
-     centrally defined permission names, `validUntil` and reason.
-6. **Server-side enforcement.** Any future restricted operation (licensed downloads, organisation-only
-   releases, administration) is authorised by an HCG backend, never by browser checks.
-7. **Private delivery.** If licensed downloads are needed, a backend that issues short-lived signed URLs
-   after an App Access check. This is separate from public Dropbox links.
-
-## 6. Paste-ready prompt for the main-site / ERP session
-
-> You are working on the HCG main site (ERP / Executive Control Center), which owns the HCG product
-> registry, approved release metadata, organisations, licences, App Access and identity. Prepare, **but do
-> not deploy or enable**, the central side for **HCG Store**, the public web storefront (repository
-> `F1r3srp3nt/store`, directory `web-hcg-store/`).
+> Register **HCG Store (web)** as an HCG Connect client, using the ERP App integrations workflow
+> ("Inspect registrations" → "Issue or reuse login client"). Do not reuse another app's client.
 >
-> Constraints: do not change existing auth settings, RLS policies, roles, permissions or OAuth clients
-> automatically. Write every change as a reviewable diff or migration, with a summary for founder approval.
-> Do not reuse another app's OAuth client. Do not deploy.
+> - Client type: public (`token_endpoint_auth_method: none`), no secret. Grants `authorization_code`
+>   and `refresh_token`. PKCE S256.
+> - Redirect URIs (exact):
+>   - `https://store.hakmicapitalgroup.com/auth/callback` (when the domain is live);
+>   - `https://<preview-host>/auth/callback` (one approved preview host);
+>   - `http://localhost:8787/auth/callback` (local development).
+> - Scopes `openid email profile`; access-token audience `authenticated`; no logout URL.
+>   HCG Store's server keeps the tokens; the browser holds only an HttpOnly session cookie.
+> - Name on the consent page: "HCG Store".
 >
-> Produce:
-> 1. A proposal for a public, read-only catalogue endpoint that returns approved products and releases
->    (shape in HCG Store `src/domain/schema.ts`, or a documented ERP schema), including CORS for
->    `http://localhost:5173` and the preview host.
-> 2. Central IDs for: HCG LifeOS, HCG Mail, HCG ONE: Unleashed, HCG News, HCG Executable Maker,
->    HCG RePrompter, HCG Studio, HCG CardX, HCG Terminal, HCG Virtualisation, HCG Jailbreak Directory,
->    HCG Jailbreak Unleashed, HCG Office Suite, HCG Analytics & Measure.
-> 3. How the current login at `https://beta.hakmicapitalgroup.com/auth` works (provider, protocol, session,
->    token format), and which browser-SPA flow the stack supports.
-> 4. A proposed public-client registration for HCG Store (client ID, redirect URIs, scopes, lifetimes,
->    revocation) and an App Access read endpoint. Mark everything "pending founder approval".
-> 5. Values or "TBD" for every variable in HCG Store's `.env.example` HCG Connect section.
+> For entitlements, please:
+>
+> 1. Confirm central product IDs for: HCG Terminal (editions `standard`, `unleashed`), HCG Nexus
+>    (`app`, `jailbreak`), HCG Sentinel, HCG Executable Maker (`hcg.executable.maker` or
+>    `executable-maker`?), HCG Mail (`windows-desktop`, `ios`) and HCG Clarity.
+> 2. Confirm the `POST /api/public/ecosystem/v1/check` body and response. HCG Store sends
+>    `{ product_id, edition, feature_key: "download" }` and reads `{ allowed, licence.ends_at }`.
+> 3. Publish a server-to-server **grant/revoke** endpoint that HCG Store's server can call after a
+>    verified payment, refund or subscription change. It must be idempotent per purchase ID, use its own
+>    credentials, and never be reachable from browsers.
+> 4. Decide whether editions are separate entitlements, which they are in HCG Store's model.
+>
+> Do not create accounts, grant licences or enable billing as part of this.
 
-## 7. Implementation steps once approved
+HCG Store needs back: the client ID (not a secret), the confirmed product IDs, the API contracts, and
+the server credential for the grant API (stored only in the Store server's secret store).
 
-1. Add the approved endpoint to the environment (`VITE_CATALOGUE_PROVIDER=hcg-erp`,
-   `VITE_HCG_ERP_CATALOGUE_URL=…`). The CSP `connect-src` is extended automatically at build time.
-2. If the ERP schema differs, write a mapping provider. Keep IDs stable.
-3. Implement the approved sign-in flow behind `HcgConnectAdapter` with tests mirroring the LifeOS
-   acceptance list: no config → zero requests; revoked → signed out; no privilege inference from email or
-   name.
-4. Security review, then founder approval, before enabling `canSignIn`.
+## 5. Acceptance after issuance
+
+Run the acceptance list in [ACCESS.md](ACCESS.md#acceptance-list) against live HCG, with:
+- `HCG_CONNECT_*` set to the issued client;
+- `HCG_STORE_ENTITLEMENT_AUTHORITY=hcg-ecosystem`;
+- two test accounts (owner and non-owner) and one test entitlement granted by HCG.
+
+Payments stay disabled until a provider is approved. Downloads stay disabled until the founder
+approves launch.
+
+## 6. Catalogue provider (unchanged)
+
+The ERP catalogue provider (`src/providers/erp.ts`) still reads a public, read-only catalogue endpoint
+when one exists (`VITE_CATALOGUE_PROVIDER=hcg-erp`, `VITE_HCG_ERP_CATALOGUE_URL`). The proposed endpoint
+shape is the schema in `src/domain/schema.ts`. It now includes `editions` and `hcgRepo`, and never
+contains download URLs.

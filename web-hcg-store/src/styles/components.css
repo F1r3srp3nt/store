@@ -181,17 +181,12 @@
 .badge--muted {
   color: var(--text-muted);
 }
-.badge--avail-downloadable {
+.badge--avail-released {
   color: var(--mint);
   border-color: rgba(94, 234, 212, 0.4);
   background: var(--mint-soft);
 }
-.badge--avail-release-info-only {
-  color: var(--amber);
-  border-color: rgba(255, 198, 107, 0.35);
-  background: var(--amber-soft);
-}
-.badge--avail-none {
+.badge--avail-coming-soon {
   color: var(--text-muted);
   border-style: dashed;
 }
@@ -951,4 +946,168 @@
     text-transform: uppercase;
     color: var(--text-faint);
   }
+}
+
+/* ---- Access, ownership and editions ---- */
+.access__summary {
+  color: var(--text-muted);
+}
+.edition-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.edition {
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--glass);
+  padding: 18px;
+  scroll-margin-top: calc(var(--header-h) + 24px);
+}
+.edition--selected {
+  border-color: var(--cyan-glow);
+  box-shadow: 0 0 0 1px var(--cyan-glow), 0 0 32px -12px var(--cyan-glow);
+}
+.edition--owned {
+  border-color: rgba(94, 234, 212, 0.4);
+}
+.edition__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.edition__head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+.edition__channel {
+  margin: 2px 0 0;
+  color: var(--text-faint);
+  font-size: 0.86rem;
+}
+.edition__commerce {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+.edition__price {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+}
+.edition__price strong {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  background: var(--metal);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.edition__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+/* Unavailable checkout must look clearly unavailable, not like a dimmed call to action. */
+.edition__actions .button[disabled] {
+  background: transparent;
+  color: var(--text-faint);
+  border: 1px dashed var(--line-strong);
+  box-shadow: none;
+  cursor: not-allowed;
+  filter: none;
+}
+.edition__reason,
+.edition__message {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+.edition__error {
+  color: var(--rose);
+  font-size: 0.9rem;
+}
+.edition__downloads {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.edition__downloads-unavailable {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+.badge--owned {
+  color: var(--mint);
+  border-color: rgba(94, 234, 212, 0.45);
+  background: var(--mint-soft);
+}
+.badge--owned svg {
+  width: 14px;
+  height: 14px;
+}
+.badge--test {
+  color: var(--amber);
+  border-color: rgba(255, 198, 107, 0.4);
+  background: var(--amber-soft);
+  font-size: 0.74rem;
+}
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+
+/* ---- Library ---- */
+.library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.library-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--glass);
+}
+.library-item__name {
+  font-weight: 600;
+  color: var(--text);
+}
+.library-item__state {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.state-pill--signed-in {
+  color: var(--mint);
+  border-style: solid;
+  border-color: rgba(94, 234, 212, 0.45);
 }

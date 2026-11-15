@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "@playwright/test";
-import { FIXTURE, REAL } from "./helpers";
+import { ACCOUNT, FIXTURE, REAL } from "./helpers";
 
 /** Captures documentation screenshots. Run with `npm run screenshots`. */
 const OUT = resolve(import.meta.dirname, "../docs/screenshots");
@@ -11,6 +11,7 @@ const shots: { name: string; url: string; width: number; height: number; full?: 
   { name: "home-1440", url: REAL + "/", width: 1440, height: 900, full: true },
   { name: "browse-1440", url: REAL + "/apps", width: 1440, height: 1000 },
   { name: "product-executable-maker-1440", url: REAL + "/apps/hcg-executable-maker", width: 1440, height: 1100 },
+  { name: "product-terminal-editions-1440", url: REAL + "/apps/hcg-terminal?edition=unleashed", width: 1440, height: 1400 },
   { name: "account-1440", url: REAL + "/account", width: 1440, height: 1000 },
   { name: "getting-started-1024", url: REAL + "/getting-started", width: 1024, height: 1000 },
   { name: "home-390", url: REAL + "/", width: 390, height: 844 },
@@ -35,4 +36,28 @@ test("capture documentation screenshots", async ({ browser }) => {
     await page.screenshot({ path: `${OUT}/${s.name}.png`, fullPage: Boolean(s.full) });
     await ctx.close();
   }
+});
+
+/** TEST-mode account flow (mock HCG Connect, TEST payments): signed-in, test checkout, owned. */
+test("capture TEST-mode account screenshots", async ({ browser }) => {
+  test.setTimeout(120_000);
+  mkdirSync(OUT, { recursive: true });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1300 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
+  const page = await ctx.newPage();
+  await page.request.post(`http://127.0.0.1:4176/__test/next-user/${encodeURIComponent(`screenshot-${Date.now()}`)}`);
+  await page.goto(`${ACCOUNT}/auth/login?return_to=${encodeURIComponent("/apps/fixture-quasar-shell?edition=unleashed")}`);
+  await page.locator("#edition-unleashed").getByRole("button", { name: "Buy Product" }).waitFor();
+  await page.screenshot({ path: `${OUT}/test-mode-not-owned-1440.png` });
+  await page.locator("#edition-unleashed").getByRole("button", { name: "Buy Product" }).click();
+  await page.getByRole("button", { name: "Simulate successful payment" }).waitFor();
+  await page.screenshot({ path: `${OUT}/test-mode-checkout-1440.png` });
+  await page.getByRole("button", { name: "Simulate successful payment" }).click();
+  await page.getByRole("heading", { name: "Purchase confirmed" }).waitFor();
+  await page.goto(`${ACCOUNT}/apps/fixture-quasar-shell?edition=unleashed`);
+  await page.locator("#edition-unleashed").getByText("Owned", { exact: true }).waitFor();
+  await page.screenshot({ path: `${OUT}/test-mode-owned-1440.png` });
+  await page.goto(`${ACCOUNT}/library`);
+  await page.getByRole("heading", { name: "Purchase history" }).waitFor();
+  await page.screenshot({ path: `${OUT}/test-mode-library-1440.png` });
+  await ctx.close();
 });

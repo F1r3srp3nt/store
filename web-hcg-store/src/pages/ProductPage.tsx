@@ -5,6 +5,7 @@ import { IconArrowLeft, IconInfo } from "../components/Icons";
 import { MediaImage } from "../components/MediaImage";
 import { PageMeta } from "../components/PageMeta";
 import { ProductTile } from "../components/ProductTile";
+import { AccessPanel } from "../components/AccessPanel";
 import { ReleasePanel } from "../components/Release";
 import type { Catalogue } from "../domain/catalogue";
 import { availability, findProductBySlug } from "../domain/model";
@@ -63,6 +64,8 @@ function ProductDetail({ catalogue, product }: { catalogue: Catalogue; product: 
 
         <div className="product-layout">
           <div className="product-main">
+            <AccessPanel catalogue={catalogue} product={product} />
+
             <section aria-labelledby="about-title" className="panel">
               <h2 id="about-title">About</h2>
               {product.description.map((d, i) => (
@@ -77,7 +80,7 @@ function ProductDetail({ catalogue, product }: { catalogue: Catalogue; product: 
               </p>
               {product.developmentNote && <p>{product.developmentNote}</p>}
               <p className="fine">
-                Development status describes the product's progress. It is separate from release availability, which is shown in the release panel.
+                Development status describes the product's progress. It is separate from release availability and from whether you own the product.
               </p>
             </section>
 

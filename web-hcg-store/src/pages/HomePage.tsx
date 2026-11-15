@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CatalogueGate } from "../app/catalogue-context";
-import { IconArrowRight, IconDownload, IconLayers, IconShield, IconTerminal } from "../components/Icons";
+import { IconArrowRight, IconCheck, IconLayers, IconShield, IconTerminal } from "../components/Icons";
 import { HeroBanner } from "../components/HeroBanner";
 import { PageMeta } from "../components/PageMeta";
 import { ProductCard } from "../components/ProductCard";
 import type { Catalogue } from "../domain/catalogue";
+import { DOWNLOADS_NOT_AVAILABLE } from "../account/api";
 import { availability } from "../domain/model";
 import { PLATFORMS, PLATFORM_IDS } from "../domain/taxonomy";
 
@@ -20,10 +21,10 @@ export function HomePage() {
 
 function Home({ catalogue }: { catalogue: Catalogue }) {
   const products = [...catalogue.products].sort((a, b) => a.name.localeCompare(b.name, "en"));
-  const downloadable = products.filter((p) => availability(catalogue, p) === "downloadable");
+  const released = products.filter((p) => availability(catalogue, p) === "released");
   const devTools = products.filter((p) => p.category === "developer-tools");
   const active = products.filter((p) => p.category !== "developer-tools" && (p.developmentStatus === "in-development" || p.developmentStatus === "testing"));
-  const roadmap = products.filter((p) => p.category !== "developer-tools" && !active.includes(p) && !downloadable.includes(p));
+  const roadmap = products.filter((p) => p.category !== "developer-tools" && !active.includes(p) && !released.includes(p));
   const platformCounts = PLATFORM_IDS.map((id) => ({ id, count: products.filter((p) => p.platforms.some((x) => x.platform === id)).length })).filter(
     (x) => x.count > 0,
   );
@@ -41,7 +42,7 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
               </h1>
               <p className="hero__lead">
                 The home for Hakmi Capital Group applications and developer tools. Every listing shows its real development
-                status. Downloads appear only when HCG has approved a release.
+                status. Unreleased products are labelled Coming soon, and every download requires your HCG account.
               </p>
               <div className="hero__actions">
                 <Link to="/apps" className="button button--primary">
@@ -58,8 +59,8 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
                 <dd>{products.length}</dd>
               </div>
               <div>
-                <dt>Public downloads</dt>
-                <dd>{downloadable.length}</dd>
+                <dt>Released</dt>
+                <dd>{released.length}</dd>
               </div>
               <div>
                 <dt>In development</dt>
@@ -94,15 +95,15 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
         </ul>
       </nav>
 
-      {downloadable.length > 0 ? (
-        <Section id="downloads" kicker="Available now" title="Available downloads" icon={<IconDownload />}>
-          <Grid catalogue={catalogue} items={downloadable} />
+      {released.length > 0 ? (
+        <Section id="released" kicker="Released" title="Released products" icon={<IconCheck />}>
+          <Grid catalogue={catalogue} items={released} />
         </Section>
       ) : (
         <div className="page-width">
           <p className="notice" role="note">
-            <IconShield className="inline-icon" /> No public downloads have been published yet. Products appear under{" "}
-            <em>Available downloads</em> once HCG approves a release with a real download link.
+            <IconShield className="inline-icon" /> {DOWNLOADS_NOT_AVAILABLE} No product has an approved release yet, so every listing is{" "}
+            <em>Coming soon</em>. Downloads will require signing in with your HCG account.
           </p>
         </div>
       )}

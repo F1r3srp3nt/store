@@ -12,7 +12,7 @@ founder to perform or approve.
 | Build command | `npm run build` (catalogue validation → type check → Vite build → secret scan) |
 | Output directory | `web-hcg-store/dist/` |
 | Node.js | 22.12 or later |
-| Runtime | None. Static files only; no server code |
+| Runtime | Static files for browsing. **Accounts, purchases and downloads need the HCG Store server** (§2a) |
 
 `dist/` contains `index.html`, hashed `assets/`, `brand/`, `media/`, and generated files:
 
@@ -42,6 +42,31 @@ suite checks this against `vite preview`.
 
 Serving from a sub-path: build with `HCG_BASE_PATH=/store/ npm run build` and adjust the fallback.
 
+## 2a. HCG Store server (accounts, checkout, protected delivery)
+
+A static host serves the catalogue only. Its pages say sign-in is not available on that site. The
+full Store runs the Node server, which serves `dist/` with the same security headers plus the account
+API:
+
+```bash
+npm ci && npm run build      # builds dist/ and server-dist/main.mjs
+npm run server:start         # node server-dist/main.mjs, reads the environment (.env.server.example)
+```
+
+- Node.js 22.12 or later. It uses the built-in `node:sqlite`, which prints an "experimental" warning
+  on Node 22. State lives in `HCG_STORE_DATA_DIR` (one SQLite file): back it up, and keep it on
+  persistent disk, not on an ephemeral container layer.
+- Put it behind HTTPS (a reverse proxy or the platform's TLS) on the Store's public origin. Cookies are
+  `__Host-` and `Secure` when the origin is https.
+- **CDN:** cache only `/assets/*` (hashed and immutable). The server marks everything under `/api/`,
+  `/auth/`, `/repo-api/` and `/test-checkout/` as `private, no-store` with `Vary: Cookie`. Do not
+  override this with edge rules.
+- Defaults are closed: no HCG Connect client means sign-in is "not configured", with no payments and
+  downloads disabled. The server **refuses to start** with test payment providers or test entitlement
+  ledgers in production, or with downloads enabled before launch approval (see [ACCESS.md](ACCESS.md)).
+- Secrets: `HCG_STORE_SECRET_KEY` (and later any payment-provider or HCG grant credentials) go only in
+  the host's secret store.
+
 ## 3. Environment variables
 
 See `.env.example` for every variable with explanations. They are build-time values: rebuild after
@@ -54,7 +79,7 @@ changing them. Summary:
 | `VITE_ALLOW_INDEXING` | empty | empty (ignored anyway) | `true` only when going live |
 | `VITE_CATALOGUE_PROVIDER` | `local` | `local` | `local` or `hcg-erp` once approved |
 | `VITE_HCG_ERP_CATALOGUE_URL` | empty | approved beta endpoint | approved production endpoint |
-| `VITE_HCG_CONNECT_*` | empty | empty until approved | as approved |
+| `VITE_HCG_REPO_BASE_URL` | empty (default) | empty | empty (`https://repo.hakmicapitalgroup.com/`) |
 
 Safeguards enforced by the build:
 
@@ -80,7 +105,7 @@ X-Robots-Tag: noindex, nofollow                      (every non-production build
 Strict-Transport-Security: max-age=31536000          (production builds only)
 ```
 
-Fonts are self-hosted, with no third-party requests. Download buttons are navigations to Dropbox, so
+Fonts are self-hosted, with no third-party requests. Downloads are same-origin server responses, so
 they are not affected by `connect-src`.
 
 ## 5. Preview deployment (safe first step)
@@ -106,10 +131,10 @@ they are not affected by `connect-src`.
 
 ## 7. Auth callback changes requiring review
 
-If HCG Connect sign-in is approved later, central HCG must allow-list redirect URIs for each environment
-separately: localhost, preview and, only once live, `https://store.hakmicapitalgroup.com/...`. Never
-register the production callback before the domain serves this project. See
-[HCG-INTEGRATION.md](HCG-INTEGRATION.md) §5.
+HCG Store's server uses the redirect URI `<origin>/auth/callback`. Central HCG must allow-list it for
+each environment separately: `http://localhost:8787/auth/callback`, the preview host and, only once
+live, `https://store.hakmicapitalgroup.com/auth/callback`. Never register the production callback before
+the domain serves this project. See [HCG-INTEGRATION.md](HCG-INTEGRATION.md) §4.
 
 ## 8. Rollback
 

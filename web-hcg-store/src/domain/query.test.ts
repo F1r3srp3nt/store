@@ -28,18 +28,19 @@ describe("search and filters (shipped catalogue)", () => {
   });
 
   it("filters by platform (including in-development/planned support)", () => {
-    expect(ids(c, q({ platforms: ["ios"] }))).toEqual(["hcg-cardx"]);
+    expect(ids(c, q({ platforms: ["ios"] })).sort()).toEqual(["hcg-cardx", "hcg-mail", "hcg-nexus", "hcg-sentinel", "hcg-terminal"]);
     expect(ids(c, q({ platforms: ["windows"] })).sort()).toEqual(["hcg-executable-maker", "hcg-mail"]);
     expect(ids(c, q({ platforms: ["android"] }))).toEqual([]);
   });
 
   it("filters by category", () => {
-    expect(ids(c, q({ category: "developer-tools" })).sort()).toEqual(["hcg-executable-maker", "hcg-reprompter", "hcg-terminal", "hcg-virtualisation"]);
+    expect(ids(c, q({ category: "developer-tools" })).sort()).toEqual(["hcg-executable-maker", "hcg-reprompter", "hcg-terminal"]);
+    expect(ids(c, q({ category: "security" }))).toEqual(["hcg-sentinel"]);
   });
 
   it("filters by release availability", () => {
-    expect(ids(c, q({ availability: "downloadable" }))).toEqual([]);
-    expect(ids(c, q({ availability: "no-download" }))).toHaveLength(c.products.length);
+    expect(ids(c, q({ availability: "released" }))).toEqual([]);
+    expect(ids(c, q({ availability: "coming-soon" }))).toHaveLength(c.products.length);
   });
 
   it("combines filters", () => {
@@ -49,19 +50,19 @@ describe("search and filters (shipped catalogue)", () => {
 
 describe("availability filter with releases (fixture)", () => {
   const c = fixtureCatalogue();
-  it("separates downloadable products from the rest", () => {
-    expect(ids(c, q({ availability: "downloadable" })).sort()).toEqual(["fixture-orbit-notes", "fixture-pocket-relay"]);
-    expect(ids(c, q({ availability: "no-download" })).sort()).toEqual(["fixture-nebula-pad", "fixture-signal-desk"]);
+  it("separates released products from coming-soon ones", () => {
+    expect(ids(c, q({ availability: "released" })).sort()).toEqual(["fixture-orbit-notes", "fixture-pocket-relay", "fixture-quasar-shell", "fixture-signal-desk"]);
+    expect(ids(c, q({ availability: "coming-soon" }))).toEqual(["fixture-nebula-pad"]);
   });
-  it("lists downloadable products before others when not searching", () => {
+  it("lists released products before coming-soon ones when not searching", () => {
     const order = ids(c, EMPTY_QUERY);
-    expect(order.slice(0, 2).sort()).toEqual(["fixture-orbit-notes", "fixture-pocket-relay"]);
+    expect(order[order.length - 1]).toBe("fixture-nebula-pad");
   });
 });
 
 describe("URL parameters", () => {
   it("round-trips a query", () => {
-    const query = q({ q: "mail", platforms: ["windows", "macos"], category: "communication", status: "in-development", availability: "no-download" });
+    const query = q({ q: "mail", platforms: ["windows", "macos"], category: "communication", status: "in-development", availability: "coming-soon" });
     expect(queryFromParams(paramsFromQuery(query))).toEqual(query);
   });
   it("ignores unknown or hostile values", () => {

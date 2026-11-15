@@ -5,6 +5,8 @@ import { defineConfig } from "@playwright/test";
  * security headers (including CSP) as the generated `_headers` file.
  *   - port 4173: the real catalogue (dist/)
  *   - port 4174: the clearly-labelled test fixture catalogue (dist-fixture/)
+ *   - port 4175: the HCG Store server in TEST mode serving dist-fixture/, with a mock HCG Connect
+ *     provider on 4176, TEST offers and private TEST files (server/test/e2e-server.ts)
  * Build both first: `npm run build && npm run build:fixture` (done by `npm run test:e2e:full`).
  */
 export default defineConfig({
@@ -22,5 +24,6 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
     },
+    { command: "npx tsx server/test/e2e-server.ts", url: "http://127.0.0.1:4175/api/v1/health", reuseExistingServer: false, timeout: 60_000 },
   ],
 });

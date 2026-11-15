@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { DOWNLOAD_PROVIDERS, DOWNLOAD_PROVIDER_IDS } from "../downloads/providers";
 import {
   ARTIFACT_FORMAT_IDS,
   CATEGORY_IDS,
   DEVELOPMENT_STATUS_IDS,
+  EDITION_CHANNEL_IDS,
+  IDENTIFIER_KIND_IDS,
   PLATFORM_IDS,
   PLATFORM_SUPPORT_IDS,
   RELEASE_CHANNEL_IDS,
@@ -58,6 +59,30 @@ export const PlatformEntrySchema = z
     }
   });
 
+/** A separately built edition or platform-specific build of a product, as declared by its development repository. */
+export const EditionSchema = z.strictObject({
+  id: kebab,
+  name: text,
+  summary: text,
+  platforms: z.array(z.enum(PLATFORM_IDS)).min(1),
+  /** Intended distribution channel. Never implies the edition is available there. */
+  channel: z.enum(EDITION_CHANNEL_IDS),
+  /** The development or release state of this edition, as stated by HCG. */
+  status: text,
+  /** Bundle identifiers and package identifiers declared in the edition's own build configuration. */
+  identifiers: z.array(z.strictObject({ kind: z.enum(IDENTIFIER_KIND_IDS), value: text })).default([]),
+  /** Package layouts (e.g. iphoneos-arm64 rootless) that the build tooling declares. Not a compatibility promise. */
+  layouts: z.array(z.strictObject({ architecture: text, label: text, note: text.nullable().default(null) })).default([]),
+  note: text.nullable().default(null),
+});
+
+/** Link from a Store product (or one of its editions) to its product page in HCG Repo. */
+export const HcgRepoLinkSchema = z.strictObject({
+  /** Product key in HCG Repo's config/products.toml; the page is <repo>/products/<key>/. */
+  key: kebab,
+  editionId: kebab.nullable().default(null),
+});
+
 export const ProductSchema = z.strictObject({
   /** Stable identifier. Never change it once published; use `slug` for URLs. */
   id: kebab,
@@ -83,6 +108,8 @@ export const ProductSchema = z.strictObject({
   }),
   /** Public notes about open questions (naming, scope, classification). */
   catalogueNotes: z.array(text).default([]),
+  editions: z.array(EditionSchema).default([]),
+  hcgRepo: z.array(HcgRepoLinkSchema).default([]),
 });
 
 export const ArtifactSchema = z
@@ -110,15 +137,16 @@ export const ArtifactSchema = z
         evidence: text.nullable().default(null),
       })
       .default({ status: "not-stated", evidence: null }),
-    download: z.strictObject({ provider: z.enum(DOWNLOAD_PROVIDER_IDS), url: z.string() }).nullable().default(null),
+    /** Edition this file belongs to, when the product has editions. */
+    editionId: kebab.nullable().default(null),
+    /**
+     * Files are delivered only by the HCG Store server after sign-in and an entitlement check
+     * (see docs/ACCESS.md). The public catalogue therefore never contains a download URL.
+     */
   })
   .superRefine((a, ctx) => {
     if ((a.signing.status === "signed" || a.signing.status === "notarized") && !a.signing.evidence) {
       ctx.addIssue({ code: "custom", path: ["signing", "evidence"], message: `Signing status "${a.signing.status}" requires evidence.` });
-    }
-    if (a.download) {
-      const r = DOWNLOAD_PROVIDERS[a.download.provider].resolve(a.download.url);
-      if (!r.ok) ctx.addIssue({ code: "custom", path: ["download", "url"], message: r.reason });
     }
   });
 
@@ -160,4 +188,6 @@ export type Media = z.infer<typeof MediaSchema>;
 export type PlatformEntry = z.infer<typeof PlatformEntrySchema>;
 export type Product = z.infer<typeof ProductSchema>;
 export type Artifact = z.infer<typeof ArtifactSchema>;
+export type Edition = z.infer<typeof EditionSchema>;
+export type HcgRepoLink = z.infer<typeof HcgRepoLinkSchema>;
 export type Release = z.infer<typeof ReleaseSchema>;

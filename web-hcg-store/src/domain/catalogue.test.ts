@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clone, raw, realCatalogue } from "../test/fixtures";
 import { validateCatalogue } from "./catalogue";
 
+/** Products with a development repository that states an accurate description and status. */
 const REQUESTED_NAMES = [
   "HCG LifeOS",
   "HCG Mail",
@@ -9,15 +10,12 @@ const REQUESTED_NAMES = [
   "HCG News",
   "HCG Executable Maker",
   "HCG RePrompter",
-  "HCG Studio",
   "HCG CardX",
   "HCG Terminal",
-  "HCG Virtualisation",
-  "HCG Jailbreak Directory",
-  "HCG Jailbreak Unleashed",
-  "HCG Office Suite",
-  "HCG Analytics & Measure",
-];
+  "HCG Nexus",
+  "HCG Sentinel",
+  "HCG Clarity",
+]
 
 describe("shipped catalogue", () => {
   const c = realCatalogue();
@@ -107,16 +105,45 @@ describe("catalogue validation errors", () => {
     expect(errorsOf(p, r)).toMatch(/releases\["fixture-orbit-notes-1-10-0"\]\.version: .*Semantic Versioning/);
   });
 
-  it("rejects signed/notarised claims without evidence, bad checksums and deceptive download links", () => {
+  it("rejects signed/notarised claims without evidence and bad checksums", () => {
     const { p, r } = base();
     const art = r.releases[1]!.artifacts[1]! as Record<string, unknown>;
     art.signing = { status: "signed", evidence: null };
     art.sha256 = "ABC";
-    (r.releases[1]!.artifacts[0]! as { download: { url: string } }).download.url = "https://www.dropbox.com.evil.example/scl/fi/a/b.zip?rlkey=x";
     const e = errorsOf(p, r);
     expect(e).toMatch(/requires evidence/);
     expect(e).toMatch(/SHA-256/);
-    expect(e).toMatch(/not a supported Dropbox host/);
+  });
+
+  it("rejects any download URL in the public catalogue (files are delivered only after sign-in)", () => {
+    const { p, r } = base();
+    (r.releases[1]!.artifacts[0]! as Record<string, unknown>).download = { provider: "dropbox", url: "https://www.dropbox.com/scl/fi/a/b.zip?rlkey=x&dl=0" };
+    (r.releases[1]!.artifacts[1]! as Record<string, unknown>).url = "https://example.com/file.dmg";
+    const e = errorsOf(p, r);
+    expect(e).toMatch(/download/);
+    expect(e).toMatch(/url/);
+  });
+
+  it("validates editions and HCG Repo mappings", () => {
+    const { p, r } = base();
+    const quasar = p.products.find((x) => x.id === "fixture-quasar-shell")!;
+    quasar.hcgRepo!.push({ key: "fixture-quasar-unleashed", editionId: "standard" });
+    quasar.hcgRepo!.push({ key: "other-key", editionId: "missing" });
+    quasar.editions![1]!.identifiers = [];
+    const e = errorsOf(p, r);
+    expect(e).toMatch(/Duplicate HCG Repo product key/);
+    expect(e).toMatch(/unknown edition "missing"/);
+    expect(e).toMatch(/jailbreak package but declares no package identifier/);
+  });
+
+  it("requires artifacts to name their edition when a product has several", () => {
+    const { p, r } = base();
+    const rel = r.releases.find((x) => x.productId === "fixture-quasar-shell")!;
+    (rel.artifacts[0] as { editionId: string | null }).editionId = null;
+    (rel.artifacts[1] as { editionId: string | null }).editionId = "nope";
+    const e = errorsOf(p, r);
+    expect(e).toMatch(/must name its edition/);
+    expect(e).toMatch(/unknown edition "nope"/);
   });
 
   it("rejects architectures/minimum OS on unconfirmed platforms (no guessing)", () => {

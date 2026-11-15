@@ -1,27 +1,82 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccountProvider } from "./account/account-context";
+import type { EditionAccess } from "./account/api";
 import { AppRoutes } from "./App";
 import { CatalogueStateProvider } from "./app/catalogue-context";
 import type { Catalogue } from "./domain/catalogue";
 import { fixtureCatalogue, realCatalogue, staticProvider } from "./test/fixtures";
 
+/**
+ * Stand-in for the HCG Store server. `null` = no server (static host): every request fails. The
+ * real server's behaviour is tested in server/test; these tests check what the UI shows for each
+ * answer, and that the UI never invents ownership, prices or downloads on its own.
+ */
+type ServerStub = null | {
+  session: { configured: boolean; signedIn: boolean; user?: { sub: string; email: string; name: string } };
+  access?: (slug: string) => EditionAccess[];
+  library?: unknown;
+};
+let server: ServerStub = null;
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+beforeEach(() => {
+  server = null;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string) => {
+      if (!server) throw new TypeError("Failed to fetch");
+      const path = String(input);
+      if (path.endsWith("/api/v1/session")) return json({ user: null, ...server.session });
+      if (path.endsWith("/api/v1/health"))
+        return json({ status: "ok", mode: "test", hcgConnect: "configured", entitlementAuthority: "test-ledger", payments: "test-mode", protectedDownloads: "disabled" });
+      const m = /\/api\/v1\/products\/([a-z0-9-]+)\/access$/.exec(path);
+      if (m) return json({ productId: m[1], signedIn: server.session.signedIn, editions: server.access?.(m[1]!) ?? [] });
+      if (path.endsWith("/api/v1/library")) return server.library ? json(server.library) : json({ error: { code: "sign_in_required", message: "Sign in" } }, 401);
+      return json({ error: { code: "not_found", message: "Not found." } }, 404);
+    }),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
+
+function access(over: Partial<EditionAccess> & { editionId: string | null }): EditionAccess {
+  return {
+    productId: "x",
+    state: "signed-out",
+    signedIn: false,
+    owned: false,
+    offers: [],
+    checkoutReady: false,
+    checkoutUnavailableReason: "Coming soon. Not for sale before release.",
+    downloadsAvailable: false,
+    downloadsMessage: "Downloads are not available yet.",
+    artifacts: [],
+    message: null,
+    ...over,
+  };
+}
+
 function renderAt(path: string, catalogue: Catalogue = realCatalogue()) {
   return render(
     <CatalogueStateProvider provider={staticProvider(catalogue)}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
+      <AccountProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AccountProvider>
     </CatalogueStateProvider>,
   );
 }
 
-/** Things HCG Store must never show: fabricated stats, ratings, prices, purchase or install claims. */
-const FORBIDDEN = [/\b\d[\d,.]*\s*(downloads|installs|users)\b/i, /\brating/i, /\breviews?\b/i, /★/, /[$€£]\s?\d/, /\bbuy\b/i, /add to cart/i, /successfully installed/i, /signed in as/i, /live activity/i];
+/** Things HCG Store must never show unless the server supplied them: fabricated stats, ratings, prices, install claims. */
+const FORBIDDEN = [/\b\d[\d,.]*\s*(downloads|installs|users)\b/i, /\brating/i, /\breviews\b|\d\s*reviews?\b|\bwrite a review\b/i, /★/, /[$€£]\s?\d/, /add to cart/i, /successfully installed/i, /signed in as/i, /live activity/i];
 const expectNoFabrication = (container: HTMLElement) => {
   const text = container.textContent ?? "";
   for (const re of FORBIDDEN) expect(text).not.toMatch(re);
+  for (const b of screen.queryAllByRole("button", { name: "Buy Product" })) expect(b).toBeDisabled();
+  expect(screen.queryByRole("link", { name: /^download/i })).toBeNull();
 };
 
 describe("store pages with the shipped catalogue", () => {
@@ -29,10 +84,10 @@ describe("store pages with the shipped catalogue", () => {
     const { container } = renderAt("/");
     expect(await screen.findByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
     const stats = screen.getByLabelText("Catalogue status");
-    expect(within(stats).getByText("Public downloads").nextSibling).toHaveTextContent("0");
-    expect(within(stats).getByText("Products listed").nextSibling).toHaveTextContent("14");
-    expect(screen.queryByRole("heading", { name: "Available downloads" })).toBeNull();
-    expect(screen.getByText(/No public downloads have been published yet/)).toBeInTheDocument();
+    expect(within(stats).getByText("Released").nextSibling).toHaveTextContent("0");
+    expect(within(stats).getByText("Products listed").nextSibling).toHaveTextContent("11");
+    expect(screen.queryByRole("heading", { name: "Released products" })).toBeNull();
+    expect(screen.getByText(/No product has an approved release yet/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "In development" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "HCG Development Tools" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
@@ -51,11 +106,13 @@ describe("store pages with the shipped catalogue", () => {
     expect(screen.getByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
   });
 
-  it("product page shows 'No public release supplied' and no download button", async () => {
+  it("product page shows 'Coming soon', editions, and 'Downloads are not available yet.'", async () => {
     const { container } = renderAt("/apps/hcg-mail");
     expect(await screen.findByRole("heading", { level: 1, name: "HCG Mail" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "No public release supplied" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^download/i })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Coming soon" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Windows desktop" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "iPhone and iPad" })).toBeInTheDocument();
+    expect(screen.getAllByText("Downloads are not available yet.").length).toBeGreaterThan(0);
     expect(screen.getByText(/Development activity does not mean a downloadable build exists/)).toBeInTheDocument();
     expectNoFabrication(container);
   });
@@ -69,7 +126,7 @@ describe("store pages with the shipped catalogue", () => {
 
   it("release history shows an empty state", async () => {
     renderAt("/apps/hcg-lifeos/releases");
-    expect(await screen.findByRole("heading", { name: "No public release supplied" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Coming soon" })).toBeInTheDocument();
   });
 
   it("unknown product and unknown route show not-found pages", async () => {
@@ -77,10 +134,10 @@ describe("store pages with the shipped catalogue", () => {
     expect(await screen.findByRole("heading", { name: "Product not found" })).toBeInTheDocument();
   });
 
-  it("account page shows 'HCG Connect not configured', a disabled sign-in and no simulated session", async () => {
+  it("account page without the account service: disabled sign-in and no simulated session", async () => {
     const { container } = renderAt("/account");
     expect(await screen.findByRole("heading", { level: 1, name: /Account & Connections/ })).toBeInTheDocument();
-    expect(screen.getAllByText(/HCG Connect not configured/).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Account service not available on this site/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in with HCG Connect" })).toBeDisabled();
     expect(screen.getByText(/Provisional local data/)).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/signed in as|welcome back|owner access granted/i);
@@ -89,17 +146,17 @@ describe("store pages with the shipped catalogue", () => {
   it("browse filters work and sync with the URL", async () => {
     const user = userEvent.setup();
     renderAt("/apps?platform=ios");
-    expect(await screen.findByText("1 of 14 products match")).toBeInTheDocument();
+    expect(await screen.findByText("5 of 11 products match")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "HCG CardX" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "iOS" }));
-    expect(screen.getByText("14 products")).toBeInTheDocument();
+    expect(screen.getByText("11 products")).toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search" }), "imap");
-    expect(screen.getByText("1 of 14 products match")).toBeInTheDocument();
+    expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
-    await user.click(screen.getByRole("radio", { name: "Download available" }));
+    await user.click(screen.getByRole("radio", { name: "Release approved" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
-    expect(screen.getByText("14 products")).toBeInTheDocument();
+    expect(screen.getByText("11 products")).toBeInTheDocument();
   });
 
   it("getting started never tells people to disable security and explains IPA installs", async () => {
@@ -110,25 +167,113 @@ describe("store pages with the shipped catalogue", () => {
   });
 });
 
+describe("HCG Repo links and editions (shipped catalogue)", () => {
+  it("links each jailbreak edition to its HCG Repo product page and keeps checkout disabled", async () => {
+    const { container } = renderAt("/apps/hcg-terminal?edition=unleashed");
+    await screen.findByRole("heading", { level: 1, name: "HCG Terminal" });
+    const unleashed = screen.getByRole("heading", { name: "HCG Terminal Unleashed" }).closest("li")!;
+    expect(unleashed).toHaveClass("edition--selected");
+    expect(within(unleashed).getByRole("link", { name: /View on HCG Repo/ })).toHaveAttribute(
+      "href",
+      "https://repo.hakmicapitalgroup.com/products/hcg-terminal-unleashed/",
+    );
+    expect(within(unleashed).getAllByText("com.hakmicapitalgroup.hcgterminal.unleashed", { selector: "dd" })).toHaveLength(2);
+    const standard = screen.getByRole("heading", { name: "HCG Terminal (standard)" }).closest("li")!;
+    expect(within(standard).queryByRole("link", { name: /HCG Repo/ })).toBeNull();
+    expectNoFabrication(container);
+  });
+
+  it("links Nexus and Sentinel to their HCG Repo pages", async () => {
+    renderAt("/apps/hcg-nexus");
+    await screen.findByRole("heading", { level: 1, name: "HCG Nexus" });
+    expect(screen.getByRole("link", { name: /View on HCG Repo/ })).toHaveAttribute("href", "https://repo.hakmicapitalgroup.com/products/hcg-nexus/");
+  });
+});
+
+describe("account and ownership (stubbed HCG Store server)", () => {
+  const ALICE = { sub: "u1", email: "alice@example.test", name: "Alice" };
+
+  it("restores a signed-in session and shows the library", async () => {
+    server = {
+      session: { configured: true, signedIn: true, user: ALICE },
+      library: {
+        owned: [{ productId: "hcg-terminal", slug: "hcg-terminal", name: "HCG Terminal", editionId: "unleashed", editionName: "HCG Terminal Unleashed", state: "downloads-not-available" }],
+        purchases: [],
+        ownershipUnavailable: false,
+        downloadsMessage: "Downloads are not available yet.",
+      },
+    };
+    renderAt("/library");
+    expect(await screen.findByRole("link", { name: "HCG Terminal Unleashed" })).toBeInTheDocument();
+    expect(screen.getByText("Owned")).toBeInTheDocument();
+    expect(screen.getByText("Downloads are not available yet.")).toBeInTheDocument();
+  });
+
+  it("asks signed-out visitors to sign in for the library", async () => {
+    server = { session: { configured: true, signedIn: false } };
+    renderAt("/library");
+    expect(await screen.findByRole("link", { name: "Sign in with HCG Connect" })).toHaveAttribute("href", "/auth/login?return_to=%2Flibrary");
+  });
+
+  it("shows Owned and 'Get from HCG Repo' only when the server says the edition is owned", async () => {
+    server = {
+      session: { configured: true, signedIn: true, user: ALICE },
+      access: () => [
+        access({ editionId: "standard", state: "not-for-sale", signedIn: true }),
+        access({ editionId: "unleashed", state: "owned", signedIn: true, owned: true }),
+      ],
+    };
+    renderAt("/apps/hcg-terminal");
+    const get = await screen.findByRole("link", { name: /Get from HCG Repo/ });
+    expect(get).toHaveAttribute("href", "https://repo.hakmicapitalgroup.com/products/hcg-terminal-unleashed/");
+    const unleashed = get.closest("li")!;
+    expect(within(unleashed).getByText("Owned")).toBeInTheDocument();
+    expect(within(unleashed).getByText("Downloads are not available yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^download/i })).toBeNull();
+  });
+
+  it("shows a server-supplied test price and an enabled Buy button only when checkout is ready", async () => {
+    server = {
+      session: { configured: true, signedIn: true, user: ALICE },
+      access: () => [
+        access({
+          editionId: null,
+          state: "not-owned",
+          signedIn: true,
+          checkoutReady: true,
+          checkoutUnavailableReason: null,
+          offers: [{ id: "o1", title: "T", kind: "one-time", interval: null, currency: "EUR", unitAmount: 999, grants: ["default"], testOnly: true }],
+        }),
+      ],
+    };
+    renderAt("/apps/fixture-nebula-pad", fixtureCatalogue());
+    expect(await screen.findByRole("button", { name: "Buy Product" })).toBeEnabled();
+    expect(screen.getByText("€9.99")).toBeInTheDocument();
+    expect(screen.getByText("Test mode")).toBeInTheDocument();
+  });
+
+  it("never shows an enabled Buy button or price without the server, and offers sign-in when signed out", async () => {
+    server = { session: { configured: true, signedIn: false }, access: () => [access({ editionId: null })] };
+    const { container } = renderAt("/apps/hcg-sentinel");
+    expect(await screen.findByRole("link", { name: /Sign in to check access/ })).toBeInTheDocument();
+    expectNoFabrication(container);
+  });
+
+  it("the checkout return page never claims success by itself", async () => {
+    server = { session: { configured: true, signedIn: true, user: ALICE } };
+    renderAt("/checkout/return?checkout=chk_forged&status=success");
+    expect(await screen.findByRole("heading", { level: 1, name: "Checkout not found" })).toBeInTheDocument();
+    expect(screen.getByText(/Nothing was added to your account/)).toBeInTheDocument();
+  });
+});
+
 describe("store pages with release data (test fixture)", () => {
-  it("offers Dropbox downloads as plain links with dl=1, and reports only 'requested'", async () => {
+  it("shows release details without any download link; files require sign-in", async () => {
     renderAt("/apps/fixture-orbit-notes", fixtureCatalogue());
     await screen.findByRole("heading", { level: 1, name: "Fixture Orbit Notes" });
-    const links = screen.getAllByRole("link", { name: /^Download/ });
-    expect(links).toHaveLength(2);
-    for (const a of links) {
-      const href = new URL(a.getAttribute("href")!);
-      expect(href.hostname).toBe("www.dropbox.com");
-      expect(href.searchParams.get("dl")).toBe("1");
-      expect(href.searchParams.get("rlkey")).toBeTruthy();
-      expect(a).not.toHaveAttribute("download");
-      expect(a.getAttribute("rel")).toContain("noopener");
-    }
-    // Prevent jsdom navigation; we only check the status message.
-    links[0]!.addEventListener("click", (e) => e.preventDefault());
-    await act(async () => fireEvent.click(links[0]!));
-    const status = screen.getByText(/Download requested from Dropbox/);
-    expect(status.textContent).toMatch(/cannot confirm it finished or that anything was installed/);
+    expect(screen.queryByRole("link", { name: /^Download/ })).toBeNull();
+    expect(document.body.innerHTML).not.toMatch(/dropbox\.com/);
+    expect(screen.getAllByText(/Delivered only to signed-in HCG accounts with access/).length).toBe(2);
     expect(screen.getByRole("heading", { name: "Version 1.10.0" })).toBeInTheDocument();
     expect(screen.getByText("Signed and notarised (stated by HCG)")).toBeInTheDocument();
     expect(screen.getAllByText(/does not verify signatures or file safety/).length).toBe(2);
@@ -136,7 +281,7 @@ describe("store pages with release data (test fixture)", () => {
 
   it("shows release info without a download when no artifact exists", async () => {
     renderAt("/apps/fixture-signal-desk", fixtureCatalogue());
-    expect(await screen.findByText(/published release information but no downloadable file/)).toBeInTheDocument();
+    expect(await screen.findByText(/published release information but no file for this release/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^Download/ })).toBeNull();
   });
 
@@ -149,7 +294,7 @@ describe("store pages with release data (test fixture)", () => {
     expect(screen.getByText(/Concept artwork — not the working app/)).toBeInTheDocument();
   });
 
-  it("release history distinguishes current, previous and withdrawn releases and disables withdrawn downloads", async () => {
+  it("release history distinguishes current, previous and withdrawn releases and never delivers withdrawn ones", async () => {
     renderAt("/apps/fixture-orbit-notes/releases", fixtureCatalogue());
     await screen.findByRole("heading", { level: 1, name: "Fixture Orbit Notes" });
     const versions = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
@@ -157,7 +302,14 @@ describe("store pages with release data (test fixture)", () => {
     expect(screen.getByText("Current approved release")).toBeInTheDocument();
     expect(screen.getAllByText("Previous release")).toHaveLength(2);
     expect(screen.getByText("Withdrawn")).toBeInTheDocument();
-    expect(screen.getByText("Withdrawn — download disabled.")).toBeInTheDocument();
+    expect(screen.getByText(/Withdrawn — not delivered/)).toBeInTheDocument();
+  });
+
+  it("gives jailbreak-package guidance (not Linux guidance) for iOS .deb files", async () => {
+    renderAt("/apps/fixture-quasar-shell", fixtureCatalogue());
+    await screen.findByRole("heading", { level: 1, name: "Fixture Quasar Shell" });
+    expect(screen.getByText("How to install: Jailbreak package (.deb)")).toBeInTheDocument();
+    expect(screen.queryByText("How to install: Linux package")).toBeNull();
   });
 
   it("explains that an IPA download does not install the app", async () => {

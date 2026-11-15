@@ -1,14 +1,17 @@
 import type { Catalogue } from "./catalogue";
-import type { Artifact, Product, Release } from "./schema";
+import type { Product, Release } from "./schema";
 import { compareSemver } from "./version";
-import { DOWNLOAD_PROVIDERS } from "../downloads/providers";
 
-export type Availability = "downloadable" | "release-info-only" | "none";
+/**
+ * Public release availability. "released" means HCG has designated an approved current release.
+ * Under the current release policy every file is delivered only after sign-in and a server-side
+ * access check, so "released" never means "publicly downloadable".
+ */
+export type Availability = "released" | "coming-soon";
 
 export const AVAILABILITY_LABELS: Record<Availability, string> = {
-  downloadable: "Download available",
-  "release-info-only": "Release announced — no download supplied",
-  none: "No public release supplied",
+  released: "Release approved",
+  "coming-soon": "Coming soon",
 };
 
 export function findProductBySlug(c: Catalogue, slug: string): Product | undefined {
@@ -44,26 +47,11 @@ export const RELEASE_ROLE_LABELS: Record<ReleaseRole, string> = {
   withdrawn: "Withdrawn",
 };
 
-export interface ResolvedDownload {
-  artifact: Artifact;
-  href: string;
-  providerLabel: string;
-  disclosure: string;
-}
-
-export function resolveDownload(release: Release, artifact: Artifact): ResolvedDownload | null {
-  if (release.status !== "approved" || !artifact.download) return null;
-  const provider = DOWNLOAD_PROVIDERS[artifact.download.provider];
-  const r = provider.resolve(artifact.download.url);
-  return r.ok ? { artifact, href: r.href, providerLabel: provider.label, disclosure: provider.disclosure } : null;
-}
-
-export function downloadableArtifacts(release: Release): ResolvedDownload[] {
-  return release.artifacts.map((a) => resolveDownload(release, a)).filter((d): d is ResolvedDownload => d !== null);
-}
-
 export function availability(c: Catalogue, product: Product): Availability {
-  const cur = currentRelease(c, product);
-  if (!cur) return "none";
-  return downloadableArtifacts(cur).length > 0 ? "downloadable" : "release-info-only";
+  return currentRelease(c, product) ? "released" : "coming-soon";
+}
+
+/** HCG Repo product page for a Store product, optionally for one edition. */
+export function hcgRepoLinks(product: Product, editionId?: string | null) {
+  return product.hcgRepo.filter((l) => editionId === undefined || l.editionId === null || l.editionId === editionId);
 }

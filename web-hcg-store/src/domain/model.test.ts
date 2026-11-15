@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixtureCatalogue, realCatalogue } from "../test/fixtures";
-import { availability, currentRelease, downloadableArtifacts, findProductBySlug, releaseHistory, releaseRole } from "./model";
+import { availability, currentRelease, findProductBySlug, hcgRepoLinks, releaseHistory, releaseRole } from "./model";
 
 describe("release model", () => {
   const c = fixtureCatalogue();
@@ -27,32 +27,28 @@ describe("release model", () => {
     });
   });
 
-  it("never offers downloads for withdrawn releases", () => {
-    const withdrawn = releaseHistory(c, orbit).find((r) => r.status === "withdrawn")!;
-    expect(withdrawn.artifacts.length).toBeGreaterThan(0);
-    expect(downloadableArtifacts(withdrawn)).toHaveLength(0);
-  });
-
-  it("produces dl=1 Dropbox URLs that keep rlkey", () => {
-    const d = downloadableArtifacts(currentRelease(c, orbit)!);
-    expect(d).toHaveLength(2);
-    for (const x of d) {
-      const u = new URL(x.href);
-      expect(u.hostname).toBe("www.dropbox.com");
-      expect(u.searchParams.get("dl")).toBe("1");
-      expect(u.searchParams.get("rlkey")).toMatch(/^FIXTUREONLY/);
-      expect(u.searchParams.has("raw")).toBe(false);
-    }
+  it("never contains download links: files are delivered only by the server", () => {
+    for (const r of releaseHistory(c, orbit)) for (const a of r.artifacts) expect(a).not.toHaveProperty("download");
   });
 
   it("derives availability separately from development status", () => {
-    expect(availability(c, orbit)).toBe("downloadable");
-    expect(availability(c, findProductBySlug(c, "fixture-signal-desk")!)).toBe("release-info-only");
-    expect(availability(c, findProductBySlug(c, "fixture-nebula-pad")!)).toBe("none");
+    expect(availability(c, orbit)).toBe("released");
+    expect(availability(c, findProductBySlug(c, "fixture-signal-desk")!)).toBe("released");
+    expect(availability(c, findProductBySlug(c, "fixture-nebula-pad")!)).toBe("coming-soon");
   });
 
-  it("reports 'none' for every product in the shipped catalogue", () => {
+  it("reports 'coming-soon' for every product in the shipped catalogue", () => {
     const real = realCatalogue();
-    for (const p of real.products) expect(availability(real, p)).toBe("none");
+    for (const p of real.products) expect(availability(real, p)).toBe("coming-soon");
+  });
+
+  it("maps editions to their HCG Repo product pages explicitly", () => {
+    const real = realCatalogue();
+    const repo = (slug: string, edition?: string | null) => hcgRepoLinks(findProductBySlug(real, slug)!, edition).map((l) => l.key);
+    expect(repo("hcg-terminal", "unleashed")).toEqual(["hcg-terminal-unleashed"]);
+    expect(repo("hcg-terminal", "standard")).toEqual([]);
+    expect(repo("hcg-nexus", "jailbreak")).toEqual(["hcg-nexus"]);
+    expect(repo("hcg-sentinel")).toEqual(["hcg-sentinel"]);
+    expect(repo("hcg-executable-maker")).toEqual([]);
   });
 });

@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Catalogue } from "../domain/catalogue";
 import { installGuidance } from "../domain/install-guidance";
-import { resolveDownload, releaseHistory, RELEASE_ROLE_LABELS, releaseRole, currentRelease } from "../domain/model";
+import { releaseHistory, RELEASE_ROLE_LABELS, releaseRole, currentRelease } from "../domain/model";
 import type { Artifact, Product, Release } from "../domain/schema";
 import { ARTIFACT_FORMATS, PLATFORMS, SIGNING_STATUS } from "../domain/taxonomy";
 import { formatBytes, formatIsoDate } from "../lib/format";
 import { ChannelBadge } from "./Badges";
-import { IconCheck, IconCopy, IconDownload, IconInfo, IconShield } from "./Icons";
+import { IconCheck, IconCopy, IconInfo, IconLock, IconShield } from "./Icons";
 
 export function ReleaseMeta({ release }: { release: Release }) {
   return (
@@ -99,36 +99,27 @@ export function SigningStatement({ artifact }: { artifact: Artifact }) {
   );
 }
 
-/** A normal link navigation to the provider. No `download` attribute, no fetching into memory. */
-function DownloadAction({ release, artifact }: { release: Release; artifact: Artifact }) {
-  const [requested, setRequested] = useState(false);
-  const resolved = resolveDownload(release, artifact);
-  if (!resolved) {
-    return (
-      <p className="unavailable">
-        <IconInfo className="inline-icon" />
-        {release.status === "withdrawn" ? "Withdrawn — download disabled." : "No download link supplied for this file."}
-      </p>
-    );
-  }
+/** Files are never linked publicly. Owners download them from the access panel after sign-in. */
+function DeliveryNote({ release }: { release: Release }) {
   return (
-    <div className="download">
-      <a className="button button--primary" href={resolved.href} rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={() => setRequested(true)}>
-        <IconDownload /> Download {ARTIFACT_FORMATS[artifact.format].split(" (")[0]}
-        <span className="visually-hidden"> {artifact.fileName} from {resolved.providerLabel}</span>
-      </a>
-      <p className="fine">{resolved.disclosure}</p>
-      <p role="status" aria-live="polite" className="download__status">
-        {requested
-          ? `Download requested from ${resolved.providerLabel}. Your browser handles the transfer; HCG Store cannot confirm it finished or that anything was installed.`
-          : ""}
-      </p>
-    </div>
+    <p className="unavailable">
+      {release.status === "withdrawn" ? (
+        <>
+          <IconInfo className="inline-icon" /> Withdrawn — not delivered.
+        </>
+      ) : (
+        <>
+          <IconLock className="inline-icon" /> Delivered only to signed-in HCG accounts with access. {DOWNLOADS_NOT_AVAILABLE_HINT}
+        </>
+      )}
+    </p>
   );
 }
 
+const DOWNLOADS_NOT_AVAILABLE_HINT = "Owners see their downloads in the panel above when downloads are available.";
+
 export function ArtifactCard({ release, artifact, showGuidance = true }: { release: Release; artifact: Artifact; showGuidance?: boolean }) {
-  const guidance = installGuidance(artifact.format);
+  const guidance = installGuidance(artifact.format, artifact.platform);
   return (
     <section className="artifact" aria-label={`${PLATFORMS[artifact.platform].label} file ${artifact.fileName}`}>
       <header className="artifact__head">
@@ -157,7 +148,7 @@ export function ArtifactCard({ release, artifact, showGuidance = true }: { relea
         </div>
       </dl>
       <SigningStatement artifact={artifact} />
-      <DownloadAction release={release} artifact={artifact} />
+      <DeliveryNote release={release} />
       {showGuidance && (
         <details className="guidance">
           <summary>How to install: {guidance.title}</summary>
@@ -185,7 +176,7 @@ export function ReleasePanel({ catalogue, product }: { catalogue: Catalogue; pro
     <aside className="release-panel" aria-labelledby="release-panel-title">
       <div className="release-panel__head">
         <p className="eyebrow">Release information</p>
-        <h2 id="release-panel-title">{cur ? `Version ${cur.version}` : "No public release supplied"}</h2>
+        <h2 id="release-panel-title">{cur ? `Version ${cur.version}` : "Coming soon"}</h2>
         {cur && <p className="release-panel__role">{RELEASE_ROLE_LABELS.current}</p>}
       </div>
 
@@ -200,14 +191,14 @@ export function ReleasePanel({ catalogue, product }: { catalogue: Catalogue; pro
             </div>
           ) : (
             <p className="unavailable">
-              <IconInfo className="inline-icon" /> HCG has published release information but no downloadable file for this release.
+              <IconInfo className="inline-icon" /> HCG has published release information but no file for this release.
             </p>
           )}
           <ReleaseNotes release={cur} />
         </>
       ) : (
         <div className="release-panel__empty">
-          <p>HCG has not supplied an approved public release of {product.name} to HCG Store.</p>
+          <p>HCG has not approved a release of {product.name} for HCG Store yet.</p>
           <p className="muted">Development activity does not mean a downloadable build exists. Releases appear here only after HCG approves them.</p>
         </div>
       )}

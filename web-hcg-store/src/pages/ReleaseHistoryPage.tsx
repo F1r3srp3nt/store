@@ -44,7 +44,7 @@ export function ReleaseHistoryPage() {
                 </ol>
               ) : (
                 <div className="empty">
-                  <h2>No public release supplied</h2>
+                  <h2>Coming soon</h2>
                   <p>HCG has not published any release of {product.name} to HCG Store yet.</p>
                   <Link className="button button--ghost" to={`/apps/${product.slug}`}>
                     Back to {product.name}

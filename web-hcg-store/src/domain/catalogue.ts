@@ -1,5 +1,4 @@
 import type { z } from "zod";
-import { DOWNLOAD_PROVIDERS } from "../downloads/providers";
 import { ProductsDocumentSchema, ReleasesDocumentSchema, type Artifact, type Product, type Release } from "./schema";
 import { compareSemver } from "./version";
 
@@ -64,8 +63,23 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
     const product = byId.get(rel.productId);
     if (!product) errors.push(`Release "${rel.id}" references unknown product "${rel.productId}".`);
     dupes(rel.artifacts.map((a) => a.id), `artifact id in release "${rel.id}"`);
-    for (const a of rel.artifacts) checkArtifactWarnings(rel, a, warnings);
+    for (const a of rel.artifacts) {
+      checkArtifactWarnings(rel, a, warnings);
+      if (product && a.editionId && !product.editions.some((e) => e.id === a.editionId))
+        errors.push(`Release "${rel.id}" artifact "${a.id}" references unknown edition "${a.editionId}" of "${product.id}".`);
+      if (product && product.editions.length > 1 && !a.editionId)
+        errors.push(`Release "${rel.id}" artifact "${a.id}" must name its edition: "${product.id}" has several editions.`);
+    }
   }
+
+  dupes(
+    products.flatMap((x) => x.hcgRepo.map((l) => l.key)),
+    "HCG Repo product key",
+  );
+  dupes(
+    products.flatMap((x) => x.editions.flatMap((e) => e.identifiers.filter((i) => i.kind !== "bundle-id").map((i) => `${i.kind}:${i.value}`))),
+    "edition package identifier",
+  );
 
   for (const product of products) {
     const versions = releases.filter((x) => x.productId === product.id).map((x) => x.version);
@@ -83,6 +97,15 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
       else if (cur.status !== "approved")
         errors.push(`Product "${product.id}" currentReleaseId points to withdrawn release "${cur.id}".`);
     }
+    dupes(product.editions.map((e) => e.id), `edition id in product "${product.id}"`);
+    for (const link of product.hcgRepo) {
+      if (link.editionId && !product.editions.some((e) => e.id === link.editionId))
+        errors.push(`Product "${product.id}" HCG Repo link "${link.key}" references unknown edition "${link.editionId}".`);
+    }
+    for (const e of product.editions) {
+      if (e.channel === "jailbreak-package" && !e.identifiers.some((i) => i.kind === "debian-package"))
+        errors.push(`Product "${product.id}" edition "${e.id}" is a jailbreak package but declares no package identifier.`);
+    }
     if (product.registry.status === "central" && !product.registry.centralId) {
       errors.push(`Product "${product.id}" is marked central but has no centralId.`);
     }
@@ -93,11 +116,6 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
 
 function checkArtifactWarnings(rel: Release, a: Artifact, warnings: string[]) {
   const where = `Release "${rel.id}" artifact "${a.id}"`;
-  if (!a.download) return;
-  const resolved = DOWNLOAD_PROVIDERS[a.download.provider].resolve(a.download.url);
-  if (resolved.ok && resolved.fileName !== a.fileName) {
-    warnings.push(`${where}: link file name "${resolved.fileName}" differs from fileName "${a.fileName}".`);
-  }
   if (!a.sha256) warnings.push(`${where}: no SHA-256 checksum published.`);
   if (!a.sizeBytes) warnings.push(`${where}: file size not stated.`);
 }

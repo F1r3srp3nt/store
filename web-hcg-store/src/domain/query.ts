@@ -13,7 +13,7 @@ import {
   type PlatformId,
 } from "./taxonomy";
 
-export type AvailabilityFilter = "any" | "downloadable" | "no-download";
+export type AvailabilityFilter = "any" | "released" | "coming-soon";
 
 export interface CatalogueQuery {
   q: string;
@@ -63,8 +63,7 @@ export const matchesPlatforms = (p: Product, platforms: PlatformId[]): boolean =
 
 export function matchesAvailability(a: Availability, f: AvailabilityFilter): boolean {
   if (f === "any") return true;
-  if (f === "downloadable") return a === "downloadable";
-  return a !== "downloadable";
+  return a === f;
 }
 
 export function filterProducts(c: Catalogue, query: CatalogueQuery): Product[] {
@@ -83,7 +82,7 @@ export function filterProducts(c: Catalogue, query: CatalogueQuery): Product[] {
     .sort(
       (a, b) =>
         b.nameHits - a.nameHits ||
-        Number(b.avail === "downloadable") - Number(a.avail === "downloadable") ||
+        Number(b.avail === "released") - Number(a.avail === "released") ||
         a.p.name.localeCompare(b.p.name, "en"),
     )
     .map((x) => x.p);
@@ -103,7 +102,7 @@ export function queryFromParams(params: URLSearchParams): CatalogueQuery {
     platforms: [...new Set(platforms)],
     category: category && (CATEGORY_IDS as string[]).includes(category) ? (category as CategoryId) : null,
     status: status && (DEVELOPMENT_STATUS_IDS as string[]).includes(status) ? (status as DevelopmentStatus) : null,
-    availability: avail === "downloadable" || avail === "no-download" ? avail : "any",
+    availability: avail === "released" || avail === "coming-soon" ? avail : "any",
   };
 }
 

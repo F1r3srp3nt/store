@@ -33,7 +33,7 @@ The production build (`npm run build`) also refuses to build an invalid catalogu
 | `id` | **Stable** identifier, lowercase kebab-case. Never change it after publication; other systems may reference it. |
 | `slug` | URL segment (`/apps/<slug>`). Normally equal to `id`. |
 | `registry.status` | `provisional` until HCG ERP assigns an ID; then `central` with `registry.centralId` set. |
-| `registry.references` | Cross-references to other HCG systems (e.g. LifeOS realm keys). **Shipped publicly:** never list private repositories or internal URLs. |
+| `registry.references` | Cross-references to other HCG systems (e.g. LifeOS realms, which are not product IDs). **Shipped publicly:** never list private repositories or internal URLs. |
 | `developmentStatus` | Development progress: `in-development`, `planning`, `testing`, `maintained`, `paused` or `unknown`. **Independent of releases.** |
 | `platforms[].support` | `confirmed` (an approved release supports it), `in-development` or `planned`. Architectures and minimum OS may be stated **only** for `confirmed`. |
 | `media[]` | `screenshot` (a real capture of the software) or `concept` (artwork, shown as "Concept artwork, not the working app"). `provenance` is required. |
@@ -117,7 +117,7 @@ provisionally from the product names, and cross-checked against what was availab
          "sha256": "<64 lowercase hex characters>",
          "minimumOs": null,
          "signing": { "status": "unsigned", "evidence": null },
-         "download": { "provider": "dropbox", "url": "<real Dropbox shared-file link>" }
+         "editionId": null
        }
      ]
    }
@@ -131,38 +131,36 @@ provisionally from the product names, and cross-checked against what was availab
      reference to `codesign --verify` / `spctl -a` / `Get-AuthenticodeSignature` output. The site still
      shows it as "stated by HCG". It never says "verified" or "safe".
    - `sha256` must be the real checksum of the exact file (64 lowercase hex characters).
-   - `download.url` must be a valid Dropbox shared-file link (see [DOWNLOADS.md](DOWNLOADS.md)).
-   - A withdrawn release (`"status": "withdrawn"`) needs `withdrawnReason`. It stays in history, its
-     downloads are disabled, and it cannot be current.
+   - Artifacts **never** carry a download URL. The schema rejects `download` and `url`, because every
+     file is delivered only by the HCG Store server after sign-in and an entitlement check (see
+     [ACCESS.md](ACCESS.md)). Products with several editions must set `editionId` on every artifact.
+   - A withdrawn release (`"status": "withdrawn"`) needs `withdrawnReason`. It stays in history, is
+     never delivered, and cannot be current.
 4. To supersede a release, add the new one and move `currentReleaseId`. The old one is then labelled
    "Previous release" in history. Do not delete old releases.
 
-## Adding the first real Dropbox-hosted release
+## Making the first release deliverable (only after launch approval)
 
-1. **Upload** the final, approved file to Dropbox, e.g. `HCG-Mail-0.1.0-win-x64.zip`.
-2. **Share** it: *Share → Copy link* (anyone with the link can view). You get a link like
-   `https://www.dropbox.com/scl/fi/<id>/HCG-Mail-0.1.0-win-x64.zip?rlkey=<key>&dl=0`.
-   Keep the **whole** link. `rlkey` is required.
-3. **Checksum** the local file:
-   - macOS: `shasum -a 256 HCG-Mail-0.1.0-win-x64.zip`
-   - Windows PowerShell: `Get-FileHash -Algorithm SHA256 .\HCG-Mail-0.1.0-win-x64.zip`
-   - Linux: `sha256sum HCG-Mail-0.1.0-win-x64.zip`
-4. **Verify the link** from this project (this downloads the file to hash it, not into the browser):
+1. Add the release to `catalogue/releases.json` as above, with the exact file name, size and SHA-256.
+   Set `currentReleaseId` only when HCG approves it as current.
+2. Put the file in the server's **private** storage (`HCG_STORE_ARTIFACT_STORAGE_DIR`), never in
+   `public/`, `dist/`, a public GitHub release or a shared link.
+3. Add it to `server/data/artifacts.json` with `productId`, `releaseId`, `catalogueArtifactId`,
+   `editionId`, `fileName`, `sha256`, `storageKey` and `deliveryApproved: true`, set only on HCG's
+   approval. The server refuses a mismatch with the catalogue.
+4. To sell it, add an offer to `server/data/offers.json` with a price supplied by HCG and the product's
+   confirmed central ID (see [PAYMENTS.md](PAYMENTS.md)).
+5. Downloads remain off until the launch conditions in [ACCESS.md](ACCESS.md) are met and the founder
+   approves.
 
-   ```bash
-   npm run verify:artifact -- "<the Dropbox link>" --name HCG-Mail-0.1.0-win-x64.zip --sha256 <checksum>
-   ```
+## Editions and HCG Repo links
 
-   It reports the HTTP status, final host, content type, server file name and size. It fails on HTML pages
-   (private, expired or rate-limited links), on unexpected hosts and on checksum mismatch. It checks the
-   **file response only**. It does not test the application.
-5. **Add the release** to `catalogue/releases.json` as above. Use the size in bytes and the checksum.
-   State signing only with evidence.
-6. Set the product's `currentReleaseId`. Update `platforms` to `confirmed` with architectures and minimum
-   OS **only** if they were verified for this build.
-7. Run `npm run check`, then open `npm run preview` → the product page. Confirm the release panel and
-   the download button, which goes to `www.dropbox.com/...&dl=1`.
-8. Commit the change on a branch for founder review. Publishing remains a founder decision.
+- `editions[]`: separately built editions or platform builds as declared by the development repository:
+  name, platforms, intended `channel`, stated `status`, `identifiers` (bundle IDs and Debian package
+  IDs) and declared package `layouts`. A `jailbreak-package` edition must declare its package ID.
+- `hcgRepo[]`: explicit links to HCG Repo product pages (`<repo>/products/<key>/`), optionally per
+  edition. Keys are unique. Keep them in step with HCG Repo's `config/products.toml` and run
+  `npm run check:repo-mapping -- <HCG-repo checkout>`.
 
-Never commit placeholder or example Dropbox links to `catalogue/`. The test fixture in
-`tests/fixtures/catalogue-demo/` uses obviously fake `FIXTURE…` IDs and is never built for production.
+The test fixture in `tests/fixtures/catalogue-demo/` is labelled fake data and is never built for
+production.

@@ -285,3 +285,31 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Account chip (header) ---- */
+.account-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.account-chip:hover {
+  border-color: var(--cyan-glow);
+  box-shadow: 0 0 18px -8px var(--cyan-glow);
+}
+.account-chip--mobile {
+  margin: 0 0 12px;
+}
+@media (max-width: 860px) {
+  .site-header__inner > .account-chip {
+    display: none;
+  }
+}
