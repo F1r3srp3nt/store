@@ -8,6 +8,6 @@ playwright-report/
 .env.*
 !.env.example
 !.env.server.example
-data/
+/data/
 *.tsbuildinfo
 server-dist/
