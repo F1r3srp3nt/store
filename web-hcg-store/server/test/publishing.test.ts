@@ -315,7 +315,7 @@ describe("Ship to Store", () => {
     const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, editionId: "unleashed", version: "1.0.1", compatibility: { minimumOs: {}, architectures: ["iphoneos-arm64"], notes: [] }, destinations: ["hcg-store", "hcg-repo"] });
     expect(rel.status, JSON.stringify(rel.body)).toBe(201);
     const declare = (file: Buffer, name: string, pkg: { id: string; version: string; architecture: string } | null) =>
-      d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: name, platform: "linux", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg });
+      d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: name, platform: "ios", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg });
     const good = deb("com.example.fixture.quasar.unleashed", "1.0.1", "iphoneos-arm64");
     expect((await declare(good, "q.deb", null)).status).toBe(400); // HCG Repo needs the control fields declared
     const send = async (file: Buffer, name: string, pkg: { id: string; version: string; architecture: string }) => {

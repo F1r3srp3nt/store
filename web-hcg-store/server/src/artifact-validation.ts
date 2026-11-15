@@ -23,8 +23,9 @@ export type PublishFormat = (typeof FORMATS)[number];
 export const ALLOWED: Record<PublishPlatform, Partial<Record<PublishFormat, string>>> = {
   windows: { exe: ".exe", msi: ".msi", msix: ".msix", zip: ".zip" },
   macos: { zip: ".zip", dmg: ".dmg", pkg: ".pkg" },
-  ios: { ipa: ".ipa" },
-  ipados: { ipa: ".ipa" },
+  // .deb on iOS/iPadOS: jailbreak packages delivered through HCG Repo (Sileo), never the App Store.
+  ios: { ipa: ".ipa", deb: ".deb" },
+  ipados: { ipa: ".ipa", deb: ".deb" },
   linux: { deb: ".deb", rpm: ".rpm", appimage: ".appimage" },
 };
 

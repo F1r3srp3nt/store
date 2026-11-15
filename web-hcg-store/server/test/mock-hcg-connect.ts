@@ -6,7 +6,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
+import { decodeJwt, exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
 
 export interface MockUser {
   sub: string;
@@ -117,6 +117,15 @@ export class MockHcgConnect {
     }
     if (this.down) return send(503, { error: "unavailable" });
     if (url.pathname === "/auth/v1/.well-known/jwks.json") return send(200, { keys: [this.jwk] });
+    if (url.pathname === "/auth/v1/oauth/userinfo") {
+      const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+      try {
+        const c = decodeJwt(token);
+        return send(200, { sub: c.sub, email: c.email ?? null });
+      } catch {
+        return send(401, { error: "invalid_token" });
+      }
+    }
     if (url.pathname === "/auth/v1/oauth/authorize") {
       const q = url.searchParams;
       if (!this.knownClient(q.get("client_id"))) return send(400, { error_code: "oauth_client_not_found" });
