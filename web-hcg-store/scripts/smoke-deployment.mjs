@@ -140,7 +140,12 @@ async function checkOnce() {
     fail("build manifest", `${manifest.url}: HTTP ${manifest.status} ${e.message}`);
   }
 
-  // 6. Nothing that must stay private or unbuilt is reachable.
+  // 6. Nothing that must stay private or unbuilt is reachable. (Only meaningful when the site
+  // answers at all: "unreachable" is never counted as "not published".)
+  if (home.status === 0) {
+    fail("private paths checked", "site unreachable; cannot verify that nothing private is published");
+    return finishHttps(home);
+  }
   for (const path of [
     "README.md",
     "web-hcg-store/README.md",
@@ -161,8 +166,15 @@ async function checkOnce() {
   if (dl.status === 200 && !isAppShell(dl.body) && !/application\/json/.test(dl.type)) fail("no protected file served statically", `HTTP 200 ${dl.type}`);
   else pass("no protected file served statically", `HTTP ${dl.status}`);
 
+  return finishHttps(home);
+}
+
+async function finishHttps(home) {
   // 7. HTTPS: valid certificate (fetch already refused invalid ones) and http → https.
-  if (root.protocol === "https:" && home.status === 200) pass("HTTPS with a certificate valid for the host", root.host);
+  if (root.protocol === "https:") {
+    if (home.status === 200) pass("HTTPS with a certificate valid for the host", root.host);
+    else if (/CERT|SSL|TLS/i.test(home.error ?? "")) fail("HTTPS with a certificate valid for the host", `${root.host}: ${home.error}`);
+  }
   if (checkHttpRedirect) {
     const http = new URL(root);
     http.protocol = "http:";

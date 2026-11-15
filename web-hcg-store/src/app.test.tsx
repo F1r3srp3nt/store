@@ -61,7 +61,8 @@ function access(over: Partial<EditionAccess> & { editionId: string | null }): Ed
 function renderAt(path: string, catalogue: Catalogue = realCatalogue()) {
   return render(
     <CatalogueStateProvider provider={staticProvider(catalogue)}>
-      <AccountProvider>
+      {/* Explicit, so a VITE_STORE_ACCOUNT_SERVICE in the environment cannot change what is tested. */}
+      <AccountProvider accountService="same-origin-server">
         <MemoryRouter initialEntries={[path]}>
           <AppRoutes />
         </MemoryRouter>

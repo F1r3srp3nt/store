@@ -38,11 +38,6 @@ jobs:
     defaults:
       run:
         working-directory: web-hcg-store
-    env:
-      VITE_DEPLOY_ENV: production
-      VITE_PUBLIC_ORIGIN: https://store.hakmicapitalgroup.com
-      VITE_STORE_ACCOUNT_SERVICE: none
-      HCG_HOSTING_TARGET: github-pages
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -54,6 +49,12 @@ jobs:
       - name: Unit, component and server tests
         run: npm test
       - name: Production build (catalogue validation, type checks, Vite build, secret scan)
+        # Build settings apply to this step only (tests above run with the defaults).
+        env:
+          VITE_DEPLOY_ENV: production
+          VITE_PUBLIC_ORIGIN: https://store.hakmicapitalgroup.com
+          VITE_STORE_ACCOUNT_SERVICE: none
+          HCG_HOSTING_TARGET: github-pages
         run: npm run build
       - name: Verify the Pages artifact (app shell, route pages, no source or protected files)
         run: node scripts/verify-pages-artifact.mjs dist
@@ -112,4 +113,7 @@ jobs:
           echo | openssl s_client -connect store.hakmicapitalgroup.com:443 -servername store.hakmicapitalgroup.com 2>/dev/null \
             | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>&1 || true
           echo "## http:// response"; curl -sS -o /dev/null -m 20 -w '%{http_code} -> %{redirect_url}\n' http://store.hakmicapitalgroup.com/ || true
+          echo "## What plain http serves at the root (README check)"
+          node web-hcg-store/scripts/smoke-deployment.mjs http://store.hakmicapitalgroup.com/ --no-http-redirect-check || true
+          echo "## HTTPS"
           node web-hcg-store/scripts/smoke-deployment.mjs "$SITE_URL"
