@@ -292,6 +292,19 @@
   height: 100%;
   object-fit: cover;
 }
+/* Icons that draw their own chrome frame: shown whole, square, with no mask, ring or glow added. */
+.product-mark--framed {
+  border-radius: 8%;
+  background: #000;
+  box-shadow: 0 8px 20px -12px rgba(0, 0, 0, 0.9);
+}
+.product-mark--framed .product-mark__img {
+  object-fit: contain;
+}
+/* <picture> wrappers (AVIF with WebP fallback) must not change layout. */
+.art-picture {
+  display: contents;
+}
 .product-mark__monogram {
   font-family: var(--font-display);
   font-weight: 700;
@@ -320,6 +333,10 @@
   background:
     radial-gradient(70% 90% at 50% 120%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
     linear-gradient(180deg, #0f131a, #07090d);
+}
+.product-cover--art {
+  /* The frame matches the banner's own ratio; black only shows if the image is still loading. */
+  background: #000;
 }
 .product-cover--art .product-cover__img {
   width: 100%;
@@ -413,6 +430,8 @@
 .product-card__summary {
   color: var(--text-muted);
   font-size: 14.5px;
+  /* Keep the 3-line clamp exact: a stretched grid item would reveal part of a 4th line. */
+  align-self: start;
 }
 .product-card__meta {
   display: flex;
@@ -433,15 +452,25 @@
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 18px;
 }
-.featured {
-  align-items: start;
-}
+/* Lead product across the full row (3:1 banner beside its text), the rest in equal-height pairs. */
 .featured > .product-card--feature {
-  grid-column: span 7;
-  grid-row: span 3;
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+}
+.featured > .product-card--feature .product-card__art {
+  flex: 0 0 58%;
+  align-self: stretch;
+  display: grid;
+  align-items: center;
+  background: #000;
+}
+.featured > .product-card--feature .product-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .featured > .product-card--card {
-  grid-column: span 5;
+  grid-column: span 6;
 }
 
 
@@ -452,10 +481,17 @@
   font-size: 16px;
 }
 @media (max-width: 900px) {
-  .featured > .product-card--feature,
+  .featured > .product-card--feature {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .featured > .product-card--feature .product-card__art {
+    flex: none;
+  }
+}
+@media (max-width: 700px) {
   .featured > .product-card--card {
     grid-column: 1 / -1;
-    grid-row: auto;
   }
 }
 /* Browse grid: cards with art. */
@@ -722,6 +758,36 @@
   display: grid;
   gap: 12px;
 }
+/* Product page banner: the full 3:1 artwork, never cropped or stretched. */
+.product-banner {
+  position: relative;
+  width: 100%;
+  margin-bottom: clamp(18px, 3vw, 28px);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: #000;
+}
+.product-banner__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.product-banner .art-label {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+}
+.gallery-lead {
+  margin: 0;
+}
+.gallery-lead > figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.gallery-lead > .product-cover,
 .product-gallery > .product-cover {
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);

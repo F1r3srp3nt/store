@@ -14,6 +14,11 @@ export const AVAILABILITY_LABELS: Record<Availability, string> = {
   "coming-soon": "Coming soon",
 };
 
+/** The product with this stable ID (account and purchase records refer to products by ID). */
+export function findProductById(c: Catalogue, id: string): Product | undefined {
+  return c.products.find((p) => p.id === id);
+}
+
 export function findProductBySlug(c: Catalogue, slug: string): Product | undefined {
   return c.products.find((p) => p.slug === slug);
 }

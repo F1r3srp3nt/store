@@ -143,6 +143,55 @@ describe("store pages with the shipped catalogue", () => {
     expect(container.textContent).not.toMatch(/generated tile|generated artwork/i);
   });
 
+  it("product page: the banner is the one priority image, AVIF with WebP fallback, decorative; screenshots stay", async () => {
+    const { container } = renderAt("/apps/hcg-executable-maker");
+    await screen.findByRole("heading", { level: 1, name: "HCG Executable Maker" });
+    const banner = container.querySelector(".product-banner img")!;
+    expect(banner).toHaveAttribute("src", "/media/products/hcg-executable-maker/banner-2000.webp");
+    expect(banner).toHaveAttribute("alt", ""); // the h1 below already names the product
+    expect(banner).toHaveAttribute("loading", "eager");
+    expect(banner).toHaveAttribute("fetchpriority", "high");
+    expect([banner.getAttribute("width"), banner.getAttribute("height")]).toEqual(["2000", "667"]);
+    expect(container.querySelector(".product-banner source[type='image/avif']")!.getAttribute("srcset")).toMatch(/banner-640\.avif 640w/);
+    // Both real screenshots are still shown, lazily, and labelled; the banner is never called a screenshot.
+    const shots = container.querySelectorAll(".product-gallery img");
+    expect(shots).toHaveLength(2);
+    shots.forEach((img) => expect(img).toHaveAttribute("loading", "lazy"));
+    expect(screen.getAllByText("Screenshot")).toHaveLength(1);
+    expect(container.querySelector(".product-banner .art-label")).toBeNull();
+    // Exactly one high-priority image on the page.
+    expect(container.querySelectorAll("img[fetchpriority='high']")).toHaveLength(1);
+  });
+
+  it.each([
+    ["hcg-clarity", "HCG Clarity"],
+    ["hcg-lifeos", "HCG LifeOS"],
+    ["hcg-one-unleashed", "HCG ONE: Unleashed"],
+  ])("%s shows its framed icon whole, next to an HTML heading", async (slug, name) => {
+    const { container } = renderAt(`/apps/${slug}`);
+    await screen.findByRole("heading", { level: 1, name });
+    const mark = container.querySelector(".product-hero .product-mark")!;
+    expect(mark).toHaveClass("product-mark--framed");
+    expect(mark).toHaveAttribute("aria-hidden", "true");
+    expect(mark.querySelector("img")).toHaveAttribute("src", `/media/products/${slug}/icon-256.webp`);
+    expect(container.querySelector(".product-banner img")).toHaveAttribute("src", `/media/products/${slug}/banner-2000.webp`);
+  });
+
+  it("home and browse cards show each product's banner, lazy-loaded, with the name as text", async () => {
+    const { container } = renderAt("/apps");
+    await screen.findByText("10 products");
+    const cards = [...container.querySelectorAll("article.product-card")];
+    expect(cards).toHaveLength(10);
+    for (const card of cards) {
+      const id = card.getAttribute("data-product-id");
+      const img = card.querySelector(".product-cover img")!;
+      expect(img.getAttribute("src")).toMatch(new RegExp(`^/media/products/${id}/(banner|cover)-2000\\.webp$`));
+      expect(img).toHaveAttribute("loading", "lazy");
+      expect(img).toHaveAttribute("alt", "");
+      expect(card.querySelector("h3")!.textContent).toBeTruthy();
+    }
+  });
+
   it("superseded products keep their page and point to the successor", async () => {
     renderAt("/apps/hcg-reprompter");
     await screen.findByRole("heading", { level: 1, name: "HCG RePrompter" });
@@ -229,16 +278,22 @@ describe("account and ownership (stubbed HCG Store server)", () => {
     server = {
       session: { configured: true, signedIn: true, user: ALICE },
       library: {
-        owned: [{ productId: "hcg-terminal", slug: "hcg-terminal", name: "HCG Terminal", editionId: "unleashed", editionName: "HCG Terminal Unleashed", state: "downloads-not-available" }],
+        owned: [
+          { productId: "hcg-terminal", slug: "hcg-terminal", name: "HCG Terminal", editionId: "unleashed", editionName: "HCG Terminal Unleashed", state: "downloads-not-available" },
+          { productId: "hcg-lifeos", slug: "hcg-lifeos", name: "HCG LifeOS", editionId: null, editionName: null, state: "downloads-not-available" },
+        ],
         purchases: [],
         ownershipUnavailable: false,
         downloadsMessage: "Downloads are not available yet.",
       },
     };
-    renderAt("/library");
+    const { container } = renderAt("/library");
     expect(await screen.findByRole("link", { name: "HCG Terminal Unleashed" })).toBeInTheDocument();
-    expect(screen.getByText("Owned")).toBeInTheDocument();
-    expect(screen.getByText("Downloads are not available yet.")).toBeInTheDocument();
+    expect(screen.getAllByText("Owned")).toHaveLength(2);
+    expect(screen.getAllByText("Downloads are not available yet.").length).toBeGreaterThan(0);
+    // Owned products show the same icons as the rest of the store, from the catalogue.
+    const icons = [...container.querySelectorAll(".library-item .product-mark img")].map((i) => i.getAttribute("src"));
+    expect(icons).toEqual(["/media/products/hcg-terminal/icon-256.webp", "/media/products/hcg-lifeos/icon-256.webp"]);
   });
 
   it("asks signed-out visitors to sign in for the library", async () => {
