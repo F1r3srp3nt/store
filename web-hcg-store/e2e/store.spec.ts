@@ -83,8 +83,8 @@ test.describe("responsive layouts", () => {
     for (const s of await shots.all()) await expect(s).toHaveAttribute("loading", "lazy");
   });
 
-  test("banners and icons are shown whole: no cropping or distortion at any width", async ({ browser }) => {
-    for (const width of [320, 390, 768, 1024, 1440]) {
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    test(`banners and icons are shown whole at ${width}px: no cropping or distortion`, async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width, height: 900 } });
       const page = await ctx.newPage();
       for (const path of ["/", "/apps", "/apps/hcg-lifeos", "/apps/hcg-one-unleashed"]) {
@@ -117,8 +117,8 @@ test.describe("responsive layouts", () => {
         expect(bad, `${path} at ${width}px`).toEqual([]);
       }
       await ctx.close();
-    }
-  });
+    });
+  }
 
   test("listing cards lazy-load their art", async ({ page }) => {
     await page.goto(REAL + "/apps");
@@ -180,7 +180,13 @@ test.describe("keyboard navigation", () => {
     await page.getByRole("searchbox", { name: "Search apps" }).first().fill("terminal");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/apps\?q=terminal/);
-    await expect(page.getByRole("link", { name: "HCG Terminal" })).toBeVisible();
+    // React Router updates the URL first and renders the new page as a transition, so for a moment
+    // the URL is /apps?q=terminal while the home page (which links HCG Terminal twice) is still on
+    // screen. Wait for the browse page itself before looking for the result; otherwise the link
+    // query can hit a strict-mode violation, which Playwright does not retry.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
+    await expect(page.getByRole("link", { name: "HCG Terminal", exact: true })).toBeVisible();
   });
 });
 
