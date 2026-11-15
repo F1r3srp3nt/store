@@ -27,6 +27,11 @@ const errors = result.ok ? [] : [...result.errors];
 
 if (result.ok) {
   for (const p of result.catalogue.products) {
+    for (const art of [p.artwork.icon, p.artwork.cover]) {
+      if (art && !existsSync(join(root, "public", art.src)) && !p.id.startsWith("fixture-")) {
+        errors.push(`products["${p.id}"].artwork: file public/${art.src} does not exist.`);
+      }
+    }
     for (const m of p.media) {
       for (const src of [m.src, ...m.variants.map((v) => v.src)]) {
         if (!existsSync(join(root, "public", src)) && !p.id.startsWith("fixture-")) {

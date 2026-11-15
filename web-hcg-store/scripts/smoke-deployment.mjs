@@ -115,7 +115,7 @@ async function checkOnce() {
   else fail("unknown path renders the app's not-found page", `HTTP ${unknown.status}`);
 
   // 4. Images and brand assets.
-  for (const path of ["brand/hcg-mark-240.webp", "brand/hcg-store-banner-1200.webp", "brand/favicon-32.png", "media/products/hcg-executable-maker/dashboard-720.webp"]) {
+  for (const path of ["brand/hcg-mark-240.webp", "brand/hcg-store-hero-1200.webp", "brand/favicon-32.png", "media/products/hcg-executable-maker/dashboard-720.webp"]) {
     const r = await get(path);
     if (r.status === 200 && /^image\//.test(r.type)) pass(`image /${path}`);
     else fail(`image /${path}`, `HTTP ${r.status} ${r.type}`);

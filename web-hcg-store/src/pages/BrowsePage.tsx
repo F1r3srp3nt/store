@@ -4,6 +4,7 @@ import { CatalogueGate } from "../app/catalogue-context";
 import { IconSearch } from "../components/Icons";
 import { PageMeta } from "../components/PageMeta";
 import { ProductCard } from "../components/ProductCard";
+import { listedProducts } from "../domain/model";
 import type { Catalogue } from "../domain/catalogue";
 import { filterProducts, isEmptyQuery, paramsFromQuery, queryFromParams, type CatalogueQuery } from "../domain/query";
 import { CATEGORIES, CATEGORY_IDS, DEVELOPMENT_STATUS, DEVELOPMENT_STATUS_IDS, PLATFORMS, PLATFORM_IDS, type PlatformId } from "../domain/taxonomy";
@@ -30,7 +31,16 @@ function Browse({ catalogue }: { catalogue: Catalogue }) {
   const results = useMemo(() => filterProducts(catalogue, query), [catalogue, query]);
   const ids = { q: useId(), cat: useId(), status: useId(), avail: useId(), plat: useId() };
 
-  const update = (patch: Partial<CatalogueQuery>) => setParams(paramsFromQuery({ ...query, ...patch }), { replace: true });
+  // Functional updates: each change merges into the latest URL state, never a stale render's copy,
+  // so quick successive edits (clear the search, then tick a platform) cannot undo each other.
+  const update = (patch: Partial<CatalogueQuery> | ((q: CatalogueQuery) => Partial<CatalogueQuery>)) =>
+    setParams(
+      (prev) => {
+        const current = queryFromParams(prev);
+        return paramsFromQuery({ ...current, ...(typeof patch === "function" ? patch(current) : patch) });
+      },
+      { replace: true },
+    );
 
   // The text box owns its value while the user is typing; URL updates can lag behind keystrokes.
   // It re-syncs from the URL only when the change came from elsewhere (header search, Clear filters,
@@ -46,7 +56,7 @@ function Browse({ catalogue }: { catalogue: Catalogue }) {
     setParams(new URLSearchParams(), { replace: true });
   };
   const togglePlatform = (id: PlatformId) =>
-    update({ platforms: query.platforms.includes(id) ? query.platforms.filter((p) => p !== id) : [...query.platforms, id] });
+    update((q) => ({ platforms: q.platforms.includes(id) ? q.platforms.filter((p) => p !== id) : [...q.platforms, id] }));
 
   return (
     <div className="browse">
@@ -127,9 +137,9 @@ function Browse({ catalogue }: { catalogue: Catalogue }) {
           Results
         </h2>
         <p className="results__count" role="status" aria-live="polite">
-          {results.length === catalogue.products.length
+          {results.length === listedProducts(catalogue).length
             ? `${results.length} products`
-            : `${results.length} of ${catalogue.products.length} products match`}
+            : `${results.length} of ${listedProducts(catalogue).length} products match`}
         </p>
         {results.length ? (
           <ul className="product-grid product-grid--browse">

@@ -55,3 +55,16 @@ export function availability(c: Catalogue, product: Product): Availability {
 export function hcgRepoLinks(product: Product, editionId?: string | null) {
   return product.hcgRepo.filter((l) => editionId === undefined || l.editionId === null || l.editionId === editionId);
 }
+
+/** Products shown in listings: everything except products merged into another one. */
+export function listedProducts(c: Catalogue): Product[] {
+  return c.products.filter((p) => !p.supersededBy);
+}
+
+export function successorOf(c: Catalogue, product: Product): Product | null {
+  return product.supersededBy ? (c.products.find((p) => p.id === product.supersededBy) ?? null) : null;
+}
+
+export function inCollection(c: Catalogue, collection: Product["collections"][number]): Product[] {
+  return listedProducts(c).filter((p) => p.collections.includes(collection));
+}

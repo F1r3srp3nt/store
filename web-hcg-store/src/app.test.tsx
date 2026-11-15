@@ -81,29 +81,45 @@ const expectNoFabrication = (container: HTMLElement) => {
 };
 
 describe("store pages with the shipped catalogue", () => {
-  it("home shows real counts, no download section, and honest messaging", async () => {
+  it("home: compact hero, featured products, jailbreak collection, every listed product and honest guidance", async () => {
     const { container } = renderAt("/");
     expect(await screen.findByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
-    const stats = screen.getByLabelText("Catalogue status");
-    expect(within(stats).getByText("Released").nextSibling).toHaveTextContent("0");
-    expect(within(stats).getByText("Products listed").nextSibling).toHaveTextContent("11");
-    expect(screen.queryByRole("heading", { name: "Released products" })).toBeNull();
-    expect(screen.getByText(/No product has an approved release yet/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "In development" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "HCG Development Tools" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Browse Products/ })).toHaveAttribute("href", "/apps");
+    expect(screen.getByRole("heading", { name: "Featured products" })).toBeInTheDocument();
+    const jb = screen.getByRole("heading", { name: /Packages for jailbroken iPhone and iPad/ }).closest("section")!;
+    expect(within(jb).getByRole("heading", { name: "HCG Terminal Unleashed" })).toBeInTheDocument();
+    expect(within(jb).getAllByRole("link", { name: /View on HCG Repo/ }).map((a) => a.getAttribute("href"))).toEqual([
+      "https://repo.hakmicapitalgroup.com/products/hcg-terminal-unleashed/",
+      "https://repo.hakmicapitalgroup.com/products/hcg-nexus/",
+    ]);
+    const all = screen.getByRole("heading", { name: "All products" }).closest("section")!;
+    expect(within(all).getAllByRole("listitem")).toHaveLength(10); // RePrompter is now part of Clarity
+    expect(within(all).queryByText("HCG RePrompter")).toBeNull();
+    expect(screen.getAllByText("Downloads are not available yet.", { exact: false }).length).toBeGreaterThan(0);
+    // No counters, no internal labels, no download links.
+    expect(screen.queryByLabelText("Catalogue status")).toBeNull();
+    expect(container.textContent).not.toMatch(/generated tile/i);
     expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
     expectNoFabrication(container);
+  });
+
+  it("navigation offers Store, Browse, HCG Repo and Account", async () => {
+    renderAt("/");
+    const nav = await screen.findByRole("navigation", { name: "Primary" });
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Store", "Browse", "HCG Repo", "Account"]);
   });
 
   it("home hero uses the banner as a labelled illustration and keeps the heading if it fails", async () => {
     renderAt("/");
     await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
-    const banner = screen.getByRole("img", { name: /illustration of the HCG Store wordmark/i });
+    const banner = screen.getByRole("img", { name: /HCG Store wordmark/i });
     expect(banner).toHaveAttribute("loading", "eager");
-    expect(banner.getAttribute("srcset")).toMatch(/hcg-store-banner-800\.webp 800w/);
-    expect(screen.getByText("Illustration")).toBeInTheDocument();
+    expect(banner).toHaveAttribute("width", "2000");
+    expect(banner).toHaveAttribute("height", "667");
+    expect(banner.getAttribute("srcset")).toMatch(/hcg-store-hero-800\.webp 800w/);
+    expect(screen.getAllByText("Illustration").length).toBeGreaterThan(0);
     fireEvent.error(banner);
-    expect(screen.queryByRole("img", { name: /illustration of the HCG Store wordmark/i })).toBeNull();
+    expect(screen.queryByRole("img", { name: /HCG Store wordmark/i })).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
   });
 
@@ -118,11 +134,26 @@ describe("store pages with the shipped catalogue", () => {
     expectNoFabrication(container);
   });
 
-  it("labels real screenshots and generated tiles", async () => {
-    renderAt("/apps/hcg-executable-maker");
+  it("labels real screenshots and keeps planned features apart from current ones", async () => {
+    const { container } = renderAt("/apps/hcg-executable-maker");
     await screen.findByRole("heading", { level: 1, name: "HCG Executable Maker" });
-    expect(screen.getAllByText("Screenshot").length).toBe(2);
-    expect(screen.getByRole("img", { name: /generated artwork, not a screenshot/ })).toBeInTheDocument();
+    expect(screen.getAllByText("Screenshot").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Available in the current build" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Planned (not available yet)" })).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/generated tile|generated artwork/i);
+  });
+
+  it("superseded products keep their page and point to the successor", async () => {
+    renderAt("/apps/hcg-reprompter");
+    await screen.findByRole("heading", { level: 1, name: "HCG RePrompter" });
+    expect(screen.getByText(/HCG RePrompter is now part of HCG Clarity/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Go to HCG Clarity/ })).toHaveAttribute("href", "/apps/hcg-clarity");
+  });
+
+  it("the successor shows its former names", async () => {
+    renderAt("/apps/hcg-clarity");
+    await screen.findByRole("heading", { level: 1, name: "HCG Clarity" });
+    expect(screen.getByText("Formerly HCG RePrompter and Distil")).toBeInTheDocument();
   });
 
   it("release history shows an empty state", async () => {
@@ -147,17 +178,17 @@ describe("store pages with the shipped catalogue", () => {
   it("browse filters work and sync with the URL", async () => {
     const user = userEvent.setup();
     renderAt("/apps?platform=ios");
-    expect(await screen.findByText("5 of 11 products match")).toBeInTheDocument();
+    expect(await screen.findByText("6 of 10 products match")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "HCG CardX" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "iOS" }));
-    expect(screen.getByText("11 products")).toBeInTheDocument();
+    expect(screen.getByText("10 products")).toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search" }), "imap");
-    expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
+    expect(screen.getByText("1 of 10 products match")).toBeInTheDocument();
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
     await user.click(screen.getByRole("radio", { name: "Release approved" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
-    expect(screen.getByText("11 products")).toBeInTheDocument();
+    expect(screen.getByText("10 products")).toBeInTheDocument();
   });
 
   it("getting started never tells people to disable security and explains IPA installs", async () => {
@@ -179,7 +210,7 @@ describe("HCG Repo links and editions (shipped catalogue)", () => {
       "https://repo.hakmicapitalgroup.com/products/hcg-terminal-unleashed/",
     );
     expect(within(unleashed).getAllByText("com.hakmicapitalgroup.hcgterminal.unleashed", { selector: "dd" })).toHaveLength(2);
-    const standard = screen.getByRole("heading", { name: "HCG Terminal (standard)" }).closest("li")!;
+    const standard = screen.getByRole("heading", { name: "HCG Terminal", level: 3 }).closest("li")!;
     expect(within(standard).queryByRole("link", { name: /HCG Repo/ })).toBeNull();
     expectNoFabrication(container);
   });
@@ -187,7 +218,7 @@ describe("HCG Repo links and editions (shipped catalogue)", () => {
   it("links Nexus and Sentinel to their HCG Repo pages", async () => {
     renderAt("/apps/hcg-nexus");
     await screen.findByRole("heading", { level: 1, name: "HCG Nexus" });
-    expect(screen.getByRole("link", { name: /View on HCG Repo/ })).toHaveAttribute("href", "https://repo.hakmicapitalgroup.com/products/hcg-nexus/");
+    expect(screen.getAllByRole("link", { name: /View on HCG Repo/ })[0]).toHaveAttribute("href", "https://repo.hakmicapitalgroup.com/products/hcg-nexus/");
   });
 });
 
@@ -308,7 +339,7 @@ describe("store pages with release data (test fixture)", () => {
     const img = screen.getByAltText("Missing fixture image");
     fireEvent.error(img);
     expect(screen.getByRole("img", { name: "Image unavailable: Missing fixture image" })).toBeInTheDocument();
-    expect(screen.getByText(/Concept artwork — not the working app/)).toBeInTheDocument();
+    expect(screen.getAllByText("Illustration").length).toBeGreaterThan(0);
   });
 
   it("release history distinguishes current, previous and withdrawn releases and never delivers withdrawn ones", async () => {
