@@ -37,7 +37,15 @@ export function App({ provider }: { provider?: CatalogueProvider }) {
   return (
     <CatalogueStateProvider provider={p}>
       <AccountProvider>
-        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "") || "/"}>
+        {/*
+          useTransitions={false}: render location changes as urgent updates, not React transitions.
+          With transitions the URL changes at once but the new location can render much later on a
+          busy device, so the page on screen disagrees with the URL, and useSearchParams' functional
+          setter merges into the last *rendered* params: clearing the search and then ticking a filter
+          before that render lands silently restores the cleared search. No route here suspends, so
+          transitions bought nothing.
+        */}
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "") || "/"} useTransitions={false}>
           <AppRoutes />
         </BrowserRouter>
       </AccountProvider>

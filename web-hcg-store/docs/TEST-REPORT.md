@@ -28,6 +28,7 @@ provider**.
   - Proof: with Chromium's CPU throttled 12× through DevTools, the old assertions failed 12 of 12 with that error and the new ones passed 12 of 12.
 - **"banners and icons are shown whole"**: loaded 20 pages in one 30 s test, which ran out of time under heavy contention. It is now one test per width.
 - **Result**: under the contention that reproduced both failures (8 workers on 4 CPUs plus 4 busy loops), the full suite passed 168 of 168 (×4). Normal runs: 42 passed, three in a row.
+- **Follow-up: the same delay was also an app bug.** `useSearchParams`' functional setter merges into the params of the last *rendered* location, not the current URL. While a route change was still pending, clearing the search and then ticking a platform wrote `?q=imap&platform=ios`, which restored the cleared search; the earlier "merge into the latest URL state" fix did not cover this case. `BrowserRouter` now has `useTransitions={false}`, so the URL and the page change together (no route suspends, so transitions gave no benefit). Two regression tests ("navigation on a busy device") throttle Chromium's CPU 20× and failed 6 of 6 against the old app.
 
 ## Product artwork update (15 November 2026)
 
