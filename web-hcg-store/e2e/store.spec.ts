@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { collectErrors, FIXTURE, horizontalOverflow, REAL, ROUTES } from "./helpers";
 
 test.describe("routes and direct navigation", () => {
@@ -139,7 +139,41 @@ test.describe("keyboard navigation", () => {
     await page.getByRole("searchbox", { name: "Search apps" }).first().fill("terminal");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/apps\?q=terminal/);
-    await expect(page.getByRole("link", { name: "HCG Terminal" })).toBeVisible();
+    // React Router renders route changes in a transition: the URL updates first, while the home
+    // page (which has its own "HCG Terminal" links) can stay on screen until the browse page
+    // commits. Wait for the browse page itself, then look for the result in its results region.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
+    const results = page.getByRole("region", { name: "Results" });
+    await expect(results.getByRole("status")).toHaveText("1 of 10 products match");
+    await expect(results.getByRole("link", { name: "HCG Terminal" })).toBeVisible();
+  });
+});
+
+test.describe("navigation on a busy device", () => {
+  // Chromium CPU throttling makes renders slow enough to expose URL/render races deterministically.
+  const throttle = async (page: Page, rate: number) => (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate });
+
+  test("a filter ticked right after clearing the search keeps the search cleared", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(REAL + "/apps?q=imap");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
+    await throttle(page, 20);
+    await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
+    await page.getByRole("checkbox", { name: "iOS" }).focus();
+    await page.keyboard.press("Space");
+    await expect.poll(() => new URL(page.url()).search).toBe("?platform=ios");
+    await expect(page.getByRole("region", { name: "Results" }).getByRole("link", { name: "HCG CardX" })).toBeVisible();
+  });
+
+  test("the browse page is on screen once the URL shows the search", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(REAL + "/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await throttle(page, 20);
+    await page.getByRole("searchbox", { name: "Search apps" }).first().fill("terminal");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/apps\?q=terminal/);
+    expect(await page.getByRole("heading", { level: 1 }).textContent()).toBe("Browse apps");
   });
 });
 
