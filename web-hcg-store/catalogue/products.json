@@ -1,5 +1,5 @@
 {
-  "$comment": "PROVISIONAL seed catalogue for HCG Store. HCG ERP / Executive Control Center is the source of truth for the product registry; replace these entries through the provider layer once the ERP contract exists. IDs are provisional until a central registry ID is assigned (registry.centralId). See docs/CATALOGUE.md before editing. Run `npm run validate:catalogue` after every change.",
+  "$comment": "PROVISIONAL seed catalogue for HCG Store. HCG ERP is the source of truth for the product registry; replace these entries through the provider layer once the ERP contract exists. registry.centralId stays null until HCG confirms the product's central ID; entitlements are never granted for a product without one. Prices are never stored here: they come only from the Store server's offers. See docs/CATALOGUE.md before editing. Run `npm run validate:catalogue` after every change.",
   "schemaVersion": 1,
   "products": [
     {
@@ -13,11 +13,21 @@
         "It is local-first: data stays on the device, and HCG Connect sign-in and cloud synchronisation are planned as separate, founder-approved milestones."
       ],
       "category": "productivity",
-      "tags": ["quests", "planning", "gamification", "local-first", "focus"],
+      "tags": [
+        "quests",
+        "planning",
+        "gamification",
+        "local-first",
+        "focus"
+      ],
       "developmentStatus": "in-development",
       "developmentNote": "Version 0.2.0 is in development. The development repository states that the core and macOS app have not yet been fully compiled or tested.",
       "platforms": [
-        { "platform": "macos", "support": "in-development", "note": "Native macOS app. The development target is macOS 14 or later; not confirmed for any release." }
+        {
+          "platform": "macos",
+          "support": "in-development",
+          "note": "Native macOS app. The development target is macOS 14 or later; not confirmed for any release."
+        }
       ],
       "media": [],
       "currentReleaseId": null,
@@ -25,10 +35,16 @@
         "status": "provisional",
         "centralId": null,
         "references": [
-          { "system": "HCG LifeOS realm key", "value": "hcg.lifeos" }
+          {
+            "system": "HCG LifeOS realm (not a product ID)",
+            "value": "hcg.lifeos",
+            "note": "A LifeOS gamification realm, not a product ID. Kept only as a cross-reference."
+          }
         ]
       },
-      "catalogueNotes": []
+      "catalogueNotes": [],
+      "editions": [],
+      "hcgRepo": []
     },
     {
       "id": "hcg-mail",
@@ -41,12 +57,30 @@
         "Connections are encrypted, passwords are kept in the operating system's secure credential store, and remote content in messages is blocked by default."
       ],
       "category": "communication",
-      "tags": ["email", "imap", "smtp", "privacy"],
+      "tags": [
+        "email",
+        "imap",
+        "smtp",
+        "privacy"
+      ],
       "developmentStatus": "in-development",
       "developmentNote": "An MVP (0.1.0) is implemented in the development repository. Live-mailbox, SMTP and cross-platform verification are still open items.",
       "platforms": [
-        { "platform": "windows", "support": "in-development", "note": "Developed as a self-contained Windows x64 executable." },
-        { "platform": "macos", "support": "planned", "note": "A directly distributed macOS version and a Mac App Store submission are reserved but not started." }
+        {
+          "platform": "windows",
+          "support": "in-development",
+          "note": "Developed as a self-contained Windows x64 executable."
+        },
+        {
+          "platform": "ios",
+          "support": "in-development",
+          "note": "Native iOS app implemented in the development repository; not yet device-tested."
+        },
+        {
+          "platform": "macos",
+          "support": "planned",
+          "note": "A directly distributed macOS version and a Mac App Store submission are reserved but not started."
+        }
       ],
       "media": [],
       "currentReleaseId": null,
@@ -54,11 +88,54 @@
         "status": "provisional",
         "centralId": null,
         "references": [
-          { "system": "HCG LifeOS realm key", "value": "hcg.mail" },
-          { "system": "Development repository", "value": "F1r3srp3nt/HCG-Mail", "note": "public; tag v0.1.0-mvp exists but has not been supplied to HCG Store as an approved release" }
+          {
+            "system": "HCG LifeOS realm (not a product ID)",
+            "value": "hcg.mail",
+            "note": "A LifeOS gamification realm, not a product ID. Kept only as a cross-reference."
+          },
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-Mail",
+            "note": "public; tag v0.1.0-mvp exists but has not been supplied to HCG Store as an approved release"
+          }
         ]
       },
-      "catalogueNotes": []
+      "catalogueNotes": [],
+      "editions": [
+        {
+          "id": "windows-desktop",
+          "name": "Windows desktop",
+          "summary": "Self-contained Windows x64 desktop app (.NET 10, Avalonia).",
+          "platforms": [
+            "windows"
+          ],
+          "channel": "direct-download",
+          "status": "MVP 0.1.0 implemented. Signing and installers are not done yet.",
+          "identifiers": [],
+          "layouts": [],
+          "note": null
+        },
+        {
+          "id": "ios",
+          "name": "iPhone and iPad",
+          "summary": "Native iOS app.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "app-store",
+          "status": "Implemented, not yet device-tested. A Release build has been produced but never uploaded.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hakmicapitalgroup.hcgmail"
+            }
+          ],
+          "layouts": [],
+          "note": "Targets iOS 16.0 or later in the development repository."
+        }
+      ],
+      "hcgRepo": []
     },
     {
       "id": "hcg-one-unleashed",
@@ -71,11 +148,21 @@
         "All market data and all trading are simulated. No order leaves the Mac. The development build has no sign-in, network connections, payments or licensing."
       ],
       "category": "trading-markets",
-      "tags": ["trading", "simulation", "order flow", "charting", "education"],
+      "tags": [
+        "trading",
+        "simulation",
+        "order flow",
+        "charting",
+        "education"
+      ],
       "developmentStatus": "in-development",
       "developmentNote": "Development build, milestone M2 Stage 2 (charting).",
       "platforms": [
-        { "platform": "macos", "support": "in-development", "note": "Development builds target Apple Silicon and macOS 15 or later. Not confirmed for any release." }
+        {
+          "platform": "macos",
+          "support": "in-development",
+          "note": "Development builds target Apple Silicon and macOS 15 or later. Not confirmed for any release."
+        }
       ],
       "media": [],
       "currentReleaseId": null,
@@ -83,13 +170,23 @@
         "status": "provisional",
         "centralId": null,
         "references": [
-          { "system": "HCG LifeOS realm key", "value": "hcg.one", "note": "LifeOS uses this key for both 'HCG ONE' and 'HCG ONE: UNLEASHED'" },
-          { "system": "Development repository", "value": "F1r3srp3nt/HCG-ONE-UNLEASHED", "note": "public" }
+          {
+            "system": "HCG LifeOS realm (not a product ID)",
+            "value": "hcg.one",
+            "note": "A LifeOS gamification realm, not a product ID. Kept only as a cross-reference."
+          },
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-ONE-UNLEASHED",
+            "note": "public"
+          }
         ]
       },
       "catalogueNotes": [
         "HCG ONE (the existing iOS and web app) is a separate product and is not listed in this store yet."
-      ]
+      ],
+      "editions": [],
+      "hcgRepo": []
     },
     {
       "id": "hcg-news",
@@ -102,7 +199,10 @@
         "Features and supported platforms have not been published. They will appear here once HCG confirms them."
       ],
       "category": "news-media",
-      "tags": ["news", "media"],
+      "tags": [
+        "news",
+        "media"
+      ],
       "developmentStatus": "in-development",
       "developmentNote": "Reported as in progress in the founder's 31 October 2026 objectives. The public repository currently contains only a README.",
       "platforms": [],
@@ -111,9 +211,17 @@
       "registry": {
         "status": "provisional",
         "centralId": null,
-        "references": [{ "system": "Development repository", "value": "F1r3srp3nt/HCG-News", "note": "public" }]
+        "references": [
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-News",
+            "note": "public"
+          }
+        ]
       },
-      "catalogueNotes": []
+      "catalogueNotes": [],
+      "editions": [],
+      "hcgRepo": []
     },
     {
       "id": "hcg-executable-maker",
@@ -126,19 +234,44 @@
         ".NET projects, including Avalonia desktop apps, can be built and packaged for Windows (portable or Setup.exe installer), macOS and Linux (portable preview). Android and iOS projects are handled by Mobile Build Studio when the required toolchains are present."
       ],
       "category": "developer-tools",
-      "tags": ["build", "packaging", "installer", "checksums", "dotnet", "avalonia", "ci"],
+      "tags": [
+        "build",
+        "packaging",
+        "installer",
+        "checksums",
+        "dotnet",
+        "avalonia",
+        "ci"
+      ],
       "developmentStatus": "in-development",
-      "developmentNote": "Version 0.2.0 is a pre-release (milestones M0.1, M0.2 and M0.5). Code signing and MSI packaging are not implemented yet.",
+      "developmentNote": "Version 0.3.0 is a pre-release. The development repository's CI packages macOS, Windows and Linux builds; none has been supplied to HCG Store as an approved release.",
       "platforms": [
-        { "platform": "windows", "support": "in-development", "note": "Test suite and installer checks run in CI on Windows. No release supplied." },
-        { "platform": "macos", "support": "in-development", "note": "Test suite runs in CI on macOS. No release supplied." },
-        { "platform": "linux", "support": "in-development", "note": "Developed and screenshotted on Linux x64. No release supplied." }
+        {
+          "platform": "windows",
+          "support": "in-development",
+          "note": "Test suite and installer checks run in CI on Windows. No release supplied."
+        },
+        {
+          "platform": "macos",
+          "support": "in-development",
+          "note": "Test suite runs in CI on macOS. No release supplied."
+        },
+        {
+          "platform": "linux",
+          "support": "in-development",
+          "note": "Developed and screenshotted on Linux x64. No release supplied."
+        }
       ],
       "media": [
         {
           "kind": "screenshot",
           "src": "media/products/hcg-executable-maker/dashboard-1440.webp",
-          "variants": [{ "src": "media/products/hcg-executable-maker/dashboard-720.webp", "width": 720 }],
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/dashboard-720.webp",
+              "width": 720
+            }
+          ],
           "width": 1440,
           "height": 920,
           "alt": "HCG Executable Maker Command Center dashboard showing build counts, recent builds, host environment and build toolchains.",
@@ -148,7 +281,12 @@
         {
           "kind": "screenshot",
           "src": "media/products/hcg-executable-maker/mobile-build-studio-1440.webp",
-          "variants": [{ "src": "media/products/hcg-executable-maker/mobile-build-studio-720.webp", "width": 720 }],
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/mobile-build-studio-720.webp",
+              "width": 720
+            }
+          ],
           "width": 1440,
           "height": 900,
           "alt": "HCG Executable Maker Mobile Build Studio showing an imported Android project with build outputs marked unavailable because the Android SDK is missing.",
@@ -161,11 +299,42 @@
         "status": "provisional",
         "centralId": null,
         "references": [
-          { "system": "HCG LifeOS realm key", "value": "hcg.devtools", "note": "Developer Forge realm" },
-          { "system": "Development repository", "value": "F1r3srp3nt/HCG-Executable-Maker", "note": "public" }
+          {
+            "system": "HCG product key (reported, unconfirmed)",
+            "value": "hcg.executable.maker",
+            "note": "The development repository reports this key in HCG's live product catalog, but the same repository also uses 'executable-maker'. Awaiting confirmation by HCG before it is used for entitlements."
+          },
+          {
+            "system": "HCG LifeOS realm (not a product ID)",
+            "value": "hcg.devtools",
+            "note": "A LifeOS gamification realm, not a product ID. Kept only as a cross-reference."
+          },
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-Executable-Maker",
+            "note": "public"
+          }
         ]
       },
-      "catalogueNotes": []
+      "catalogueNotes": [],
+      "editions": [
+        {
+          "id": "desktop",
+          "name": "Desktop",
+          "summary": "One desktop application for macOS, Windows and Linux.",
+          "platforms": [
+            "macos",
+            "windows",
+            "linux"
+          ],
+          "channel": "direct-download",
+          "status": "0.3.0 pre-release. CI packages osx-arm64/x64, win-x64/arm64 (Setup.exe) and linux-x64/arm64 builds; no release has been approved for HCG Store.",
+          "identifiers": [],
+          "layouts": [],
+          "note": null
+        }
+      ],
+      "hcgRepo": []
     },
     {
       "id": "hcg-reprompter",
@@ -178,35 +347,40 @@
         "It works with the user's own Anthropic API key and includes a deterministic, offline Local Formatting mode that is always labelled as non-AI."
       ],
       "category": "developer-tools",
-      "tags": ["ai", "prompts", "prompt engineering", "claude", "diff"],
+      "tags": [
+        "ai",
+        "prompts",
+        "prompt engineering",
+        "claude",
+        "diff"
+      ],
       "developmentStatus": "in-development",
       "developmentNote": "Version 0.1.0 is a pre-release development build and has not been commercially released.",
-      "platforms": [{ "platform": "macos", "support": "in-development", "note": "Native macOS application." }],
+      "platforms": [
+        {
+          "platform": "macos",
+          "support": "in-development",
+          "note": "Native macOS application."
+        }
+      ],
       "media": [],
       "currentReleaseId": null,
       "registry": {
         "status": "provisional",
         "centralId": null,
-        "references": [{ "system": "Development repository", "value": "F1r3srp3nt/HCG-RePrompter", "note": "public" }]
+        "references": [
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-RePrompter",
+            "note": "public"
+          }
+        ]
       },
-      "catalogueNotes": ["The HCG Development Tools classification is provisional and awaits founder confirmation."]
-    },
-    {
-      "id": "hcg-studio",
-      "slug": "hcg-studio",
-      "name": "HCG Studio",
-      "monogram": "ST",
-      "summary": "An HCG product in active development. Its description and platforms have not been published yet.",
-      "description": ["HCG Studio is being developed. A public description, feature list and supported platforms will appear here once HCG confirms them."],
-      "category": "unclassified",
-      "tags": [],
-      "developmentStatus": "in-development",
-      "developmentNote": "Reported as in progress in the founder's 31 October 2026 objectives.",
-      "platforms": [],
-      "media": [],
-      "currentReleaseId": null,
-      "registry": { "status": "provisional", "centralId": null, "references": [] },
-      "catalogueNotes": ["HCG Studio is a different product from Hakmi Signature Studios."]
+      "catalogueNotes": [
+        "The HCG Development Tools classification is provisional and awaits founder confirmation."
+      ],
+      "editions": [],
+      "hcgRepo": []
     },
     {
       "id": "hcg-cardx",
@@ -219,10 +393,21 @@
         "It signs in with the shared HCG identity. Marketplace operations are authorised by the HCG backend, not by the app."
       ],
       "category": "commerce",
-      "tags": ["marketplace", "listings", "sellers", "ios"],
+      "tags": [
+        "marketplace",
+        "listings",
+        "sellers",
+        "ios"
+      ],
       "developmentStatus": "in-development",
       "developmentNote": "Reported as in progress in the founder's 31 October 2026 objectives.",
-      "platforms": [{ "platform": "ios", "support": "in-development", "note": "Native iOS app." }],
+      "platforms": [
+        {
+          "platform": "ios",
+          "support": "in-development",
+          "note": "Native iOS app."
+        }
+      ],
       "media": [],
       "currentReleaseId": null,
       "registry": {
@@ -230,113 +415,364 @@
         "centralId": null,
         "references": []
       },
-      "catalogueNotes": []
+      "catalogueNotes": [],
+      "editions": [],
+      "hcgRepo": []
     },
     {
       "id": "hcg-terminal",
       "slug": "hcg-terminal",
       "name": "HCG Terminal",
       "monogram": "T",
-      "summary": "A planned HCG terminal tool. Details have not been published yet.",
-      "description": ["HCG Terminal is planned. Its features and supported platforms will be published here once HCG confirms them."],
+      "summary": "A native SwiftUI terminal for iPhone and iPad: local commands, remote SSH development, remote builds and tests, logs and artifacts.",
+      "description": [
+        "HCG Terminal is a native SwiftUI terminal for iPhone and iPad by Hakmi Capital Group. It covers local commands, remote SSH development, remote Swift, Xcode and .NET builds and tests, logs and artifacts.",
+        "It comes in two separately built editions. The standard edition runs built-in commands in the app's own workspace. HCG Terminal Unleashed is a separate jailbreak build that runs a real shell in a pseudo-terminal, only where the device already allows it."
+      ],
       "category": "developer-tools",
-      "tags": ["terminal", "command line"],
-      "developmentStatus": "planning",
-      "developmentNote": "A repository exists. It contains only a README and no application code yet.",
-      "platforms": [],
+      "tags": [
+        "terminal",
+        "ssh",
+        "command line",
+        "jailbreak",
+        "remote builds"
+      ],
+      "developmentStatus": "in-development",
+      "developmentNote": "v0.1 development build. Both iOS schemes build and archive unsigned in CI; nothing has been signed, exported or published.",
+      "platforms": [
+        {
+          "platform": "ios",
+          "support": "in-development",
+          "note": "Development target iOS 17.0 or later."
+        },
+        {
+          "platform": "ipados",
+          "support": "in-development",
+          "note": "Development target iPadOS 17.0 or later."
+        }
+      ],
       "media": [],
       "currentReleaseId": null,
       "registry": {
         "status": "provisional",
         "centralId": null,
-        "references": [{ "system": "Development repository", "value": "F1r3srp3nt/HCG-Terminal", "note": "public" }]
+        "references": [
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-Terminal",
+            "note": "public"
+          }
+        ]
       },
-      "catalogueNotes": ["The HCG Development Tools classification is provisional and awaits founder confirmation."]
+      "catalogueNotes": [
+        "The HCG Development Tools classification is provisional and awaits founder confirmation."
+      ],
+      "editions": [
+        {
+          "id": "standard",
+          "name": "HCG Terminal (standard)",
+          "summary": "Sandboxed edition for ordinary iPhone and iPad distribution.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "app-store",
+          "status": "Development build. Not submitted to TestFlight or the App Store by this project.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hakmicapitalgroup.hcgterminal"
+            }
+          ],
+          "layouts": [],
+          "note": null
+        },
+        {
+          "id": "unleashed",
+          "name": "HCG Terminal Unleashed",
+          "summary": "Separate jailbreak edition with a local shell in a pseudo-terminal, using the access the device already grants.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "jailbreak-package",
+          "status": "Packaging under review in HCG Repo. No package has been published or tested on a jailbroken device.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hakmicapitalgroup.hcgterminal.unleashed"
+            },
+            {
+              "kind": "debian-package",
+              "value": "com.hakmicapitalgroup.hcgterminal.unleashed"
+            }
+          ],
+          "layouts": [
+            {
+              "architecture": "iphoneos-arm64",
+              "label": "Rootless",
+              "note": "Built by the development repository's packaging script; not published."
+            },
+            {
+              "architecture": "iphoneos-arm",
+              "label": "Rootful",
+              "note": "Built by the development repository's packaging script; not published."
+            }
+          ],
+          "note": "Not assumed to be eligible for the App Store. It never runs commands as root automatically."
+        }
+      ],
+      "hcgRepo": [
+        {
+          "key": "hcg-terminal-unleashed",
+          "editionId": "unleashed"
+        }
+      ]
     },
     {
-      "id": "hcg-virtualisation",
-      "slug": "hcg-virtualisation",
-      "name": "HCG Virtualisation",
-      "monogram": "V",
-      "summary": "A planned HCG virtualisation product. Details have not been published yet.",
-      "description": ["HCG Virtualisation has been named but not yet described publicly. Scope and platforms will appear here once HCG confirms them."],
-      "category": "developer-tools",
-      "tags": ["virtualisation", "virtualization"],
-      "developmentStatus": "unknown",
-      "developmentNote": null,
-      "platforms": [],
-      "media": [],
-      "currentReleaseId": null,
-      "registry": { "status": "provisional", "centralId": null, "references": [] },
-      "catalogueNotes": ["The HCG Development Tools classification is provisional and awaits founder confirmation."]
-    },
-    {
-      "id": "hcg-jailbreak-directory",
-      "slug": "hcg-jailbreak-directory",
-      "name": "HCG Jailbreak Directory",
-      "monogram": "JD",
-      "summary": "A named HCG product. Its description and platforms have not been published yet.",
-      "description": ["HCG Jailbreak Directory has been named but not yet described publicly. Scope and platforms will appear here once HCG confirms them."],
-      "category": "unclassified",
-      "tags": [],
-      "developmentStatus": "unknown",
-      "developmentNote": null,
-      "platforms": [],
-      "media": [],
-      "currentReleaseId": null,
-      "registry": { "status": "provisional", "centralId": null, "references": [] },
-      "catalogueNotes": []
-    },
-    {
-      "id": "hcg-jailbreak-unleashed",
-      "slug": "hcg-jailbreak-unleashed",
-      "name": "HCG Jailbreak Unleashed",
-      "monogram": "JU",
-      "summary": "A named HCG product. Its description and platforms have not been published yet.",
-      "description": ["HCG Jailbreak Unleashed has been named but not yet described publicly. Scope and platforms will appear here once HCG confirms them."],
-      "category": "unclassified",
-      "tags": [],
-      "developmentStatus": "unknown",
-      "developmentNote": null,
-      "platforms": [],
-      "media": [],
-      "currentReleaseId": null,
-      "registry": { "status": "provisional", "centralId": null, "references": [] },
-      "catalogueNotes": []
-    },
-    {
-      "id": "hcg-office-suite",
-      "slug": "hcg-office-suite",
-      "name": "HCG Office Suite",
-      "monogram": "OS",
-      "summary": "A named HCG office productivity product. Its description and platforms have not been published yet.",
-      "description": ["HCG Office Suite has been named but not yet described publicly. Components and platforms will appear here once HCG confirms them."],
+      "id": "hcg-nexus",
+      "slug": "hcg-nexus",
+      "name": "HCG Nexus",
+      "monogram": "NX",
+      "summary": "An HCG command panel with searchable shortcuts, workspaces, recent actions, HCG integration status and settings.",
+      "description": [
+        "HCG Nexus is a command panel with searchable shortcuts, workspaces, recent actions, HCG integration status and settings.",
+        "It is built in two separate forms that never share data: a sandboxed iPhone and iPad app, and a jailbreak package that adds a system-wide edge handle over any app. The jailbreak package is off after installation until it is enabled in Settings."
+      ],
       "category": "productivity",
-      "tags": ["office", "documents"],
-      "developmentStatus": "unknown",
-      "developmentNote": null,
-      "platforms": [],
+      "tags": [
+        "shortcuts",
+        "command panel",
+        "workspaces",
+        "jailbreak",
+        "tweak"
+      ],
+      "developmentStatus": "testing",
+      "developmentNote": "0.2.0 is the first device release candidate. Neither form has run on a physical device yet.",
+      "platforms": [
+        {
+          "platform": "ios",
+          "support": "in-development",
+          "note": "App and jailbreak package in development; neither verified on a device."
+        },
+        {
+          "platform": "ipados",
+          "support": "in-development",
+          "note": "App in development; not verified on a device."
+        }
+      ],
       "media": [],
       "currentReleaseId": null,
-      "registry": { "status": "provisional", "centralId": null, "references": [] },
-      "catalogueNotes": []
+      "registry": {
+        "status": "provisional",
+        "centralId": null,
+        "references": [
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-Nexus",
+            "note": "public"
+          }
+        ]
+      },
+      "catalogueNotes": [],
+      "editions": [
+        {
+          "id": "app",
+          "name": "HCG Nexus app",
+          "summary": "Sandboxed iPhone and iPad app. Link shortcuts open through iOS; no system-wide overlay.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "sideload",
+          "status": "Release candidate 0.2.0, built with Xcode. Not verified on a device and not distributed.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hakmicapitalgroup.hcgnexus.app"
+            }
+          ],
+          "layouts": [],
+          "note": "Development target iOS 14.0 or later."
+        },
+        {
+          "id": "jailbreak",
+          "name": "HCG Nexus jailbreak package",
+          "summary": "System-wide edge handle over any app, opening apps by bundle ID, with Settings › HCG Nexus.",
+          "platforms": [
+            "ios"
+          ],
+          "channel": "jailbreak-package",
+          "status": "Release candidate 0.2.0. Built by CI only; not published and not verified on a device.",
+          "identifiers": [
+            {
+              "kind": "debian-package",
+              "value": "com.hakmicapitalgroup.hcgnexus"
+            }
+          ],
+          "layouts": [
+            {
+              "architecture": "iphoneos-arm64",
+              "label": "Rootless",
+              "note": "Release target for rootless jailbreaks on iOS 15.0 or later. Runtime not verified on a device."
+            },
+            {
+              "architecture": "iphoneos-arm",
+              "label": "Rootful",
+              "note": "Builds, but not supported until verified on a device."
+            }
+          ],
+          "note": "Requires mobilesubstrate or ElleKit, and PreferenceLoader."
+        }
+      ],
+      "hcgRepo": [
+        {
+          "key": "hcg-nexus",
+          "editionId": "jailbreak"
+        }
+      ]
     },
     {
-      "id": "hcg-analytics-and-measure",
-      "slug": "hcg-analytics-and-measure",
-      "name": "HCG Analytics & Measure",
-      "monogram": "AM",
-      "summary": "A named HCG analytics and measurement product. Its description and platforms have not been published yet.",
-      "description": ["HCG Analytics & Measure has been named but not yet described publicly. Scope and platforms will appear here once HCG confirms them."],
-      "category": "analytics",
-      "tags": ["analytics", "measurement", "metrics"],
-      "developmentStatus": "unknown",
-      "developmentNote": null,
-      "platforms": [],
+      "id": "hcg-sentinel",
+      "slug": "hcg-sentinel",
+      "name": "HCG Sentinel",
+      "monogram": "SN",
+      "summary": "A native iPhone and iPad app for authorised testing of your own devices, networks and services.",
+      "description": [
+        "HCG Sentinel is a native SwiftUI app for iPhone and iPad for authorised testing of your own devices, networks and services: capture-file inspection, Bluetooth LE discovery, a controlled test-request composer, and a client for an external radio-analysis node.",
+        "Each capability is tracked separately as implemented, supported on the device, enabled by you and verified by a real operation. Fabricated data appears only in a clearly labelled Preview mode."
+      ],
+      "category": "security",
+      "tags": [
+        "security testing",
+        "bluetooth",
+        "network",
+        "authorised testing"
+      ],
+      "developmentStatus": "in-development",
+      "developmentNote": "Version 0.1.0 (build 1). Not tested on physical devices. App Store upload and package publishing are not scripted.",
+      "platforms": [
+        {
+          "platform": "ios",
+          "support": "in-development",
+          "note": "Development target iOS 14.7 or later."
+        },
+        {
+          "platform": "ipados",
+          "support": "in-development",
+          "note": "Development target iPadOS 14.7 or later."
+        }
+      ],
       "media": [],
       "currentReleaseId": null,
-      "registry": { "status": "provisional", "centralId": null, "references": [] },
-      "catalogueNotes": []
+      "registry": {
+        "status": "provisional",
+        "centralId": null,
+        "references": [
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-Sentinel",
+            "note": "public"
+          }
+        ]
+      },
+      "catalogueNotes": [
+        "HCG Sentinel has no jailbreak package. HCG Repo lists it as planned so the two sites link to each other; it cannot be installed from HCG Repo."
+      ],
+      "editions": [
+        {
+          "id": "app",
+          "name": "HCG Sentinel app",
+          "summary": "Native SwiftUI app for iPhone and iPad.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "sideload",
+          "status": "Development-signed builds installed with Xcode or Apple Configurator only.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hcg.sentinel"
+            }
+          ],
+          "layouts": [],
+          "note": null
+        }
+      ],
+      "hcgRepo": [
+        {
+          "key": "hcg-sentinel",
+          "editionId": null
+        }
+      ]
+    },
+    {
+      "id": "hcg-clarity",
+      "slug": "hcg-clarity",
+      "name": "HCG Clarity",
+      "monogram": "CL",
+      "summary": "Turn scattered information into clear instructions and useful deliverables: briefs, presentations and prompt files.",
+      "description": [
+        "HCG Clarity takes scattered source material through four steps, Sources, Distil, Refine and Create, and turns it into briefs, presentations and prompt files. Every output is kept in History.",
+        "It runs as a local web app and as an Electron desktop app for macOS."
+      ],
+      "category": "productivity",
+      "tags": [
+        "writing",
+        "briefs",
+        "presentations",
+        "prompts"
+      ],
+      "developmentStatus": "in-development",
+      "developmentNote": "Version 0.1.0, the first consolidated pre-release. The macOS build is ad-hoc signed and not notarised; CI builds are not releases.",
+      "platforms": [
+        {
+          "platform": "macos",
+          "support": "in-development",
+          "note": "Electron desktop app for Apple Silicon (arm64), macOS 12.0 or later in the development configuration."
+        },
+        {
+          "platform": "web",
+          "support": "in-development",
+          "note": "Runs locally on the user's computer (localhost); not a hosted service."
+        }
+      ],
+      "media": [],
+      "currentReleaseId": null,
+      "registry": {
+        "status": "provisional",
+        "centralId": null,
+        "references": [
+          {
+            "system": "Development repository",
+            "value": "F1r3srp3nt/HCG-Clarity",
+            "note": "public"
+          }
+        ]
+      },
+      "catalogueNotes": [],
+      "editions": [
+        {
+          "id": "macos-desktop",
+          "name": "Desktop for macOS",
+          "summary": "Electron desktop app.",
+          "platforms": [
+            "macos"
+          ],
+          "channel": "direct-download",
+          "status": "Pre-release. Ad-hoc signed, not notarised, no published release.",
+          "identifiers": [
+            {
+              "kind": "app-id",
+              "value": "com.hcg.clarity"
+            }
+          ],
+          "layouts": [],
+          "note": null
+        }
+      ],
+      "hcgRepo": []
     }
   ]
 }

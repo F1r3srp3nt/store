@@ -1,5 +1,6 @@
 /**
- * Validates the catalogue files: schema, unique IDs, cross-references, Dropbox links and media files.
+ * Validates the catalogue files: schema, unique IDs, cross-references, editions, HCG Repo links,
+ * the absence of download URLs, and media files.
  *
  *   npm run validate:catalogue                    # catalogue/
  *   npm run validate:catalogue -- path/to/dir     # another directory (e.g. the test fixture)

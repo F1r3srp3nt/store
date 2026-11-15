@@ -14,7 +14,7 @@ const SECTIONS = [
 export function GettingStartedPage() {
   return (
     <>
-      <PageMeta title="Getting started" description="How HCG Store downloads work, how to verify a file, and platform-specific installation notes." />
+      <PageMeta title="Getting started" description="How access and downloads work in HCG Store, how to verify a file, and platform-specific installation notes." />
       <div className="page-width page-pad">
         <header className="page-head">
           <p className="eyebrow eyebrow--accent">Guide</p>
@@ -44,16 +44,20 @@ export function GettingStartedPage() {
                 </li>
                 <li>
                   <strong>Check the release panel.</strong> When a release exists, you will see its version, channel, files, sizes and any published SHA-256
-                  checksum. If it says <em>No public release supplied</em>, there is nothing to download yet.
+                  checksum. If it says <em>Coming soon</em>, there is nothing to download yet.
                 </li>
                 <li>
-                  <strong>Download.</strong> The button sends your browser directly to the file host named on the release, currently Dropbox. Your browser
-                  handles the transfer.
+                  <strong>Sign in.</strong> Every download requires your HCG account, including free tools. Paid products also require ownership that HCG
+                  has confirmed. HCG Store checks this on its server every time; files are never published at public links.
+                </li>
+                <li>
+                  <strong>Download or install.</strong> Owners download from the product page. Jailbreak packages are installed through HCG Repo, linked from
+                  the product page.
                 </li>
               </ol>
               <p className="notice">
-                <IconInfo className="inline-icon" /> Selecting a download button means a download was <em>requested</em>. HCG Store cannot tell whether
-                the download finished, and it never reports that an app has been installed.
+                <IconInfo className="inline-icon" /> Downloads are not available yet. They will be switched on only after sign-in and server-side access
+                checks have been verified and HCG approves the launch.
               </p>
             </section>
 
@@ -136,14 +140,15 @@ export function GettingStartedPage() {
                   <IconShield className="inline-icon" /> HCG Store never asks you to disable operating-system security to install software.
                 </li>
                 <li>
-                  <IconShield className="inline-icon" /> Public download links are not private. Anyone who has a Dropbox shared link can download that file,
-                  so signing in to HCG would not make it private.
+                  <IconShield className="inline-icon" /> Files are delivered only through HCG Store's server after it checks your sign-in and access. A
+                  hidden button or a copied link never grants access.
                 </li>
                 <li>
                   <IconShield className="inline-icon" /> Download counts, ratings and reviews are not shown, because HCG Store does not collect them.
                 </li>
                 <li>
-                  <IconShield className="inline-icon" /> Nothing is sold here yet. There are no prices or purchase buttons until a real purchase flow exists.
+                  <IconShield className="inline-icon" /> Prices are shown only when HCG has set them. A purchase counts only after the payment provider
+                  confirms it to HCG Store; a checkout return page proves nothing by itself.
                 </li>
               </ul>
             </section>
@@ -151,8 +156,9 @@ export function GettingStartedPage() {
             <section id="accounts" aria-labelledby="h-accounts">
               <h2 id="h-accounts">Accounts and access</h2>
               <p>
-                You do not need an account to browse the catalogue or use public downloads. Sign-in will use HCG Connect, the central HCG identity
-                service, once the integration is approved. See <Link to="/account">Account &amp; Connections</Link> for the current status.
+                You do not need an account to browse the catalogue. Your library, purchases and every download use your HCG account through HCG
+                Connect, the central HCG identity service. Your HCG role never implies ownership of a product. See{" "}
+                <Link to="/account">Account &amp; Connections</Link> for the current status.
               </p>
             </section>
           </div>

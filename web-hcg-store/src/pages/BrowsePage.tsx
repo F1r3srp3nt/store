@@ -93,8 +93,8 @@ function Browse({ catalogue }: { catalogue: Catalogue }) {
           {(
             [
               ["any", "Any"],
-              ["downloadable", "Download available"],
-              ["no-download", "No download yet"],
+              ["released", "Release approved"],
+              ["coming-soon", "Coming soon"],
             ] as const
           ).map(([value, label]) => (
             <label key={value} className="segmented__option">

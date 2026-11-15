@@ -116,7 +116,7 @@ test.describe("keyboard navigation", () => {
     await page.goto(REAL + "/apps");
     await page.getByRole("searchbox", { name: "Search", exact: true }).focus();
     await page.keyboard.type("imap");
-    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 14 products match");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 11 products match");
     await expect(page).toHaveURL(/\?q=imap/);
     await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
     await page.getByRole("checkbox", { name: "iOS" }).focus();
@@ -188,8 +188,10 @@ test.describe("honesty checks on the shipped catalogue", () => {
       // The Getting started page states that ratings and reviews are NOT shown; that disclaimer is allowed.
       const text = (await page.locator("body").innerText()).replace("Download counts, ratings and reviews are not shown", "");
       expect(text).not.toMatch(/\b\d[\d,.]*\s*(downloads|installs|users)\b/i);
-      expect(text).not.toMatch(/\bratings?\b|\breviews?\b|★|\$\s?\d|€\s?\d|add to cart|\bbuy\b|signed in as|successfully installed/i);
+      expect(text).not.toMatch(/\bratings?\b|\breviews\b|★|\$\s?\d|€\s?\d|add to cart|signed in as|successfully installed|purchase confirmed/i);
       expect(await page.locator("a[href*='dropbox']").count()).toBe(0);
+      expect(await page.locator("a[href*='/api/v1/downloads/'], a[href$='.deb'], a[href$='.ipa'], a[href$='.dmg'], a[href$='.zip']").count()).toBe(0);
+      for (const buy of await page.getByRole("button", { name: "Buy Product" }).all()) await expect(buy).toBeDisabled();
     }
   });
 });

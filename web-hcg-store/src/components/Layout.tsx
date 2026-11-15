@@ -2,8 +2,10 @@ import { useEffect, useId, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { runtimeConfig } from "../config/runtime";
 import { assetUrl } from "../lib/format";
+import { useAccount } from "../account/account-context";
+import { signInUrl } from "../account/api";
 import { useCatalogueState } from "../app/catalogue-context";
-import { IconClose, IconMenu, IconSearch } from "./Icons";
+import { IconClose, IconMenu, IconSearch, IconUser } from "./Icons";
 import { RouteFocus } from "./RouteFocus";
 
 const NAV = [
@@ -65,6 +67,7 @@ export function Layout() {
           </nav>
 
           <HeaderSearch />
+          <AccountChip />
 
           <button
             type="button"
@@ -79,6 +82,7 @@ export function Layout() {
         </div>
         <div id={menuId} className="mobile-menu" hidden={!menuOpen}>
           <HeaderSearch mobile />
+          <AccountChip mobile />
           <nav aria-label="Primary (mobile)">
             <ul>
               {NAV.map((n) => (
@@ -123,6 +127,29 @@ function HeaderSearch({ mobile = false }: { mobile?: boolean }) {
   );
 }
 
+/** Sign-in state in the header. Presentation only: the server enforces every access decision. */
+function AccountChip({ mobile = false }: { mobile?: boolean }) {
+  const { state } = useAccount();
+  const location = useLocation();
+  const cls = mobile ? "account-chip account-chip--mobile" : "account-chip";
+  if (state.status === "signed-in") {
+    const label = state.user.name ?? state.user.email ?? "Your account";
+    return (
+      <Link to="/library" className={cls} title={`Signed in as ${label}`}>
+        <IconUser /> <span className="account-chip__label">{mobile ? `Library · ${label}` : "Library"}</span>
+      </Link>
+    );
+  }
+  if (state.status === "signed-out") {
+    return (
+      <a href={signInUrl(location.pathname + location.search)} className={cls}>
+        <IconUser /> <span className="account-chip__label">Sign in</span>
+      </a>
+    );
+  }
+  return null;
+}
+
 function SiteFooter() {
   const state = useCatalogueState();
   const { deployment } = runtimeConfig;
@@ -134,7 +161,7 @@ function SiteFooter() {
           <p className="site-footer__title">HCG Store</p>
           <p>Applications and developer tools from Hakmi Capital Group.</p>
           <p className="site-footer__fine">
-            No purchases are processed here. Downloads are delivered by the provider named on each release.
+            Every download requires signing in with your HCG account. Purchases count only after the payment provider confirms them.
           </p>
         </div>
         <nav aria-label="Footer">

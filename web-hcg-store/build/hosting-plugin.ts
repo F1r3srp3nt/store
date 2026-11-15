@@ -11,13 +11,8 @@ interface Options {
 
 /** Collect the origins the browser app is allowed to call (CSP connect-src). */
 function connectOrigins(env: Record<string, string>): string[] {
-  const keys = [
-    "VITE_HCG_ERP_CATALOGUE_URL",
-    "VITE_HCG_CONNECT_AUTHORIZATION_ENDPOINT",
-    "VITE_HCG_CONNECT_TOKEN_ENDPOINT",
-    "VITE_HCG_CONNECT_REVOCATION_ENDPOINT",
-    "VITE_HCG_CONNECT_APP_ACCESS_ENDPOINT",
-  ];
+  // Sign-in, purchases and downloads go through the Store server on the same origin ('self').
+  const keys = ["VITE_HCG_ERP_CATALOGUE_URL"];
   const origins = new Set<string>();
   for (const k of keys) {
     const v = env[k];

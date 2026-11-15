@@ -32,6 +32,7 @@ export const CATEGORIES = {
   "news-media": { label: "News & Media", description: "News and publishing." },
   commerce: { label: "Marketplaces & Commerce", description: "Buying, selling and listings." },
   analytics: { label: "Analytics", description: "Measurement and insight." },
+  security: { label: "Security & Testing", description: "Authorised testing of your own devices, networks and services." },
   unclassified: { label: "Category to be confirmed", description: "Awaiting founder classification." },
 } as const;
 export type CategoryId = keyof typeof CATEGORIES;
@@ -86,3 +87,21 @@ export const SIGNING_STATUS = {
 } as const;
 export type SigningStatus = keyof typeof SIGNING_STATUS;
 export const SIGNING_STATUS_IDS = Object.keys(SIGNING_STATUS) as [SigningStatus, ...SigningStatus[]];
+
+/** Intended distribution channel of an edition. A channel never implies the edition is available there. */
+export const EDITION_CHANNELS = {
+  "app-store": { label: "App Store / TestFlight (intended)" },
+  "jailbreak-package": { label: "Jailbreak package via HCG Repo" },
+  "direct-download": { label: "Direct download via HCG Store" },
+  sideload: { label: "Development install (Xcode) only" },
+} as const;
+export type EditionChannel = keyof typeof EDITION_CHANNELS;
+export const EDITION_CHANNEL_IDS = Object.keys(EDITION_CHANNELS) as [EditionChannel, ...EditionChannel[]];
+
+export const IDENTIFIER_KINDS = {
+  "bundle-id": "Bundle identifier",
+  "debian-package": "Package identifier",
+  "app-id": "Application ID",
+} as const;
+export type IdentifierKind = keyof typeof IDENTIFIER_KINDS;
+export const IDENTIFIER_KIND_IDS = Object.keys(IDENTIFIER_KINDS) as [IdentifierKind, ...IdentifierKind[]];

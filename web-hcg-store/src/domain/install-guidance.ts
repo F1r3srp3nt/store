@@ -13,7 +13,17 @@ export interface InstallGuidance {
 const DO_NOT_BYPASS =
   "If your operating system blocks or warns about the file, stop. Do not disable security features. Contact HCG and confirm the checksum first.";
 
-export function installGuidance(format: ArtifactFormat): InstallGuidance {
+export function installGuidance(format: ArtifactFormat, platform?: PlatformId): InstallGuidance {
+  if (format === "deb" && (platform === "ios" || platform === "ipados")) {
+    return {
+      title: "Jailbreak package (.deb)",
+      steps: [
+        "Jailbreak packages are installed through HCG Repo with a package manager such as Sileo, not by opening a downloaded file.",
+        "Use the product's HCG Repo page. Installation becomes available there only when HCG has approved the release and your access is confirmed.",
+      ],
+      cautions: ["Only install packages from HCG Repo. Do not turn off signature checks in your package manager."],
+    };
+  }
   switch (format) {
     case "zip":
       return {

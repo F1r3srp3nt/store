@@ -1,0 +1,4 @@
+{
+  "$comment": "Protected files delivered by the HCG Store server after sign-in and an entitlement check. EMPTY ON PURPOSE: no release has been approved for delivery. Files live in a private directory (HCG_STORE_ARTIFACT_STORAGE_DIR), never in the public site. See docs/ACCESS.md.",
+  "artifacts": []
+}
