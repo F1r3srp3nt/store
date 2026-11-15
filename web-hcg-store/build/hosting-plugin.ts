@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Plugin } from "vite";
 import { findSecretLikePublicEnvNames, parseDeploymentConfig, type DeploymentConfig } from "../src/config/deployment";
 
@@ -7,6 +7,33 @@ interface Options {
   env: Record<string, string>;
   catalogueDir: string;
   basePath: string;
+  /**
+   * Static host the build is for. "github-pages" has no SPA rewrites and no custom response
+   * headers, so the build writes one HTML page per known route (plus 404.html for anything else)
+   * and puts the Content-Security-Policy in a meta tag.
+   */
+  hostingTarget?: string;
+  outDir?: string;
+}
+
+/** Every route the storefront knows about, relative to the base path (no leading slash). */
+export function knownRoutes(slugs: string[]): string[] {
+  return [
+    "apps",
+    "getting-started",
+    "account",
+    "library",
+    "checkout/return",
+    ...slugs.flatMap((s) => [`apps/${s}`, `apps/${s}/releases`]),
+  ];
+}
+
+/** CSP for a <meta> tag: frame-ancestors is not allowed there (X-Frame-Options cannot be set either). */
+export function metaCsp(headers: Record<string, string>): string {
+  return (headers["Content-Security-Policy"] ?? "")
+    .split("; ")
+    .filter((d) => !d.startsWith("frame-ancestors"))
+    .join("; ");
 }
 
 /** Collect the origins the browser app is allowed to call (CSP connect-src). */
@@ -62,8 +89,15 @@ function readSlugs(dir: string): string[] {
   }
 }
 
-export function hcgHostingPlugin({ env, catalogueDir, basePath }: Options): Plugin {
+export function hcgHostingPlugin({ env, catalogueDir, basePath, hostingTarget = "", outDir = "dist" }: Options): Plugin {
   const cfg = parseDeploymentConfig(env);
+  const githubPages = hostingTarget === "github-pages";
+  if (hostingTarget && !githubPages) cfg.errors.push(`HCG_HOSTING_TARGET "${hostingTarget}" is not supported (use "github-pages" or leave it empty).`);
+  if (githubPages && env.VITE_STORE_ACCOUNT_SERVICE !== "none") {
+    cfg.errors.push(
+      "GitHub Pages is static and cannot run the HCG Store server. Build with VITE_STORE_ACCOUNT_SERVICE=none so the site never pretends sign-in, purchases or downloads exist.",
+    );
+  }
   return {
     name: "hcg-hosting",
     configResolved() {
@@ -81,9 +115,31 @@ export function hcgHostingPlugin({ env, catalogueDir, basePath }: Options): Plug
       if (cfg.errors.length) throw new Error(`[hcg-hosting] Invalid configuration:\n - ${cfg.errors.join("\n - ")}`);
     },
     transformIndexHtml(html) {
+      let out = html;
+      if (githubPages) {
+        // GitHub Pages cannot send response headers: put the policy in the document instead.
+        const csp = metaCsp(securityHeaders(cfg, env));
+        out = out.replace(
+          /(<meta charset="[^"]*"\s*\/?>)/i,
+          `$1\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />`,
+        );
+      }
       // Crawlers that do not run JavaScript still see the noindex directive.
-      if (cfg.indexingAllowed) return html;
-      return html.replace("</head>", '    <meta name="robots" content="noindex, nofollow" />\n  </head>');
+      if (cfg.indexingAllowed) return out;
+      return out.replace("</head>", '    <meta name="robots" content="noindex, nofollow" />\n  </head>');
+    },
+    writeBundle() {
+      if (!githubPages) return;
+      // No SPA rewrites on GitHub Pages: write the app shell at every known route so direct
+      // loads and reloads return 200 (Pages serves "/apps/x" from "apps/x.html"), and use it
+      // as 404.html so unknown paths still render the storefront's own "not found" page.
+      const shell = readFileSync(join(outDir, "index.html"), "utf8");
+      for (const route of knownRoutes(readSlugs(catalogueDir))) {
+        const file = join(outDir, `${route}.html`);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, shell);
+      }
+      writeFileSync(join(outDir, "404.html"), shell);
     },
     generateBundle() {
       const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
@@ -121,6 +177,9 @@ export function hcgHostingPlugin({ env, catalogueDir, basePath }: Options): Plug
             publicOrigin: cfg.publicOrigin,
             indexingAllowed: cfg.indexingAllowed,
             fixtureMode: cfg.fixtureMode,
+            hostingTarget: hostingTarget || "generic-static",
+            accountService: env.VITE_STORE_ACCOUNT_SERVICE === "none" ? "none" : "same-origin-server",
+            commit: process.env.GITHUB_SHA ?? null,
             builtAt: new Date().toISOString(),
           },
           null,

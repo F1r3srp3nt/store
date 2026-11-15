@@ -1,0 +1,115 @@
+# Builds the HCG Store storefront (web-hcg-store/) and deploys ONLY its production build output to
+# GitHub Pages at https://store.hakmicapitalgroup.com/.
+#
+# Requires: Settings → Pages → Build and deployment → Source = "GitHub Actions".
+# With "Deploy from a branch", GitHub runs Jekyll on the repository root instead and the site shows
+# README.md — the bug this workflow replaces. See web-hcg-store/docs/DEPLOYMENT.md.
+#
+# GitHub Pages is static: there is no HCG Store server here, so sign-in, checkout and protected
+# downloads are not available on this deployment (the site says so). No protected file is ever
+# part of the artifact; scripts/verify-pages-artifact.mjs fails the build otherwise.
+name: Deploy storefront to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web-hcg-store/**"
+      - ".github/workflows/deploy-pages.yml"
+  pull_request:
+    paths:
+      - "web-hcg-store/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://store.hakmicapitalgroup.com/
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-hcg-store
+    env:
+      VITE_DEPLOY_ENV: production
+      VITE_PUBLIC_ORIGIN: https://store.hakmicapitalgroup.com
+      VITE_STORE_ACCOUNT_SERVICE: none
+      HCG_HOSTING_TARGET: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-hcg-store/package-lock.json
+      - run: npm ci
+      - name: Unit, component and server tests
+        run: npm test
+      - name: Production build (catalogue validation, type checks, Vite build, secret scan)
+        run: npm run build
+      - name: Verify the Pages artifact (app shell, route pages, no source or protected files)
+        run: node scripts/verify-pages-artifact.mjs dist
+      - name: Smoke-test the artifact served the way GitHub Pages serves it
+        run: |
+          node scripts/serve-pages-like.mjs dist 4180 &
+          sleep 1
+          node scripts/smoke-deployment.mjs http://127.0.0.1:4180/ --expect-commit "$GITHUB_SHA"
+      - name: Upload the Pages artifact (dist/ only)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-hcg-store/dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  live-smoke:
+    # Independent check of what the real domain serves after this deployment (waits for the CDN).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Smoke-test https://store.hakmicapitalgroup.com/ (storefront, routes, HTTPS, redirect, deployed commit)
+        run: node web-hcg-store/scripts/smoke-deployment.mjs "$SITE_URL" --expect-commit "$GITHUB_SHA" --wait 600
+
+  live-state:
+    # On pull requests: report what the live domain serves today (informational, never blocks).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Current live state of https://store.hakmicapitalgroup.com/
+        run: |
+          echo "## DNS"; getent hosts store.hakmicapitalgroup.com || true
+          echo "## Certificate served for store.hakmicapitalgroup.com"
+          echo | openssl s_client -connect store.hakmicapitalgroup.com:443 -servername store.hakmicapitalgroup.com 2>/dev/null \
+            | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>&1 || true
+          echo "## http:// response"; curl -sS -o /dev/null -m 20 -w '%{http_code} -> %{redirect_url}\n' http://store.hakmicapitalgroup.com/ || true
+          node web-hcg-store/scripts/smoke-deployment.mjs "$SITE_URL"

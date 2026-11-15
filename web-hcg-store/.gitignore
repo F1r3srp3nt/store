@@ -11,3 +11,4 @@ playwright-report/
 /data/
 *.tsbuildinfo
 server-dist/
+dist-pages/

@@ -1,4 +1,53 @@
-# Deployment guide (prepared, NOT applied)
+# Deployment guide
+
+## 0. Production: https://store.hakmicapitalgroup.com/ on GitHub Pages
+
+**What went wrong (15 November 2026).** The domain showed the repository README ("HCG Store (web
+storefront)", npm commands) instead of the app. GitHub Pages was set to *Deploy from a branch*
+(`main`, `/ (root)`), so GitHub's Jekyll builder rendered the repository root, and `README.md` became
+`index.html`. The storefront in `web-hcg-store/` was never built or deployed. The repository had no
+deployment workflow of its own.
+
+**Fix.** `.github/workflows/deploy-pages.yml` builds the storefront and deploys **only**
+`web-hcg-store/dist/`:
+
+| Step | What it does |
+|---|---|
+| Build | `npm ci`, `npm test`, `npm run build` with `VITE_DEPLOY_ENV=production`, `VITE_PUBLIC_ORIGIN=https://store.hakmicapitalgroup.com`, `VITE_STORE_ACCOUNT_SERVICE=none`, `HCG_HOSTING_TARGET=github-pages` |
+| Pages adaptations | Pages has no SPA rewrites and no custom headers. The build writes the app shell at every known route (`apps.html`, `apps/<slug>.html`, `apps/<slug>/releases.html`, …), so direct loads and reloads return 200. It also writes `404.html`, so unknown paths render the app's own "not found" page, and puts the CSP in a `<meta>` tag. |
+| Verify | `scripts/verify-pages-artifact.mjs`: built app shell, every route page present, production manifest, and no source, server, markdown, env or binary files |
+| Local smoke | `scripts/serve-pages-like.mjs` serves `dist/` with Pages' file rules, then `scripts/smoke-deployment.mjs` runs against it |
+| Deploy | `actions/upload-pages-artifact` (`dist/` only) → `actions/deploy-pages` (pushes to `main` and manual runs) |
+| Live smoke | `scripts/smoke-deployment.mjs https://store.hakmicapitalgroup.com/ --expect-commit <sha> --wait 600`. It fails if the README or any non-app page is served, a nested route, image or asset fails, the deployed commit differs, a source or protected path is reachable, the certificate is invalid, or http does not redirect to https. |
+
+`hcg-build.json` at the site root records the deployed commit, environment and hosting target.
+
+### Settings the repository owner must change (GitHub → F1r3srp3nt/store → Settings → Pages)
+
+1. **Build and deployment → Source: "GitHub Actions"** (not "Deploy from a branch"). This alone stops
+   the README from being published. Then re-run **Actions → Deploy storefront to GitHub Pages → Run
+   workflow** on `main`, or push to `main`.
+2. **Custom domain: `store.hakmicapitalgroup.com`.** Keep it. With Actions deployments the custom domain
+   comes from this setting, not from the `CNAME` file. The root `CNAME` file stays harmlessly.
+3. **Enforce HTTPS: on.** The option is greyed out until GitHub has issued the certificate for the
+   domain, which can take up to about 24 hours after DNS points at Pages. If it stays unavailable,
+   remove and re-add the custom domain to trigger issuance.
+4. DNS for `store` (at the `hakmicapitalgroup.com` DNS provider): a `CNAME` record pointing to
+   `f1r3srp3nt.github.io`, with no proxying CDN in front during certificate issuance. If the domain has
+   CAA records, they must allow `letsencrypt.org`.
+
+### What the static site can and cannot do
+
+Public product browsing works. **Sign-in, the library, checkout and protected downloads do not run on
+GitHub Pages**, because they need the HCG Store server (§2a). The static build is compiled with
+`VITE_STORE_ACCOUNT_SERVICE=none`: it makes no account requests and says "Sign-in and purchases are
+not available on this site". No file is downloadable. The HCG Connect redirect URI proposed to HCG,
+`https://store.hakmicapitalgroup.com/auth/callback`, will only work once the domain is served by the
+HCG Store server rather than Pages. Do not register it centrally before that.
+
+Indexing stays off (`noindex`, `robots.txt` disallows) until the founder sets `VITE_ALLOW_INDEXING=true`
+in the workflow.
+
 
 No deployment, DNS, hosting or production configuration has been changed. Every step below is for the
 founder to perform or approve.
