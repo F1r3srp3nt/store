@@ -9,8 +9,8 @@ export const DEPLOY_ENVS = ["development", "preview", "production"] as const;
 export type DeployEnv = (typeof DEPLOY_ENVS)[number];
 
 /**
- * The planned production host. It is NOT live yet; it may only be configured together with
- * an explicit `VITE_DEPLOY_ENV=production`.
+ * The production host (served by GitHub Pages from .github/workflows/deploy-pages.yml). It may
+ * only be configured together with an explicit `VITE_DEPLOY_ENV=production`.
  */
 export const FUTURE_PRODUCTION_HOST = "store.hakmicapitalgroup.com";
 

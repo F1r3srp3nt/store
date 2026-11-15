@@ -8,6 +8,12 @@ export interface RuntimeConfig {
   erpCatalogueUrl: string | undefined;
   /** Base URL of HCG Repo's website (product pages live at <base>products/<key>/). */
   repoBaseUrl: string;
+  /**
+   * "same-origin-server": the HCG Store server runs on this origin (sign-in, library, checkout,
+   * protected downloads). "none": a static host such as GitHub Pages; the app makes no account
+   * requests and says sign-in is not available on this site.
+   */
+  accountService: "same-origin-server" | "none";
   /** Raw public env (non-secret settings only). */
   env: Record<string, string | undefined>;
 }
@@ -20,6 +26,7 @@ export function readRuntimeConfig(env: Record<string, string | boolean | undefin
     catalogueProvider: strings.VITE_CATALOGUE_PROVIDER === "hcg-erp" ? "hcg-erp" : "local",
     erpCatalogueUrl: strings.VITE_HCG_ERP_CATALOGUE_URL?.trim() || undefined,
     repoBaseUrl: normaliseRepoBase(strings.VITE_HCG_REPO_BASE_URL),
+    accountService: strings.VITE_STORE_ACCOUNT_SERVICE === "none" ? "none" : "same-origin-server",
     env: strings,
   };
 }

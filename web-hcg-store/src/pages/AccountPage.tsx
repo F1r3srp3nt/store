@@ -15,11 +15,15 @@ export function AccountPage() {
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
+    if (account.status === "no-server") {
+      setHealth("unavailable");
+      return;
+    }
     storeApi
       .health()
       .then(setHealth)
       .catch(() => setHealth("unavailable"));
-  }, []);
+  }, [account.status]);
 
   const h = health && health !== "unavailable" ? health : null;
   const accountLabel =

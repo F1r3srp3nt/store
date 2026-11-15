@@ -61,7 +61,8 @@ function access(over: Partial<EditionAccess> & { editionId: string | null }): Ed
 function renderAt(path: string, catalogue: Catalogue = realCatalogue()) {
   return render(
     <CatalogueStateProvider provider={staticProvider(catalogue)}>
-      <AccountProvider>
+      {/* Explicit, so a VITE_STORE_ACCOUNT_SERVICE in the environment cannot change what is tested. */}
+      <AccountProvider accountService="same-origin-server">
         <MemoryRouter initialEntries={[path]}>
           <AppRoutes />
         </MemoryRouter>
@@ -257,6 +258,22 @@ describe("account and ownership (stubbed HCG Store server)", () => {
     const { container } = renderAt("/apps/hcg-sentinel");
     expect(await screen.findByRole("link", { name: /Sign in to check access/ })).toBeInTheDocument();
     expectNoFabrication(container);
+  });
+
+  it("on a static host (no account service) makes no account requests and says sign-in is unavailable", async () => {
+    server = { session: { configured: true, signedIn: true, user: ALICE } };
+    render(
+      <CatalogueStateProvider provider={staticProvider(realCatalogue())}>
+        <AccountProvider accountService="none">
+          <MemoryRouter initialEntries={["/apps/hcg-terminal"]}>
+            <AppRoutes />
+          </MemoryRouter>
+        </AccountProvider>
+      </CatalogueStateProvider>,
+    );
+    expect(await screen.findByText(/Sign-in and purchases are not available on this site/)).toBeInTheDocument();
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    for (const b of screen.queryAllByRole("button", { name: "Buy Product" })) expect(b).toBeDisabled();
   });
 
   it("the checkout return page never claims success by itself", async () => {
