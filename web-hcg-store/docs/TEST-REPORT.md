@@ -19,12 +19,34 @@ provider**.
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities (`jose` pinned to 6.2.14, a release more than two weeks old) |
 | Mutation check of the acceptance suite | manual | ✔ The suite catches all 5 deliberately introduced faults: an entitlement bypass, a signature bypass, idempotency removed, central re-check removed, and the amount check removed |
 
+## Flaky e2e tests fixed (15 November 2026)
+
+- **"header search submits to the browse page"**: a race in the test, not an app bug.
+  - React Router updates the URL first, then renders the new page as a React transition. On a busy machine the URL already read `/apps?q=terminal` while the home page was still on screen.
+  - The home page links "HCG Terminal" twice, so the next `getByRole("link", { name: "HCG Terminal" })` hit a strict-mode violation. Playwright does not retry those: the test failed 357 ms after Enter (from the failure trace).
+  - The test now waits for the browse page (its `h1` and "1 of 10 products match") and matches the link exactly.
+  - Proof: with Chromium's CPU throttled 12× through DevTools, the old assertions failed 12 of 12 with that error and the new ones passed 12 of 12.
+- **"banners and icons are shown whole"**: loaded 20 pages in one 30 s test, which ran out of time under heavy contention. It is now one test per width.
+- **Result**: under the contention that reproduced both failures (8 workers on 4 CPUs plus 4 busy loops), the full suite passed 168 of 168 (×4). Normal runs: 42 passed, three in a row.
+- **Follow-up: the same delay was also an app bug.** `useSearchParams`' functional setter merges into the params of the last *rendered* location, not the current URL. While a route change was still pending, clearing the search and then ticking a platform wrote `?q=imap&platform=ios`, which restored the cleared search; the earlier "merge into the latest URL state" fix did not cover this case. `BrowserRouter` now has `useTransitions={false}`, so the URL and the page change together (no route suspends, so transitions gave no benefit). Two regression tests ("navigation on a busy device") throttle Chromium's CPU 20× and failed 6 of 6 against the old app.
+
+## Product artwork update (15 November 2026)
+
+| Check | Method | Result |
+|---|---|---|
+| Mapping: 8 new banners, 4 new icons, kept icons and Terminal/Sentinel artwork, no shared files | unit tests on the real catalogue | ✔ |
+| Every artwork file, variant and AVIF copy exists, and its real pixel size matches the catalogue | `npm run validate:catalogue` (deliberately broken entries were caught) | ✔ |
+| Product page: banner is the one high-priority image, AVIF with WebP fallback, decorative alt; real screenshots kept (lazy) and labelled; framed icons; library shows catalogue icons | component tests + e2e | ✔ |
+| All 10 product pages show the right banner and icon on direct URLs; search, category, releases (nested route), RePrompter, library and account pages | Playwright audit of the Pages build at 320, 390, 768, 1024, 1440 px (95 page loads) | ✔ no overflow, broken images, distortion, cropping or clipped names |
+| Banners and icons never cropped or stretched | e2e at 5 widths | ✔ |
+| Card summaries clamp to exactly 3 lines | Playwright at 4 widths | ✔ (fixed: a stretched grid item showed part of a 4th line) |
+
 ## Storefront redesign (15 November 2026)
 
 | Check | Command / method | Result |
 |---|---|---|
 | Catalogue, typecheck, unit and component tests, production build, secret scan | `npm run check` | ✔ catalogue valid (11 entries, 10 listed; RePrompter is merged into Clarity); **131 tests passed** in 11 files |
-| End-to-end in Chromium | `npm run test:e2e` | ✔ **37 passed** (2 opt-in screenshot tests skipped), two full runs in a row. One earlier run had a single time-out in "header search submits to the browse page"; it then passed 16 of 16 repeats and is treated as load-related. |
+| End-to-end in Chromium | `npm run test:e2e` | ✔ **37 passed** (2 opt-in screenshot tests skipped), two full runs in a row. One earlier run had a single failure in "header search submits to the browse page" (root cause found and fixed later; see "Flaky e2e tests fixed" below). |
 | GitHub Pages artifact | production build with `HCG_HOSTING_TARGET=github-pages`, then `scripts/verify-pages-artifact.mjs` | ✔ 89 files, 27 route pages + `404.html` |
 | Pages artifact served like GitHub Pages | `scripts/serve-pages-like.mjs` + `scripts/smoke-deployment.mjs` | ✔ SMOKE OK (app shell, routes, new hero image, not-found page, no source or protected files) |
 | Store ⇄ HCG Repo mapping | `npm run check:repo-mapping -- <HCG-repo>` (HCG-repo `3a8fe2e`) | ✔ 3 products, 3 links, package IDs equal |

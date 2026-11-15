@@ -25,6 +25,37 @@ in `catalogue/products.json` next to each image.
 | HCG CardX | `icon-256` | The app's own icon set (development project, commit `e6d5545`; the repository is private and is not named publicly) |
 | HCG Clarity | `distil`, `refine`, `presentation` at 720/1440 | Screenshots from the app's automated browser test with synthetic content and the mock AI provider (text marked `[MOCK]`), HCG-Clarity `3a97c07`. Captions say so. |
 
+### Founder-approved product banners and icons (15 November 2026)
+
+Twelve images supplied with the artwork request and identified by their branding (wordmark and emblem),
+not by upload order. The **originals** are kept losslessly (pixel-identical WebP, verified) in the
+repository's `assets/products/<id>/banner.webp` and `icon.webp`; they are not published. The **web
+renditions** are made by `scripts/product-art.py` (resize only: no crop, padding or edits), in AVIF with a
+WebP fallback. The catalogue is the only place that maps them to products.
+
+| Product (stable ID) | Banner (2172×724 original → `banner-640/1200/2000`) | Icon (1254×1254 original → `icon-128/256`) |
+|---|---|---|
+| HCG CardX (`hcg-cardx`) | **New**: HCG crest beside three holographic cards | Kept (app icon) |
+| HCG Clarity (`hcg-clarity`) | **New**: glass prism splitting light into three layers | **New**: prism icon |
+| HCG Executable Maker (`hcg-executable-maker`) | **New**: HCG crest, robotic arms assembling a cube | **New**: assembly-cube icon |
+| HCG LifeOS (`hcg-lifeos`) | **New**: progress compass with star and stairway | **New**: progress-compass icon |
+| HCG Mail (`hcg-mail`) | **New**: faceted chrome envelope | Kept (app icon) |
+| HCG News (`hcg-news`) | **New**: chrome globe with antenna over news pages | Kept (app icon) |
+| HCG Nexus (`hcg-nexus`) | **New**: four-pointed chrome star | Kept (app icon) |
+| HCG ONE: Unleashed (`hcg-one-unleashed`) | **New**: crystal "1" in a chrome ring with candlesticks | **New**: silver "1" with gold-accented candlesticks |
+| HCG Terminal, HCG Sentinel | Kept | Kept |
+
+How they are shown:
+- Banners are promotional cover art (`kind: "official"`), never labelled or captioned as screenshots.
+  They appear on product cards (home, browse, search and category results) and across the top of the
+  product page, always at their natural 3:1 ratio with `object-fit: contain` on black: nothing is
+  cropped or stretched. The product page banner is that page's one high-priority image; card art is
+  lazy-loaded. Real screenshots stay in the product page gallery.
+- The new icons have their own chrome frame, so the catalogue marks them `iconStyle: "framed"`: they are
+  shown whole (no rounded mask, ring or glow added). App icons keep the platform's rounded mask.
+- Banners and icons repeat the product name next to them, so they are decorative (`alt=""`); the name
+  is always real HTML text.
+
 The header shows the HCG mark followed by the text "STORE" in the site's display font. That is a text
 label, not a new logo. **No replacement or official "HCG Store" logo was created.**
 
@@ -55,12 +86,13 @@ Brand
 - [ ] The READMEs still show the earlier banner (`assets/hcg-store-banner.webp`). Decide whether they should
       use the new hero artwork.
 
-Product icons (1024×1024 PNG or SVG)
-- [ ] **HCG Clarity**: no product-specific icon; its desktop build uses the generic HCG logo.
-- [ ] **HCG Executable Maker**: the app uses a temporary HCG logo.
-- [ ] **HCG ONE: Unleashed**: the repository only has a temporary "DEV BUILD" icon (not used).
-- [ ] **HCG LifeOS**: the icon set in the repository is empty.
+Product icons
+- [x] HCG Clarity, HCG Executable Maker, HCG LifeOS and HCG ONE: Unleashed now have approved store icons
+      (15 November 2026). The apps themselves may still ship temporary icons (Clarity and Executable Maker
+      use the generic HCG logo; ONE: Unleashed has a "DEV BUILD" icon; LifeOS's icon set is empty), which
+      is for each product's repository to update.
 - [ ] **HCG RePrompter**: none (now part of HCG Clarity; not needed unless the old page should show one).
+- [ ] Vector (SVG) or 1024 px sources of the new icons and banners, if they exist, for future sizes.
 
 Screenshots (each with app version and capture source)
 - [ ] None yet for **HCG Terminal**, **HCG Nexus**, **HCG Sentinel**, **HCG News**, **HCG ONE: Unleashed**,
@@ -83,7 +115,9 @@ Facts
 - [ ] Release dates, versions and files for every product: none are published, so every product shows
       "No public release supplied".
 
-To add product art, put WebP files in `public/media/products/<id>/` and reference them from the product's
-`artwork` (icon/cover) or `media` (screenshots) in `catalogue/products.json`; `npm run validate:catalogue`
-checks that the files exist. To replace the hero banner, overwrite the three `hcg-store-hero-*.webp`
+To add or replace product art: put the original at `assets/products/<id>/banner.webp` or `icon.webp`
+(lossless), run `python3 scripts/product-art.py <id>` (needs Pillow with AVIF and WebP), and point the
+product's `artwork` (icon/cover) or `media` (screenshots) in `catalogue/products.json` at the files.
+`npm run validate:catalogue` checks that every file, variant and AVIF copy exists and that each file's real
+pixel size matches the size declared in the catalogue (the size the page reserves, so nothing shifts). To replace the hero banner, overwrite the three `hcg-store-hero-*.webp`
 files (keep the 3:1 ratio, or update `SIZES`/`HEIGHT` in `src/components/HeroBanner.tsx`).

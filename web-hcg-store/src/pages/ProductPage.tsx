@@ -11,11 +11,7 @@ import {
 } from "../components/Icons";
 import { MediaImage } from "../components/MediaImage";
 import { PageMeta } from "../components/PageMeta";
-import {
-  hasVisualArt,
-  ProductCover,
-  ProductMark,
-} from "../components/ProductArt";
+import { ProductBanner, ProductMark } from "../components/ProductArt";
 import { ReleasePanel } from "../components/Release";
 import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
@@ -95,6 +91,8 @@ function ProductDetail({
           </div>
         )}
 
+        <ProductBanner product={product} />
+
         <header className="product-hero">
           <ProductMark product={product} size="lg" />
           <div className="product-hero__copy">
@@ -143,20 +141,29 @@ function ProductDetail({
 
         <div className="product-layout">
           <div className="product-main">
-            {(hasVisualArt(product) || concepts.length > 0) && (
+            {(screenshots.length > 0 || concepts.length > 0) && (
               <section
                 aria-labelledby="gallery-title"
                 className="product-gallery"
               >
                 <h2 id="gallery-title" className="visually-hidden">
-                  Gallery
+                  Screenshots
                 </h2>
-                {hasVisualArt(product) && (
-                  <ProductCover
-                    product={product}
-                    sizes="(max-width: 1000px) 92vw, 760px"
-                    eager
-                  />
+                {screenshots[0] && (
+                  <figure className="gallery-lead">
+                    <div className="product-cover product-cover--shot">
+                      <div className="screen-frame">
+                        <MediaImage
+                          media={screenshots[0]}
+                          sizes="(max-width: 1000px) 92vw, 760px"
+                          // The banner is this page's priority image; without one, the lead screenshot is.
+                          eager={!product.artwork.cover}
+                        />
+                      </div>
+                      <span className="art-label">Screenshot</span>
+                    </div>
+                    <figcaption>{screenshots[0].caption}</figcaption>
+                  </figure>
                 )}
                 {screenshots.length > 1 && (
                   <ul className="gallery-strip">
@@ -174,9 +181,6 @@ function ProductDetail({
                       </li>
                     ))}
                   </ul>
-                )}
-                {screenshots[0] && (
-                  <p className="fine">{screenshots[0].caption}</p>
                 )}
                 {concepts.map((m) => (
                   <figure key={m.src} className="gallery-strip__item">

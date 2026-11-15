@@ -170,3 +170,51 @@ describe("catalogue validation errors", () => {
     expect(e).toMatch(/relative path/);
   });
 });
+
+describe("approved product artwork mapping (catalogue is the single source)", () => {
+  const c = realCatalogue();
+  const product = (id: string) => c.products.find((p) => p.id === id)!;
+
+  it.each(["hcg-cardx", "hcg-clarity", "hcg-executable-maker", "hcg-lifeos", "hcg-mail", "hcg-news", "hcg-nexus", "hcg-one-unleashed"])(
+    "%s uses its own 3:1 banner, with AVIF and responsive renditions",
+    (id) => {
+      const cover = product(id).artwork.cover!;
+      expect(cover.src).toBe(`media/products/${id}/banner-2000.webp`);
+      expect(cover.variants.map((v) => v.src)).toEqual([`media/products/${id}/banner-640.webp`, `media/products/${id}/banner-1200.webp`]);
+      expect(cover.width / cover.height).toBeCloseTo(3, 1);
+      expect(cover.avif).toBe(true);
+      expect(cover.kind).toBe("official");
+    },
+  );
+
+  it.each(["hcg-clarity", "hcg-executable-maker", "hcg-lifeos", "hcg-one-unleashed"])("%s uses its new framed icon", (id) => {
+    const a = product(id).artwork;
+    expect(a.icon!.src).toBe(`media/products/${id}/icon-256.webp`);
+    expect([a.icon!.width, a.icon!.height]).toEqual([256, 256]);
+    expect(a.iconStyle).toBe("framed");
+  });
+
+  it("keeps the existing CardX, Mail, News and Nexus icons, and Terminal and Sentinel artwork", () => {
+    for (const id of ["hcg-cardx", "hcg-mail", "hcg-news", "hcg-nexus", "hcg-terminal", "hcg-sentinel"]) {
+      expect(product(id).artwork.icon!.src).toBe(`media/products/${id}/icon-256.webp`);
+      expect(product(id).artwork.iconStyle).toBe("app");
+    }
+    expect(product("hcg-terminal").artwork.cover!.src).toBe("media/products/hcg-terminal/cover-2000.webp");
+    expect(product("hcg-sentinel").artwork.cover!.src).toBe("media/products/hcg-sentinel/cover-2000.webp");
+  });
+
+  it("no two products share a banner or an icon", () => {
+    const covers = c.products.flatMap((p) => (p.artwork.cover ? [p.artwork.cover.src] : []));
+    const icons = c.products.flatMap((p) => (p.artwork.icon ? [p.artwork.icon.src] : []));
+    expect(new Set(covers).size).toBe(covers.length);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+
+  it("keeps real screenshots and does not restore the RePrompter listing", () => {
+    expect(product("hcg-executable-maker").media.filter((m) => m.kind === "screenshot")).toHaveLength(2);
+    expect(product("hcg-clarity").media.filter((m) => m.kind === "screenshot")).toHaveLength(3);
+    expect(product("hcg-mail").media.filter((m) => m.kind === "screenshot")).toHaveLength(2);
+    expect(product("hcg-reprompter").supersededBy).toBe("hcg-clarity");
+    expect(product("hcg-reprompter").artwork.cover).toBeNull();
+  });
+});

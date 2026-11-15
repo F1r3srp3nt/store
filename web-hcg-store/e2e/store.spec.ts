@@ -71,13 +71,54 @@ test.describe("responsive layouts", () => {
     await ctx.close();
   });
 
-  test("the lead screenshot loads eagerly; the rest of the gallery is lazy-loaded", async ({ page }) => {
+  test("product banner is the priority image; screenshots below it are lazy-loaded", async ({ page }) => {
     await page.goto(REAL + "/apps/hcg-executable-maker");
-    await expect(page.locator(".product-gallery .product-cover img")).toHaveAttribute("loading", "eager");
-    const rest = page.locator(".gallery-strip img");
-    await expect(rest).toHaveCount(1);
-    await expect(rest.first()).toHaveAttribute("loading", "lazy");
+    const banner = page.locator(".product-banner img");
+    await expect(banner).toHaveAttribute("loading", "eager");
+    await expect(banner).toHaveAttribute("fetchpriority", "high");
+    // Chromium supports AVIF, so it picks the AVIF rendition; the WebP files stay as the fallback.
+    await expect.poll(() => banner.evaluate((i: HTMLImageElement) => i.currentSrc)).toMatch(/banner-\d+\.avif$/);
+    const shots = page.locator(".product-gallery img");
+    await expect(shots).toHaveCount(2);
+    for (const s of await shots.all()) await expect(s).toHaveAttribute("loading", "lazy");
   });
+
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    test(`banners and icons are shown whole at ${width}px: no cropping or distortion`, async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+      const page = await ctx.newPage();
+      for (const path of ["/", "/apps", "/apps/hcg-lifeos", "/apps/hcg-one-unleashed"]) {
+        await page.goto(REAL + path);
+        // Scroll through the page like a visitor so lazy-loaded artwork loads.
+        await page.evaluate(async () => {
+          for (let y = 0; y < document.body.scrollHeight; y += 500) {
+            window.scrollTo(0, y);
+            await new Promise((r) => setTimeout(r, 40));
+          }
+        });
+        // Wait until every artwork image has actually decoded (a broken one would never get there).
+        await expect
+          .poll(() => page.evaluate(() => Array.from(document.querySelectorAll<HTMLImageElement>(".product-cover--art img, .product-banner img, .product-mark--icon img")).every((i) => i.naturalWidth > 0)), {
+            message: `${path} at ${width}px: artwork loaded`,
+          })
+          .toBe(true);
+        const bad = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLImageElement>(".product-cover--art img, .product-banner img, .product-mark--icon img"))
+            .map((img) => {
+              const fit = getComputedStyle(img).objectFit;
+              const box = img.clientWidth / img.clientHeight;
+              const natural = img.naturalWidth / img.naturalHeight;
+              // "contain" never crops or stretches; any other fit is fine only if the box has the image's own ratio.
+              const ok = img.naturalWidth > 0 && (fit === "contain" || Math.abs(box - natural) < 0.03);
+              return ok ? null : `${img.currentSrc} box ${box.toFixed(2)} natural ${natural.toFixed(2)} fit ${fit}`;
+            })
+            .filter(Boolean),
+        );
+        expect(bad, `${path} at ${width}px`).toEqual([]);
+      }
+      await ctx.close();
+    });
+  }
 
   test("listing cards lazy-load their art", async ({ page }) => {
     await page.goto(REAL + "/apps");
@@ -139,13 +180,14 @@ test.describe("keyboard navigation", () => {
     await page.getByRole("searchbox", { name: "Search apps" }).first().fill("terminal");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/apps\?q=terminal/);
-    // React Router renders route changes in a transition: the URL updates first, while the home
-    // page (which has its own "HCG Terminal" links) can stay on screen until the browse page
-    // commits. Wait for the browse page itself, then look for the result in its results region.
+    // Don't rely on the URL alone: with React Router's default transitions the URL changed before
+    // the browse page rendered, and the home page (which links "HCG Terminal" twice) was still on
+    // screen. The app now renders route changes urgently (App.tsx); this test still waits for the
+    // browse page itself and looks for the result only in its results region.
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
     const results = page.getByRole("region", { name: "Results" });
     await expect(results.getByRole("status")).toHaveText("1 of 10 products match");
-    await expect(results.getByRole("link", { name: "HCG Terminal" })).toBeVisible();
+    await expect(results.getByRole("link", { name: "HCG Terminal", exact: true })).toBeVisible();
   });
 });
 
