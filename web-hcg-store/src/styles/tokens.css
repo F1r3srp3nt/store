@@ -1,43 +1,57 @@
-/* HCG Store design tokens. Dark-only brand surface: obsidian, deep navy, electric cyan, restrained violet. */
+/*
+ * HCG Store design tokens. Premium dark surface: near-black obsidian, smoked glass, brushed metal,
+ * fine cyan edges. Cyan is reserved for edges, focus and active states (not large fills); violet
+ * only where a product's identity uses it.
+ *
+ * Contrast (WCAG 2.2, against --surface-1 #0d1016 and the page background #05070a):
+ *   --text #f4f6f9 ≈ 17.6:1 · --text-muted #b2bccb ≈ 10.4:1 · --text-faint #8c97a8 ≈ 6.4:1
+ *   --cyan #45e1f5 on #05070a ≈ 12.6:1 (used for links and small labels)
+ */
 :root {
   color-scheme: dark;
 
   /* Surfaces */
-  --obsidian: #05070c;
-  --navy-950: #070c18;
-  --navy-900: #0a1326;
-  --navy-850: #0d1830;
-  --navy-800: #11203d;
-  --glass: rgba(14, 26, 50, 0.62);
-  --glass-strong: rgba(10, 19, 38, 0.86);
+  --obsidian: #05070a;
+  --surface-0: #080a0f;
+  --surface-1: #0d1016;
+  --surface-2: #131720;
+  --glass: rgba(18, 22, 30, 0.72);
+  --glass-strong: rgba(12, 15, 21, 0.9);
+  /* Legacy aliases used by existing components (now neutral graphite, not navy). */
+  --navy-950: #07090d;
+  --navy-900: #0d1016;
+  --navy-850: #11151d;
+  --navy-800: #171c26;
 
-  /* Lines */
-  --line: rgba(130, 196, 255, 0.1);
-  --line-strong: rgba(130, 210, 255, 0.22);
-  --grid-line: rgba(90, 170, 255, 0.045);
+  /* Lines: silver hairlines; cyan only for edges that matter. */
+  --line: rgba(206, 220, 236, 0.075);
+  --line-strong: rgba(206, 220, 236, 0.15);
+  --edge-cyan: rgba(69, 225, 245, 0.42);
+  --grid-line: rgba(160, 200, 230, 0.025);
 
   /* Accents */
-  --cyan: #3ee6ff;
-  --cyan-600: #1fb8d6;
-  --cyan-soft: rgba(62, 230, 255, 0.12);
-  --cyan-glow: rgba(62, 230, 255, 0.35);
-  --violet: #a48bff;
-  --violet-soft: rgba(164, 139, 255, 0.13);
-  --amber: #ffc66b;
-  --amber-soft: rgba(255, 198, 107, 0.12);
-  --mint: #5eead4;
-  --mint-soft: rgba(94, 234, 212, 0.12);
-  --rose: #ff8a9b;
-  --rose-soft: rgba(255, 138, 155, 0.12);
+  --cyan: #45e1f5;
+  --cyan-600: #1fb3cc;
+  --cyan-soft: rgba(69, 225, 245, 0.09);
+  --cyan-glow: rgba(69, 225, 245, 0.28);
+  --violet: #a996ff;
+  --violet-soft: rgba(169, 150, 255, 0.1);
+  --amber: #ffc978;
+  --amber-soft: rgba(255, 201, 120, 0.1);
+  --mint: #6ee7d2;
+  --mint-soft: rgba(110, 231, 210, 0.1);
+  --rose: #ff8fa0;
+  --rose-soft: rgba(255, 143, 160, 0.1);
 
   /* Metal */
-  --metal: linear-gradient(180deg, #f4f8fd 0%, #c3cfdd 45%, #8e9cb0 55%, #dde6f0 100%);
-  --metal-edge: linear-gradient(135deg, rgba(220, 235, 255, 0.4), rgba(120, 150, 190, 0.08) 40%, rgba(62, 230, 255, 0.3));
+  --metal: linear-gradient(180deg, #f7f9fc 0%, #d3dae4 42%, #9aa6b6 54%, #e4e9f0 100%);
+  --metal-button: linear-gradient(180deg, #f2f5f9 0%, #d7dde6 48%, #b9c2ce 100%);
+  --metal-edge: linear-gradient(135deg, rgba(235, 242, 250, 0.35), rgba(140, 155, 175, 0.06) 42%, rgba(69, 225, 245, 0.28));
 
-  /* Text (contrast checked against --navy-900) */
-  --text: #e8eef8;
-  --text-muted: #a3b3ca;
-  --text-faint: #8193ad;
+  /* Text */
+  --text: #f4f6f9;
+  --text-muted: #b2bccb;
+  --text-faint: #8c97a8;
 
   /* Type */
   --font-display: "Space Grotesk Variable", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
@@ -49,8 +63,8 @@
   --gutter: clamp(16px, 4vw, 40px);
   --radius-sm: 8px;
   --radius: 14px;
-  --radius-lg: 22px;
-  --header-h: 68px;
+  --radius-lg: 20px;
+  --header-h: 64px;
 
   /* Motion */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -58,7 +72,7 @@
   --t: 240ms;
 
   --focus-ring: 0 0 0 2px var(--obsidian), 0 0 0 4px var(--cyan);
-  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 50px -24px rgba(0, 0, 0, 0.8);
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 22px 50px -28px rgba(0, 0, 0, 0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {

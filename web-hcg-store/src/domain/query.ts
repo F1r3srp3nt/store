@@ -30,12 +30,15 @@ export const normalise = (s: string): string =>
 
 function haystack(p: Product): { name: string; rest: string } {
   return {
-    name: normalise(`${p.name} ${p.monogram}`),
+    // Former names are searchable, so "RePrompter" finds HCG Clarity.
+    name: normalise([p.name, p.monogram, ...p.formerNames].join(" ")),
     rest: normalise(
       [
         p.summary,
         ...p.description,
         ...p.tags,
+        ...p.currentFeatures,
+        ...p.editions.map((e) => e.name),
         CATEGORIES[p.category].label,
         ...p.platforms.map((x) => PLATFORMS[x.platform].label),
       ].join(" "),
@@ -69,6 +72,7 @@ export function matchesAvailability(a: Availability, f: AvailabilityFilter): boo
 export function filterProducts(c: Catalogue, query: CatalogueQuery): Product[] {
   const scored: { p: Product; nameHits: number; avail: Availability }[] = [];
   for (const p of c.products) {
+    if (p.supersededBy) continue; // merged into another product; reachable by its old link only
     const t = matchesText(p, query.q);
     if (!t.match) continue;
     if (!matchesPlatforms(p, query.platforms)) continue;

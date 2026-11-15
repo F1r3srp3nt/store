@@ -36,11 +36,26 @@ The production build (`npm run build`) also refuses to build an invalid catalogu
 | `registry.references` | Cross-references to other HCG systems (e.g. LifeOS realms, which are not product IDs). **Shipped publicly:** never list private repositories or internal URLs. |
 | `developmentStatus` | Development progress: `in-development`, `planning`, `testing`, `maintained`, `paused` or `unknown`. **Independent of releases.** |
 | `platforms[].support` | `confirmed` (an approved release supports it), `in-development` or `planned`. Architectures and minimum OS may be stated **only** for `confirmed`. |
-| `media[]` | `screenshot` (a real capture of the software) or `concept` (artwork, shown as "Concept artwork, not the working app"). `provenance` is required. |
+| `media[]` | `screenshot` (a real capture of the software, labelled "Screenshot") or `concept` (artwork, labelled "Illustration"). `provenance` is required. Never put invented interface imagery here. |
+| `artwork.icon` / `artwork.cover` | The product's own approved icon and cover/header artwork (`src`, `width`, `height`, `alt`, `provenance`, `kind` = `official` or `concept`, optional resized `variants`). `null` when none exists: the store then shows a branded monogram, never a fake icon. Files must exist under `public/` (checked by `npm run validate:catalogue`). |
+| `artwork.accent` | `cyan`, `violet`, `silver`, `mint` or `amber`: the accent edge used for the product's mark and cards. |
+| `currentFeatures[]` | Features present in the current development build, as the product's repository describes them. Shown under "Available in the current build". |
+| `plannedFeatures[]` | Features that are planned but not built. Shown separately under "Planned (not available yet)". Never mix the two. |
+| `requirements[]` | Plain-language requirements (minimum OS, hardware, jailbreak layout, accounts). |
+| `collections[]` | Curated homepage sections: `featured`, `jailbreak` (the Jailbreak & Unleashed band; the product must also have `hcgRepo` links) and `developer-tools`. Content changes here, not in components. |
+| `supersededBy` | ID of the product this one has been merged into, or `null`. A superseded product is hidden from listings, search and filters but **keeps its page, ID, links and entitlements**; the page points to the successor. The successor must exist and must not itself be superseded, and a superseded product has no collections. |
+| `formerNames[]` | Earlier names of this product. Shown as "Formerly …" and included in search. |
 | `currentReleaseId` | Explicit pointer to the current approved release. `null` shows "No public release supplied". |
 | `catalogueNotes` | Public notes about open questions (naming, scope, classification). |
 
 Everything in these files is bundled into the public website. Do not put anything private in them.
+
+### Merges
+
+- **HCG RePrompter** and **Distil** are now part of **HCG Clarity** (`hcg-clarity`, `formerNames`:
+  "HCG RePrompter", "Distil"). The `hcg-reprompter` entry stays, with `supersededBy: "hcg-clarity"`, so
+  `/apps/hcg-reprompter`, its ID, HCG Repo mapping (none) and any future entitlements keep working. Its
+  historical bundle identifier stays recorded on that entry.
 
 ### ID reconciliation performed
 

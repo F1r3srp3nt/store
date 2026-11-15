@@ -41,3 +41,36 @@ export function PlatformChips({ platforms, compact = false }: { platforms: Platf
     </ul>
   );
 }
+
+/**
+ * One consistent storefront status per product, combining release availability and development
+ * stage: Released → Testing → In development → Planned (→ Paused / Status not stated).
+ */
+export function storefrontStatus(status: DevelopmentStatus, availability: Availability): { label: string; tone: string; detail: string } {
+  if (availability === "released") return { label: "Released", tone: "released", detail: "An approved release exists." };
+  switch (status) {
+    case "testing":
+      return { label: "Testing", tone: "testing", detail: "Being tested. Not released yet." };
+    case "in-development":
+      return { label: "In development", tone: "active", detail: "Being built. Not released yet." };
+    case "planning":
+      return { label: "Planned", tone: "planned", detail: "Planned. Not released yet." };
+    case "paused":
+      return { label: "Paused", tone: "muted", detail: "Development is paused." };
+    case "maintained":
+      return { label: "Maintained", tone: "released", detail: "Maintained. No release supplied to HCG Store yet." };
+    default:
+      return { label: "Status not stated", tone: "muted", detail: "HCG has not stated a status." };
+  }
+}
+
+export function StatusPill({ status, availability }: { status: DevelopmentStatus; availability: Availability }) {
+  const s = storefrontStatus(status, availability);
+  return (
+    <span className={`status-pill status-pill--${s.tone}`} title={s.detail}>
+      <span className="status-pill__dot" aria-hidden="true" />
+      {s.label}
+      <span className="visually-hidden">. {s.detail}</span>
+    </span>
+  );
+}

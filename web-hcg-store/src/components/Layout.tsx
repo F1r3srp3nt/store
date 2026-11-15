@@ -5,15 +5,47 @@ import { assetUrl } from "../lib/format";
 import { useAccount } from "../account/account-context";
 import { signInUrl } from "../account/api";
 import { useCatalogueState } from "../app/catalogue-context";
-import { IconClose, IconMenu, IconSearch, IconUser } from "./Icons";
+import { IconClose, IconExternal, IconMenu, IconSearch, IconUser } from "./Icons";
 import { RouteFocus } from "./RouteFocus";
 
 const NAV = [
   { to: "/", label: "Store", end: true },
-  { to: "/apps", label: "Browse apps", end: false },
-  { to: "/getting-started", label: "Getting started", end: false },
-  { to: "/account", label: "Account & Connections", end: false },
+  { to: "/apps", label: "Browse", end: false },
+  { to: "/account", label: "Account", end: false },
 ];
+const FOOTER_NAV = [
+  { to: "/", label: "Store" },
+  { to: "/apps", label: "Browse all products" },
+  { to: "/getting-started", label: "Getting started" },
+  { to: "/account", label: "Account & Connections" },
+];
+
+/** Primary navigation, including the external HCG Repo link after "Browse". */
+function NavItems({ linkClass }: { linkClass: string }) {
+  return (
+    <>
+      {NAV.slice(0, 2).map((n) => (
+        <li key={n.to}>
+          <NavLink to={n.to} end={n.end} className={linkClass}>
+            {n.label}
+          </NavLink>
+        </li>
+      ))}
+      <li>
+        <a href={runtimeConfig.repoBaseUrl} className={linkClass}>
+          HCG Repo <IconExternal className="nav-external" />
+        </a>
+      </li>
+      {NAV.slice(2).map((n) => (
+        <li key={n.to}>
+          <NavLink to={n.to} end={n.end} className={linkClass}>
+            {n.label}
+          </NavLink>
+        </li>
+      ))}
+    </>
+  );
+}
 
 export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,13 +88,7 @@ export function Layout() {
 
           <nav className="site-nav" aria-label="Primary">
             <ul>
-              {NAV.map((n) => (
-                <li key={n.to}>
-                  <NavLink to={n.to} end={n.end} className="site-nav__link">
-                    {n.label}
-                  </NavLink>
-                </li>
-              ))}
+              <NavItems linkClass="site-nav__link" />
             </ul>
           </nav>
 
@@ -85,13 +111,12 @@ export function Layout() {
           <AccountChip mobile />
           <nav aria-label="Primary (mobile)">
             <ul>
-              {NAV.map((n) => (
-                <li key={n.to}>
-                  <NavLink to={n.to} end={n.end} className="mobile-menu__link">
-                    {n.label}
-                  </NavLink>
-                </li>
-              ))}
+              <NavItems linkClass="mobile-menu__link" />
+              <li>
+                <NavLink to="/getting-started" className="mobile-menu__link">
+                  Getting started
+                </NavLink>
+              </li>
             </ul>
           </nav>
         </div>
@@ -161,16 +186,20 @@ function SiteFooter() {
           <p className="site-footer__title">HCG Store</p>
           <p>Applications and developer tools from Hakmi Capital Group.</p>
           <p className="site-footer__fine">
-            Every download requires signing in with your HCG account. Purchases count only after the payment provider confirms them.
+            Browsing is open to everyone. Downloads will require your HCG account, and paid products will also require ownership confirmed by HCG.
+            Downloads are not available yet.
           </p>
         </div>
         <nav aria-label="Footer">
           <ul className="site-footer__links">
-            {NAV.map((n) => (
+            {FOOTER_NAV.map((n) => (
               <li key={n.to}>
                 <Link to={n.to}>{n.label}</Link>
               </li>
             ))}
+            <li>
+              <a href={runtimeConfig.repoBaseUrl}>HCG Repo</a>
+            </li>
           </ul>
         </nav>
         <dl className="site-footer__status">

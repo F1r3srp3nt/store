@@ -14,7 +14,7 @@ test.describe("routes and direct navigation", () => {
 
   test("client-side navigation moves focus to main content", async ({ page }) => {
     await page.goto(REAL + "/");
-    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Browse apps" }).click();
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Browse", exact: true }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
     await expect(page.locator("#main")).toBeFocused();
     await page.goBack();
@@ -71,11 +71,19 @@ test.describe("responsive layouts", () => {
     await ctx.close();
   });
 
-  test("below-the-fold screenshots are lazy-loaded", async ({ page }) => {
+  test("the lead screenshot loads eagerly; the rest of the gallery is lazy-loaded", async ({ page }) => {
     await page.goto(REAL + "/apps/hcg-executable-maker");
-    const imgs = page.locator(".gallery img");
-    await expect(imgs).toHaveCount(2);
-    for (const i of [0, 1]) await expect(imgs.nth(i)).toHaveAttribute("loading", "lazy");
+    await expect(page.locator(".product-gallery .product-cover img")).toHaveAttribute("loading", "eager");
+    const rest = page.locator(".gallery-strip img");
+    await expect(rest).toHaveCount(1);
+    await expect(rest.first()).toHaveAttribute("loading", "lazy");
+  });
+
+  test("listing cards lazy-load their art", async ({ page }) => {
+    await page.goto(REAL + "/apps");
+    const imgs = page.locator(".product-card img");
+    expect(await imgs.count()).toBeGreaterThan(0);
+    for (const img of await imgs.all()) await expect(img).toHaveAttribute("loading", "lazy");
   });
 });
 
@@ -116,7 +124,7 @@ test.describe("keyboard navigation", () => {
     await page.goto(REAL + "/apps");
     await page.getByRole("searchbox", { name: "Search", exact: true }).focus();
     await page.keyboard.type("imap");
-    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 11 products match");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
     await expect(page).toHaveURL(/\?q=imap/);
     await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
     await page.getByRole("checkbox", { name: "iOS" }).focus();
@@ -154,22 +162,27 @@ test.describe("reduced motion", () => {
     expect(reduced.running).toBe(0);
   });
 
-  test("home hero shows the banner, labelled as an illustration, loaded eagerly", async ({ page }) => {
+  test("home hero shows the full banner, uncropped, labelled as an illustration, loaded eagerly", async ({ page }) => {
     await page.goto(REAL + "/");
     const banner = page.locator(".hero-banner img");
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute("loading", "eager");
-    await expect(banner).toHaveAttribute("alt", /illustration/i);
+    await expect(banner).toHaveAttribute("alt", /HCG Store wordmark/);
+    await expect(banner).toHaveAttribute("srcset", /hcg-store-hero-2000\.webp 2000w/);
+    // The whole 3:1 artwork is shown: the rendered box keeps the image's aspect ratio (no crop).
+    const box = await banner.evaluate((img: HTMLImageElement) => ({ w: img.clientWidth, h: img.clientHeight, fit: getComputedStyle(img).objectFit }));
+    expect(Math.abs(box.w / box.h - 2000 / 667)).toBeLessThan(0.03);
+    expect(["contain", "fill"]).toContain(box.fit);
     await expect(page.locator(".hero-banner").getByText("Illustration")).toBeVisible();
     expect(await banner.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   });
 
   test("home hero text remains when the banner cannot load", async ({ page }) => {
-    await page.route(/hcg-store-banner-\d+\.webp$/, (r) => r.abort());
+    await page.route(/hcg-store-hero-\d+\.webp$/, (r) => r.abort());
     await page.goto(REAL + "/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/HCG\s*Store/);
     await expect(page.locator(".hero-banner")).toHaveCount(0);
-    await expect(page.getByRole("link", { name: /Browse apps/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Browse Products/ }).first()).toBeVisible();
   });
 
   test("text stays visible when images are blocked", async ({ page }) => {

@@ -10,7 +10,7 @@
       "summary": "Gamified, local-first productivity: quests, realms, progression and daily missions in one personal operating system.",
       "description": [
         "HCG LifeOS turns real work into quests organised by realm, with an XP ledger, levels, daily missions and a random quest generator.",
-        "It is local-first: data stays on the device, and HCG Connect sign-in and cloud synchronisation are planned as separate, founder-approved milestones."
+        "It is local-first: data stays on your Mac. The app side of HCG Connect sign-in and synchronisation is built and tested; the HCG website side is not deployed, so it is not available yet."
       ],
       "category": "productivity",
       "tags": [
@@ -21,7 +21,7 @@
         "focus"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Version 0.2.0 is in development. The development repository states that the core and macOS app have not yet been fully compiled or tested.",
+      "developmentNote": "Version 0.2.0 is in development. The core passes its automated tests on Linux; the macOS app has not yet been compiled or tested.",
       "platforms": [
         {
           "platform": "macos",
@@ -44,17 +44,35 @@
       },
       "catalogueNotes": [],
       "editions": [],
-      "hcgRepo": []
+      "hcgRepo": [],
+      "artwork": {
+        "icon": null,
+        "cover": null,
+        "accent": "violet"
+      },
+      "currentFeatures": [
+        "Quest engine with realms, XP ledger and levels (automated tests)",
+        "Daily missions and a random quest generator (automated tests)",
+        "Local persistence"
+      ],
+      "plannedFeatures": [
+        "HCG Connect sign-in and sync (app side built; HCG website side not deployed)",
+        "Push-to-talk voice",
+        "macOS app build and testing"
+      ],
+      "requirements": [
+        "macOS 14.0 or later"
+      ]
     },
     {
       "id": "hcg-mail",
       "slug": "hcg-mail",
       "name": "HCG Mail",
       "monogram": "M",
-      "summary": "A multi-platform email client for existing IMAP and SMTP mailboxes, with secure credential storage and remote content blocked by default.",
+      "summary": "Use your existing mailbox over encrypted IMAP and SMTP, with passwords in the system's secure store and remote content blocked by default.",
       "description": [
-        "HCG Mail connects to existing mailboxes over standard IMAP and SMTP. It does not need Outlook, Microsoft 365, Exchange or an HCG account.",
-        "Connections are encrypted, passwords are kept in the operating system's secure credential store, and remote content in messages is blocked by default."
+        "HCG Mail connects to existing mailboxes over standard IMAP and SMTP, with encrypted connections, passwords in the operating system's secure credential store and remote content in messages blocked by default.",
+        "The Windows desktop app is the implemented MVP; an iPhone and iPad app shares its code and is not yet device-tested. Microsoft and Google account sign-in is implemented but not yet tested with real accounts."
       ],
       "category": "communication",
       "tags": [
@@ -64,25 +82,64 @@
         "privacy"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "An MVP (0.1.0) is implemented in the development repository. Live-mailbox, SMTP and cross-platform verification are still open items.",
+      "developmentNote": "MVP 0.1.0 is implemented for Windows. Signing, installers and store submissions are not done; real Windows, Mac and iPhone testing is still open.",
       "platforms": [
         {
           "platform": "windows",
           "support": "in-development",
-          "note": "Developed as a self-contained Windows x64 executable."
+          "architectures": [],
+          "minimumOs": null,
+          "note": "Implemented MVP: self-contained x64 build, unsigned."
         },
         {
           "platform": "ios",
           "support": "in-development",
-          "note": "Native iOS app implemented in the development repository; not yet device-tested."
+          "architectures": [],
+          "minimumOs": null,
+          "note": "Implemented, not yet device-tested."
+        },
+        {
+          "platform": "ipados",
+          "support": "in-development",
+          "architectures": [],
+          "minimumOs": null,
+          "note": "Same app as iOS; not yet device-tested."
         },
         {
           "platform": "macos",
           "support": "planned",
-          "note": "A directly distributed macOS version and a Mac App Store submission are reserved but not started."
+          "architectures": [],
+          "minimumOs": null,
+          "note": "The desktop code runs on macOS for development; a Mac release is not started."
         }
       ],
-      "media": [],
+      "media": [
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-mail/classic-reading-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/classic-reading-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "HCG Mail desktop window with folders, a message list of sample messages and an open sample message.",
+          "caption": "Desktop app rendered by its automated UI test with sample messages.",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/classic-reading.png at 13d93a8, rendered by the headless UI test (MainWindowTests). Resized to WebP."
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-mail/account-setup-1000.webp",
+          "variants": [],
+          "width": 1000,
+          "height": 760,
+          "alt": "HCG Mail account setup dialog.",
+          "caption": "Account setup dialog, rendered by the automated UI test.",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/account-setup.png at 13d93a8, rendered by the headless UI test (DialogViewModelTests). Resized to WebP."
+        }
+      ],
       "currentReleaseId": null,
       "registry": {
         "status": "provisional",
@@ -135,7 +192,35 @@
           "note": "Targets iOS 16.0 or later in the development repository."
         }
       ],
-      "hcgRepo": []
+      "hcgRepo": [],
+      "artwork": {
+        "icon": {
+          "src": "media/products/hcg-mail/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/assets/icons/hcg-mail-1024.png at 13d93a8 (the app's icon, also its iOS AppIcon). Resized to WebP.",
+          "kind": "official"
+        },
+        "cover": null,
+        "accent": "cyan"
+      },
+      "currentFeatures": [
+        "Receive, read, flag, archive and delete over IMAP (tested against a real Dovecot server)",
+        "Send, reply and forward over SMTP (tested against a real Postfix server)",
+        "Six-step connection test and Mail Health checks (SPF, DKIM, DMARC)",
+        "Safe HTML display with remote images blocked",
+        "Microsoft and Google account sign-in implemented (not yet tested with real accounts)"
+      ],
+      "plannedFeatures": [
+        "HTML composing",
+        "System notifications",
+        "Signed installers and store submissions"
+      ],
+      "requirements": [
+        "Windows x64 (self-contained, unsigned development build)",
+        "iPhone and iPad: iOS 16.0 or later (not yet device-tested)"
+      ]
     },
     {
       "id": "hcg-one-unleashed",
@@ -156,7 +241,7 @@
         "education"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Development build, milestone M2 Stage 2 (charting).",
+      "developmentNote": "Development build, milestone M2 Stage 2 (charting). The core passes its automated tests; the macOS app has not yet been built or rendered on a Mac.",
       "platforms": [
         {
           "platform": "macos",
@@ -186,17 +271,34 @@
         "HCG ONE (the existing iOS and web app) is a separate product and is not listed in this store yet."
       ],
       "editions": [],
-      "hcgRepo": []
+      "hcgRepo": [],
+      "artwork": {
+        "icon": null,
+        "cover": null,
+        "accent": "amber"
+      },
+      "currentFeatures": [
+        "Simulated market engine and simulated account",
+        "Candlestick charts from 1-minute to daily built from simulated trades, with indicators checked against TA-Lib (automated tests)"
+      ],
+      "plannedFeatures": [
+        "Identity and workspaces",
+        "HCG Connect sign-in",
+        "Developer ID signing and notarisation"
+      ],
+      "requirements": [
+        "macOS 15 or later on Apple Silicon"
+      ]
     },
     {
       "id": "hcg-news",
       "slug": "hcg-news",
       "name": "HCG News",
       "monogram": "N",
-      "summary": "News applications for news.hakmicapitalgroup.com. Product details have not been published yet.",
+      "summary": "Read news.hakmicapitalgroup.com natively on iPhone and iPad, with sections, search and offline saves, plus a newsroom for HCG News staff.",
       "description": [
-        "HCG News is the planned news application family for news.hakmicapitalgroup.com.",
-        "Features and supported platforms have not been published. They will appear here once HCG confirms them."
+        "HCG News for iPhone and iPad is a native reader for the HCG News publication, with sections, search and saved articles, HCG account sign-in, and a newsroom area for staff roles.",
+        "The app's core library is tested; the app itself has not yet been compiled or run on a Mac, simulator or device."
       ],
       "category": "news-media",
       "tags": [
@@ -204,8 +306,23 @@
         "media"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Reported as in progress in the founder's 31 October 2026 objectives. The public repository currently contains only a README.",
-      "platforms": [],
+      "developmentNote": "Version 0.2.0 (build 2), development build. Not released, and not yet compiled or run on a Mac, simulator or device.",
+      "platforms": [
+        {
+          "platform": "ios",
+          "support": "in-development",
+          "architectures": [],
+          "minimumOs": null,
+          "note": "Development build, not yet compiled on a Mac."
+        },
+        {
+          "platform": "ipados",
+          "support": "in-development",
+          "architectures": [],
+          "minimumOs": null,
+          "note": "Development build, not yet compiled on a Mac."
+        }
+      ],
       "media": [],
       "currentReleaseId": null,
       "registry": {
@@ -220,8 +337,52 @@
         ]
       },
       "catalogueNotes": [],
-      "editions": [],
-      "hcgRepo": []
+      "editions": [
+        {
+          "id": "ios",
+          "name": "HCG News for iPhone and iPad",
+          "summary": "Native reader app for the HCG News publication.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "app-store",
+          "status": "Development build 0.2.0 (2). Not released.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hakmicapitalgroup.hcgnews"
+            }
+          ],
+          "layouts": [],
+          "note": null
+        }
+      ],
+      "hcgRepo": [],
+      "artwork": {
+        "icon": {
+          "src": "media/products/hcg-news/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "F1r3srp3nt/HCG-News iOS app AppIcon.appiconset/Icon-1024.png at 26fcc42 (the app's icon). Resized to WebP.",
+          "kind": "official"
+        },
+        "cover": null,
+        "accent": "silver"
+      },
+      "currentFeatures": [
+        "Core library (HCGNewsKit) implemented and covered by automated tests"
+      ],
+      "plannedFeatures": [
+        "Notifications",
+        "Saved-article sync",
+        "Additional platforms (Mac, widgets, Watch, Android or web)",
+        "App Store release"
+      ],
+      "requirements": [
+        "iPhone or iPad with iOS or iPadOS 17.0 or later"
+      ]
     },
     {
       "id": "hcg-executable-maker",
@@ -316,7 +477,9 @@
           }
         ]
       },
-      "catalogueNotes": [],
+      "catalogueNotes": [
+        "The screenshots show an earlier development build (0.1.0); the current pre-release is 0.3.0. The app's icon is a temporary HCG logo."
+      ],
       "editions": [
         {
           "id": "desktop",
@@ -334,17 +497,41 @@
           "note": null
         }
       ],
-      "hcgRepo": []
+      "hcgRepo": [],
+      "collections": [
+        "featured",
+        "developer-tools"
+      ],
+      "artwork": {
+        "icon": null,
+        "cover": null,
+        "accent": "cyan"
+      },
+      "currentFeatures": [
+        "Imports a ZIP or folder and inspects it without executing any of its code",
+        "Builds with the real toolchain and verifies every artifact with SHA-256",
+        "Windows Setup.exe verified by installing, launching and uninstalling on Windows",
+        "macOS .dmg packaging verified with hdiutil; Swift apps built and launched in CI",
+        "Mobile Build Studio for Android and iOS projects when toolchains are present"
+      ],
+      "plannedFeatures": [
+        "Windows MSI and MSIX, and Authenticode signing",
+        "Linux AppImage, DEB and RPM",
+        "Store uploads and sandboxed build workers"
+      ],
+      "requirements": [
+        "macOS (Apple Silicon or Intel), Windows (x64 or arm64) or Linux (x64 or arm64, preview)"
+      ]
     },
     {
       "id": "hcg-reprompter",
       "slug": "hcg-reprompter",
       "name": "HCG RePrompter",
       "monogram": "RP",
-      "summary": "A native macOS prompt-engineering workstation that clarifies instructions for AI systems without changing their intent.",
+      "summary": "Improve prompts without changing their intention in an offline macOS workspace. Its working parts now continue in HCG Clarity.",
       "description": [
-        "HCG RePrompter turns incomplete or unstructured prompts into clearer, better-organised instructions for AI systems. It preserves the user's meaning, requirements and constraints, and explains every change instead of assigning an arbitrary score.",
-        "It works with the user's own Anthropic API key and includes a deterministic, offline Local Formatting mode that is always labelled as non-AI."
+        "HCG RePrompter was an offline macOS workspace for improving prompts without changing their intention: an editor, a library with collections, templates and a local, non-AI analysis. It has no network use, API keys or sign-in.",
+        "Its working parts were consolidated into HCG Clarity, which opens RePrompter backups. This page is kept so existing links and identifiers keep working."
       ],
       "category": "developer-tools",
       "tags": [
@@ -355,7 +542,7 @@
         "diff"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Version 0.1.0 is a pre-release development build and has not been commercially released.",
+      "developmentNote": "Version 0.1.0 (offline workspace milestone), a pre-release development build. Superseded by HCG Clarity.",
       "platforms": [
         {
           "platform": "macos",
@@ -373,6 +560,11 @@
             "system": "Development repository",
             "value": "F1r3srp3nt/HCG-RePrompter",
             "note": "public"
+          },
+          {
+            "system": "Bundle identifier",
+            "value": "com.hakmicapital.reprompter",
+            "note": "historical identifier, kept"
           }
         ]
       },
@@ -380,7 +572,19 @@
         "The HCG Development Tools classification is provisional and awaits founder confirmation."
       ],
       "editions": [],
-      "hcgRepo": []
+      "hcgRepo": [],
+      "supersededBy": "hcg-clarity",
+      "artwork": {
+        "icon": null,
+        "cover": null,
+        "accent": "silver"
+      },
+      "currentFeatures": [],
+      "plannedFeatures": [],
+      "collections": [],
+      "requirements": [
+        "macOS 15 or later (Apple Silicon primary)"
+      ]
     },
     {
       "id": "hcg-cardx",
@@ -406,6 +610,13 @@
           "platform": "ios",
           "support": "in-development",
           "note": "Native iOS app."
+        },
+        {
+          "platform": "ipados",
+          "support": "in-development",
+          "architectures": [],
+          "minimumOs": null,
+          "note": "The project targets iPhone and iPad."
         }
       ],
       "media": [],
@@ -416,18 +627,53 @@
         "references": []
       },
       "catalogueNotes": [],
-      "editions": [],
-      "hcgRepo": []
+      "editions": [
+        {
+          "id": "ios",
+          "name": "HCG CardX for iPhone and iPad",
+          "summary": "Native iOS marketplace app.",
+          "platforms": [
+            "ios",
+            "ipados"
+          ],
+          "channel": "app-store",
+          "status": "Version 1.2.0 (build 19) in the development project. No build submitted.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "app.HCG.CardX"
+            }
+          ],
+          "layouts": [],
+          "note": null
+        }
+      ],
+      "hcgRepo": [],
+      "artwork": {
+        "icon": {
+          "src": "media/products/hcg-cardx/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "The HCG CardX app's own icon set (AppIcon, 1024 px) in its development project, commit e6d5545. Resized to WebP.",
+          "kind": "official"
+        },
+        "cover": null,
+        "accent": "amber"
+      },
+      "requirements": [
+        "iPhone or iPad with iOS or iPadOS 18.0 or later"
+      ]
     },
     {
       "id": "hcg-terminal",
       "slug": "hcg-terminal",
       "name": "HCG Terminal",
       "monogram": "T",
-      "summary": "A native SwiftUI terminal for iPhone and iPad: local commands, remote SSH development, remote builds and tests, logs and artifacts.",
+      "summary": "Run built-in commands on iPhone and iPad, and develop over SSH with remote Swift, Xcode and .NET builds, tests, logs and artifacts.",
       "description": [
-        "HCG Terminal is a native SwiftUI terminal for iPhone and iPad by Hakmi Capital Group. It covers local commands, remote SSH development, remote Swift, Xcode and .NET builds and tests, logs and artifacts.",
-        "It comes in two separately built editions. The standard edition runs built-in commands in the app's own workspace. HCG Terminal Unleashed is a separate jailbreak build that runs a real shell in a pseudo-terminal, only where the device already allows it."
+        "HCG Terminal is a native SwiftUI terminal for iPhone and iPad. The standard edition runs built-in commands in the app's own workspace and connects to your servers over SSH for remote development, builds and tests.",
+        "HCG Terminal Unleashed is a separate jailbreak edition. It runs a real shell in a pseudo-terminal, only where the device already allows it, and is distributed through HCG Repo rather than the App Store."
       ],
       "category": "developer-tools",
       "tags": [
@@ -438,7 +684,7 @@
         "remote builds"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "v0.1 development build. Both iOS schemes build and archive unsigned in CI; nothing has been signed, exported or published.",
+      "developmentNote": "v0.1 development build. Both iOS schemes build and archive unsigned in CI and launch in the Simulator; nothing has been signed, exported or run on a physical device yet.",
       "platforms": [
         {
           "platform": "ios",
@@ -464,20 +710,18 @@
           }
         ]
       },
-      "catalogueNotes": [
-        "The HCG Development Tools classification is provisional and awaits founder confirmation."
-      ],
+      "catalogueNotes": [],
       "editions": [
         {
           "id": "standard",
-          "name": "HCG Terminal (standard)",
-          "summary": "Sandboxed edition for ordinary iPhone and iPad distribution.",
+          "name": "HCG Terminal",
+          "summary": "Standard edition for ordinary iPhone and iPad distribution: built-in commands in the app workspace, SSH and remote builds.",
           "platforms": [
             "ios",
             "ipados"
           ],
           "channel": "app-store",
-          "status": "Development build. Not submitted to TestFlight or the App Store by this project.",
+          "status": "Development build. Not submitted to TestFlight or the App Store.",
           "identifiers": [
             {
               "kind": "bundle-id",
@@ -496,7 +740,7 @@
             "ipados"
           ],
           "channel": "jailbreak-package",
-          "status": "Packaging under review in HCG Repo. No package has been published or tested on a jailbroken device.",
+          "status": "Packaged in HCG Repo as a protected package (rootless). Not published and not tested on a jailbroken device.",
           "identifiers": [
             {
               "kind": "bundle-id",
@@ -511,12 +755,12 @@
             {
               "architecture": "iphoneos-arm64",
               "label": "Rootless",
-              "note": "Built by the development repository's packaging script; not published."
+              "note": "The layout HCG Repo has packaged (protected, not published)."
             },
             {
               "architecture": "iphoneos-arm",
               "label": "Rootful",
-              "note": "Built by the development repository's packaging script; not published."
+              "note": "Built by the development repository's packaging script; not packaged in HCG Repo."
             }
           ],
           "note": "Not assumed to be eligible for the App Store. It never runs commands as root automatically."
@@ -527,6 +771,51 @@
           "key": "hcg-terminal-unleashed",
           "editionId": "unleashed"
         }
+      ],
+      "collections": [
+        "featured",
+        "jailbreak"
+      ],
+      "artwork": {
+        "icon": {
+          "src": "media/products/hcg-terminal/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "F1r3srp3nt/HCG-Terminal HCGTerminal/Resources/Assets.xcassets/AppIcon.appiconset/Icon-1024.png at 19b39e6 (the app's icon). Resized to WebP.",
+          "kind": "official"
+        },
+        "cover": {
+          "src": "media/products/hcg-terminal/cover-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG Terminal brand artwork: the chrome HCG mark above a terminal prompt",
+          "provenance": "F1r3srp3nt/HCG-Terminal Assets.xcassets/TerminalHero.imageset/TerminalHero.png at 19b39e6 (the app's header artwork, docs/HEADER.md). Resized to WebP.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-terminal/cover-1200.webp",
+              "width": 1200
+            }
+          ]
+        },
+        "accent": "cyan"
+      },
+      "currentFeatures": [
+        "SSH connections with host-key verification, connection test and reconnect",
+        "Remote builds and tests with real exit status, cancellation and SHA-256-checked artifact download",
+        "SFTP remote files: browse, download, upload and delete (tested against OpenSSH)",
+        "Ed25519 and ECDSA private-key import",
+        "Per-capability access switches, enforced by each service"
+      ],
+      "plannedFeatures": [
+        "Remote builds verified against a real Mac or .NET host",
+        "Unleashed package tested on a jailbroken device",
+        "Signed IPA export"
+      ],
+      "requirements": [
+        "iOS or iPadOS 17.0 or later",
+        "Unleashed: a supported jailbroken device; installed as a package from HCG Repo"
       ]
     },
     {
@@ -534,7 +823,7 @@
       "slug": "hcg-nexus",
       "name": "HCG Nexus",
       "monogram": "NX",
-      "summary": "An HCG command panel with searchable shortcuts, workspaces, recent actions, HCG integration status and settings.",
+      "summary": "Open shortcuts, workspaces and recent actions from one searchable command panel — in a sandboxed app or behind a jailbreak edge handle.",
       "description": [
         "HCG Nexus is a command panel with searchable shortcuts, workspaces, recent actions, HCG integration status and settings.",
         "It is built in two separate forms that never share data: a sandboxed iPhone and iPad app, and a jailbreak package that adds a system-wide edge handle over any app. The jailbreak package is off after installation until it is enabled in Settings."
@@ -548,7 +837,7 @@
         "tweak"
       ],
       "developmentStatus": "testing",
-      "developmentNote": "0.2.0 is the first device release candidate. Neither form has run on a physical device yet.",
+      "developmentNote": "0.2.0 is the first device release candidate. Automated checks pass and the app launches in the Simulator; neither form has run on a physical device yet. The jailbreak package ships disabled until enabled in Settings.",
       "platforms": [
         {
           "platform": "ios",
@@ -585,7 +874,7 @@
             "ipados"
           ],
           "channel": "sideload",
-          "status": "Release candidate 0.2.0, built with Xcode. Not verified on a device and not distributed.",
+          "status": "Release candidate 0.2.0. Built with Xcode (an IPA can be produced with HCG Executable Maker). Not verified on a device and not distributed.",
           "identifiers": [
             {
               "kind": "bundle-id",
@@ -603,7 +892,7 @@
             "ios"
           ],
           "channel": "jailbreak-package",
-          "status": "Release candidate 0.2.0. Built by CI only; not published and not verified on a device.",
+          "status": "Release candidate 0.2.0. Packaged in HCG Repo as a protected package. Not published and not verified on a device.",
           "identifiers": [
             {
               "kind": "debian-package",
@@ -614,7 +903,7 @@
             {
               "architecture": "iphoneos-arm64",
               "label": "Rootless",
-              "note": "Release target for rootless jailbreaks on iOS 15.0 or later. Runtime not verified on a device."
+              "note": "Release target, iOS 15.0 or later. Runtime not verified on a device."
             },
             {
               "architecture": "iphoneos-arm",
@@ -630,6 +919,37 @@
           "key": "hcg-nexus",
           "editionId": "jailbreak"
         }
+      ],
+      "collections": [
+        "jailbreak"
+      ],
+      "artwork": {
+        "icon": {
+          "src": "media/products/hcg-nexus/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "F1r3srp3nt/HCG-Nexus App/Assets.xcassets/AppIcon.appiconset/Icon-1024.png at 3136149 (the standalone app's real icon set, docs/ICONS.md). Resized to WebP.",
+          "kind": "official"
+        },
+        "cover": null,
+        "accent": "violet"
+      },
+      "currentFeatures": [
+        "Searchable shortcuts, workspaces and recent actions, with presets for Command, Developer, Studio and Infrastructure",
+        "Standalone iPhone and iPad app: unit tests pass and it launches in the Simulator",
+        "Jailbreak package: edge handle, lock-screen hiding, bundle-ID launching and the panel are implemented (not yet verified on a device)",
+        "Package layout, permissions and PreferenceLoader settings verified automatically"
+      ],
+      "plannedFeatures": [
+        "Cover-sheet integration",
+        "Deep links to HCG Terminal and HCG News",
+        "Installed-app picker and localisation",
+        "roothide support"
+      ],
+      "requirements": [
+        "App: iOS or iPadOS 14.0 or later",
+        "Jailbreak package: rootless jailbreak on iOS 15.0 or later, with mobilesubstrate or ElleKit and PreferenceLoader"
       ]
     },
     {
@@ -637,10 +957,10 @@
       "slug": "hcg-sentinel",
       "name": "HCG Sentinel",
       "monogram": "SN",
-      "summary": "A native iPhone and iPad app for authorised testing of your own devices, networks and services.",
+      "summary": "Test your own devices, networks and services from iPhone or iPad, with each capability shown only as far as a real operation has verified it.",
       "description": [
-        "HCG Sentinel is a native SwiftUI app for iPhone and iPad for authorised testing of your own devices, networks and services: capture-file inspection, Bluetooth LE discovery, a controlled test-request composer, and a client for an external radio-analysis node.",
-        "Each capability is tracked separately as implemented, supported on the device, enabled by you and verified by a real operation. Fabricated data appears only in a clearly labelled Preview mode."
+        "HCG Sentinel is a native SwiftUI app for iPhone and iPad for authorised testing of your own devices, networks and services.",
+        "Each capability is tracked separately as implemented, supported on the device, enabled by you and verified by a real operation. Every scan and outside connection is off until you turn it on, and fabricated data appears only in a clearly labelled Preview mode."
       ],
       "category": "security",
       "tags": [
@@ -650,7 +970,7 @@
         "authorised testing"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Version 0.1.0 (build 1). Not tested on physical devices. App Store upload and package publishing are not scripted.",
+      "developmentNote": "Version 0.1.0 (build 1). Not tested on physical devices; Bluetooth is tested with fixtures only and Check My Network has not run against a real network. Signed archives are not produced.",
       "platforms": [
         {
           "platform": "ios",
@@ -677,19 +997,19 @@
         ]
       },
       "catalogueNotes": [
-        "HCG Sentinel has no jailbreak package. HCG Repo lists it as planned so the two sites link to each other; it cannot be installed from HCG Repo."
+        "HCG Sentinel has no jailbreak package. HCG Repo lists it so the two sites link to each other; it cannot be installed from HCG Repo."
       ],
       "editions": [
         {
           "id": "app",
           "name": "HCG Sentinel app",
-          "summary": "Native SwiftUI app for iPhone and iPad.",
+          "summary": "Native SwiftUI app for iPhone and iPad, built in two schemes (HCGSentinel for iOS 14.7+, HCGSentinelModern for iOS 15.0+) with the same bundle identifier.",
           "platforms": [
             "ios",
             "ipados"
           ],
           "channel": "sideload",
-          "status": "Development-signed builds installed with Xcode or Apple Configurator only.",
+          "status": "Development-signed IPA installed with Xcode or Apple Configurator. Not distributed.",
           "identifiers": [
             {
               "kind": "bundle-id",
@@ -705,6 +1025,47 @@
           "key": "hcg-sentinel",
           "editionId": null
         }
+      ],
+      "artwork": {
+        "icon": {
+          "src": "media/products/hcg-sentinel/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "F1r3srp3nt/HCG-Sentinel HCGSentinel/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png at 490858c (the app's icon). Resized to WebP.",
+          "kind": "official"
+        },
+        "cover": {
+          "src": "media/products/hcg-sentinel/cover-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG Sentinel brand artwork: the chrome HCG mark in a radar shield beside the word Sentinel",
+          "provenance": "F1r3srp3nt/HCG-Sentinel Assets.xcassets/SentinelHeader.imageset/SentinelHeader@3x.png at 490858c (the header shown on the app's Dashboard). Resized to WebP.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-sentinel/cover-1200.webp",
+              "width": 1200
+            }
+          ]
+        },
+        "accent": "mint"
+      },
+      "currentFeatures": [
+        "Check My Network: DNS, HTTPS, captive-portal, proxy and Wi-Fi checks",
+        "Security Lab: Secret Scanner, Exposure Check and an Authentication Defense Lab against a bundled local service",
+        "Network Inspector: import and decode pcap and pcapng capture files",
+        "Bluetooth Explorer: user-started Bluetooth LE discovery",
+        "Request Composer and a Radio Lab client for an external analysis node"
+      ],
+      "plannedFeatures": [
+        "Privileged helper for capture and filtering",
+        "Security Lab execution on a paired HCG Server",
+        "A real radio analysis node"
+      ],
+      "requirements": [
+        "iPhone or iPad with iOS or iPadOS 14.7 or later (iOS 15.0 or later for the HCGSentinelModern build)",
+        "Development-signed install with Xcode or Apple Configurator; no jailbreak package"
       ]
     },
     {
@@ -712,10 +1073,10 @@
       "slug": "hcg-clarity",
       "name": "HCG Clarity",
       "monogram": "CL",
-      "summary": "Turn scattered information into clear instructions and useful deliverables: briefs, presentations and prompt files.",
+      "summary": "Turn scattered information into clear instructions and useful deliverables: briefs, presentations and prompt files, with every output kept in History.",
       "description": [
-        "HCG Clarity takes scattered source material through four steps, Sources, Distil, Refine and Create, and turns it into briefs, presentations and prompt files. Every output is kept in History.",
-        "It runs as a local web app and as an Electron desktop app for macOS."
+        "HCG Clarity takes source material through four steps — Sources, Distil, Refine and Create — and turns it into briefs, editable presentations and prompt files. Every output is kept in History.",
+        "Clarity consolidates the working parts of HCG RePrompter, Distil and Presentation Studio into one application, and opens RePrompter and Distil backup files. It runs as a local web app and as a desktop app for macOS."
       ],
       "category": "productivity",
       "tags": [
@@ -725,7 +1086,7 @@
         "prompts"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Version 0.1.0, the first consolidated pre-release. The macOS build is ad-hoc signed and not notarised; CI builds are not releases.",
+      "developmentNote": "Version 0.1.0, the first consolidated pre-release. The packaged macOS app passes its automated test in CI; it is ad-hoc signed and not notarised, and real AI-provider calls have not been verified.",
       "platforms": [
         {
           "platform": "macos",
@@ -738,7 +1099,53 @@
           "note": "Runs locally on the user's computer (localhost); not a hosted service."
         }
       ],
-      "media": [],
+      "media": [
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-clarity/distil-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-clarity/distil-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "HCG Clarity Distil step: a list of included source excerpts with line references beside a list of left-out items.",
+          "caption": "Distil step, from the automated browser test with synthetic sample content.",
+          "provenance": "F1r3srp3nt/HCG-Clarity docs/screenshots/distil.png at 3a97c07, captured by the automated browser test with synthetic content (README). Resized to WebP."
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-clarity/refine-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-clarity/refine-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "HCG Clarity Refine step showing a local analysis of instructions with suggested revisions.",
+          "caption": "Refine step, automated browser test with synthetic content and the mock AI provider.",
+          "provenance": "F1r3srp3nt/HCG-Clarity docs/screenshots/refine.png at 3a97c07, automated browser test with the mock AI provider (text marked [MOCK]). Resized to WebP."
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-clarity/presentation-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-clarity/presentation-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "HCG Clarity Create step preparing an editable presentation.",
+          "caption": "Create step, automated browser test with synthetic content.",
+          "provenance": "F1r3srp3nt/HCG-Clarity docs/screenshots/presentation.png at 3a97c07, automated browser test. Resized to WebP."
+        }
+      ],
       "currentReleaseId": null,
       "registry": {
         "status": "provisional",
@@ -751,7 +1158,9 @@
           }
         ]
       },
-      "catalogueNotes": [],
+      "catalogueNotes": [
+        "HCG Clarity has no product-specific icon yet: its desktop build uses the generic HCG logo."
+      ],
       "editions": [
         {
           "id": "macos-desktop",
@@ -772,7 +1181,36 @@
           "note": null
         }
       ],
-      "hcgRepo": []
+      "hcgRepo": [],
+      "formerNames": [
+        "HCG RePrompter",
+        "Distil"
+      ],
+      "collections": [
+        "featured"
+      ],
+      "artwork": {
+        "icon": null,
+        "cover": null,
+        "accent": "silver"
+      },
+      "currentFeatures": [
+        "Sources: import PDF, Word, text and images, with on-device OCR (English and Norwegian)",
+        "Distil: select excerpts with line references using four strategies",
+        "Refine: local analysis and revisions of instructions",
+        "Create: a Clarity brief and an editable .pptx presentation",
+        "History of every output, and import of RePrompter and Distil backups"
+      ],
+      "plannedFeatures": [
+        "Legacy .doc, PowerPoint and RTF import",
+        "HCG Connect accounts, HCG AI and collaboration",
+        "RePrompter collections and user templates",
+        "Developer ID signing and notarisation"
+      ],
+      "requirements": [
+        "Desktop: macOS 12.0 or later on Apple Silicon (arm64)",
+        "Local web app: runs on your own computer"
+      ]
     }
   ]
 }

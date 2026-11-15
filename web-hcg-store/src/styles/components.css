@@ -92,22 +92,22 @@
 .button--primary {
   color: #031018;
   background: linear-gradient(180deg, #7ff0ff 0%, var(--cyan) 45%, var(--cyan-600) 100%);
-  box-shadow: 0 0 0 1px rgba(62, 230, 255, 0.5), 0 8px 28px -10px var(--cyan-glow);
+  box-shadow: 0 0 0 1px rgba(69, 225, 245, 0.5), 0 8px 28px -10px var(--cyan-glow);
 }
 .button--primary:hover {
   color: #031018;
   transform: translateY(-1px);
-  box-shadow: 0 0 0 1px rgba(62, 230, 255, 0.7), 0 10px 34px -10px rgba(62, 230, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(69, 225, 245, 0.7), 0 10px 34px -10px rgba(69, 225, 245, 0.55);
 }
 .button--ghost {
   color: var(--text);
-  background: rgba(14, 26, 50, 0.5);
+  background: rgba(18, 22, 30, 0.5);
   border-color: var(--line-strong);
 }
 .button--ghost:hover {
   color: var(--text);
-  border-color: rgba(62, 230, 255, 0.5);
-  background: rgba(62, 230, 255, 0.06);
+  border-color: rgba(69, 225, 245, 0.5);
+  background: rgba(69, 225, 245, 0.06);
 }
 .button--small {
   min-height: 36px;
@@ -139,7 +139,7 @@
 }
 .icon-button:hover {
   color: var(--cyan);
-  border-color: rgba(62, 230, 255, 0.5);
+  border-color: rgba(69, 225, 245, 0.5);
 }
 
 /* ---------- Badges & chips ---------- */
@@ -154,7 +154,7 @@
   line-height: 1.5;
   border: 1px solid var(--line-strong);
   color: var(--text-muted);
-  background: rgba(14, 26, 50, 0.6);
+  background: rgba(18, 22, 30, 0.6);
   white-space: nowrap;
 }
 .badge__dot {
@@ -165,7 +165,7 @@
 }
 .badge--active {
   color: var(--cyan);
-  border-color: rgba(62, 230, 255, 0.32);
+  border-color: rgba(69, 225, 245, 0.32);
   background: var(--cyan-soft);
 }
 .badge--planned {
@@ -196,7 +196,7 @@
 }
 .badge--channel-beta {
   color: var(--cyan);
-  border-color: rgba(62, 230, 255, 0.4);
+  border-color: rgba(69, 225, 245, 0.4);
 }
 .badge--channel-alpha {
   color: var(--violet);
@@ -284,8 +284,8 @@
 .product-card:hover,
 .product-card:focus-within {
   transform: translateY(-3px);
-  border-color: rgba(62, 230, 255, 0.28);
-  box-shadow: var(--shadow-panel), 0 0 0 1px rgba(62, 230, 255, 0.12), 0 20px 50px -28px rgba(62, 230, 255, 0.4);
+  border-color: rgba(69, 225, 245, 0.28);
+  box-shadow: var(--shadow-panel), 0 0 0 1px rgba(69, 225, 245, 0.12), 0 20px 50px -28px rgba(69, 225, 245, 0.4);
 }
 .product-card:hover::before,
 .product-card:focus-within::before {
@@ -396,7 +396,7 @@
   padding: 16px;
   text-align: center;
   border: 1px dashed var(--line-strong);
-  background: repeating-linear-gradient(135deg, rgba(130, 196, 255, 0.03) 0 10px, transparent 10px 20px);
+  background: repeating-linear-gradient(135deg, rgba(206, 220, 236, 0.03) 0 10px, transparent 10px 20px);
 }
 .media-missing__title {
   font-weight: 600;
@@ -425,7 +425,7 @@
 }
 .panel--note {
   border-color: rgba(164, 139, 255, 0.3);
-  background: linear-gradient(180deg, rgba(164, 139, 255, 0.07), rgba(14, 26, 50, 0.5));
+  background: linear-gradient(180deg, rgba(164, 139, 255, 0.07), rgba(18, 22, 30, 0.5));
 }
 .panel--note ul {
   margin: 0;
@@ -439,7 +439,7 @@
   padding: 14px 18px;
   border-radius: var(--radius);
   border: 1px solid var(--line-strong);
-  background: rgba(14, 26, 50, 0.55);
+  background: rgba(18, 22, 30, 0.55);
   color: var(--text-muted);
   font-size: 14.5px;
   margin-block: 8px;
@@ -595,10 +595,10 @@
   padding: clamp(18px, 3vw, 26px);
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(180deg, rgba(62, 230, 255, 0.07), transparent 140px),
+    linear-gradient(180deg, rgba(69, 225, 245, 0.07), transparent 140px),
     linear-gradient(180deg, rgba(17, 32, 61, 0.85), rgba(8, 14, 28, 0.92));
-  border: 1px solid rgba(62, 230, 255, 0.22);
-  box-shadow: var(--shadow-panel), 0 0 60px -30px rgba(62, 230, 255, 0.35);
+  border: 1px solid rgba(69, 225, 245, 0.22);
+  box-shadow: var(--shadow-panel), 0 0 60px -30px rgba(69, 225, 245, 0.35);
 }
 .release-panel::before {
   content: "";
@@ -842,7 +842,7 @@
 .segmented__option input:checked + span,
 .chip-check input:checked + span {
   color: var(--text);
-  border-color: rgba(62, 230, 255, 0.6);
+  border-color: rgba(69, 225, 245, 0.6);
   background: var(--cyan-soft);
 }
 .segmented__option input:focus-visible + span,

@@ -19,6 +19,24 @@ provider**.
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities (`jose` pinned to 6.2.14, a release more than two weeks old) |
 | Mutation check of the acceptance suite | manual | ✔ The suite catches all 5 deliberately introduced faults: an entitlement bypass, a signature bypass, idempotency removed, central re-check removed, and the amount check removed |
 
+## Storefront redesign (15 November 2026)
+
+| Check | Command / method | Result |
+|---|---|---|
+| Catalogue, typecheck, unit and component tests, production build, secret scan | `npm run check` | ✔ catalogue valid (11 entries, 10 listed; RePrompter is merged into Clarity); **131 tests passed** in 11 files |
+| End-to-end in Chromium | `npm run test:e2e` | ✔ **37 passed** (2 opt-in screenshot tests skipped), two full runs in a row. One earlier run had a single time-out in "header search submits to the browse page"; it then passed 16 of 16 repeats and is treated as load-related. |
+| GitHub Pages artifact | production build with `HCG_HOSTING_TARGET=github-pages`, then `scripts/verify-pages-artifact.mjs` | ✔ 89 files, 27 route pages + `404.html` |
+| Pages artifact served like GitHub Pages | `scripts/serve-pages-like.mjs` + `scripts/smoke-deployment.mjs` | ✔ SMOKE OK (app shell, routes, new hero image, not-found page, no source or protected files) |
+| Store ⇄ HCG Repo mapping | `npm run check:repo-mapping -- <HCG-repo>` (HCG-repo `3a8fe2e`) | ✔ 3 products, 3 links, package IDs equal |
+| Overflow, broken images, console errors | Playwright sweep of 20 routes at 320, 390, 768, 1024 and 1440 px | ✔ no horizontal overflow (after fixing long HCG Repo links and the discover chips), no broken images, every route has an `h1`. The only 404 is the deliberate unknown-path check. |
+| Keyboard | e2e + Tab sweep of the home page | ✔ 59 tab stops, all with a visible focus indicator (product cards draw a cyan ring on the whole card) |
+| Reduced motion | e2e | ✔ no running animations and near-zero transitions with `prefers-reduced-motion: reduce`; nothing pulses in either mode |
+| Text contrast (WCAG 2.1) | computed from the tokens | ✔ primary text 15.2–18.6:1, muted 8.6–10.5:1, faint 5.6–6.8:1, cyan 10.5–12.8:1, violet 6.7–8.2:1 on obsidian through the lightest glass surface |
+| Buy Product honesty | component tests + e2e | ✔ the button renders only for an edition with a server offer (TEST-mode fixture only). Every real product shows "In development: not for sale"; the real offer list is empty. No download links anywhere. |
+| Bug fixed during validation | browse filters | Successive quick filter changes (clear search, then tick a platform) could restore the old search, because each update merged into the previous render's query. Updates now merge into the latest URL state. |
+
+Not covered: screen-reader runs, Lighthouse, Safari/Firefox, and the live site (see DEPLOYMENT.md for HTTPS).
+
 ## Acceptance list ([ACCESS.md](ACCESS.md#acceptance-list))
 
 | # | Requirement | Result | Evidence |
