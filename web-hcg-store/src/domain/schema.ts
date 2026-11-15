@@ -88,6 +88,11 @@ export const ArtworkImageSchema = z.strictObject({
   kind: z.enum(["official", "concept"]).default("official"),
   /** Smaller renditions for responsive loading. */
   variants: z.array(z.strictObject({ src: relativeAsset, width: z.number().int().positive() })).default([]),
+  /**
+   * An AVIF copy exists next to `src` and every variant (same name, `.avif`). Browsers that support
+   * AVIF load it; the WebP files remain the fallback.
+   */
+  avif: z.boolean().default(false),
 });
 
 export const ProductArtworkSchema = z.strictObject({
@@ -95,6 +100,11 @@ export const ProductArtworkSchema = z.strictObject({
   cover: ArtworkImageSchema.nullable().default(null),
   /** Accent used for the product's branded fallback and highlights (restrained). */
   accent: z.enum(["cyan", "violet", "silver", "mint", "amber"]).default("cyan"),
+  /**
+   * "app": a full-bleed app icon, shown with the platform's rounded mask.
+   * "framed": the artwork draws its own frame, so it is shown whole (no mask, no extra ring).
+   */
+  iconStyle: z.enum(["app", "framed"]).default("app"),
 });
 
 /** Link from a Store product (or one of its editions) to its product page in HCG Repo. */
@@ -137,7 +147,7 @@ export const ProductSchema = z.strictObject({
   plannedFeatures: z.array(text).default([]),
   /** Requirements as declared by the build configuration (OS versions, jailbreak layout, …). */
   requirements: z.array(text).default([]),
-  artwork: ProductArtworkSchema.default({ icon: null, cover: null, accent: "cyan" }),
+  artwork: ProductArtworkSchema.default({ icon: null, cover: null, accent: "cyan", iconStyle: "app" }),
   /** Curated storefront collections. Content decision, kept here rather than in components. */
   collections: z.array(z.enum(["featured", "jailbreak", "developer-tools"])).default([]),
   /**

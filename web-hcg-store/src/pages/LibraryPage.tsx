@@ -4,6 +4,9 @@ import { useAccount } from "../account/account-context";
 import { DOWNLOADS_NOT_AVAILABLE, formatPrice, signInUrl, StoreApiError, storeApi, type Library } from "../account/api";
 import { IconCheck, IconInfo, IconLock } from "../components/Icons";
 import { PageMeta } from "../components/PageMeta";
+import { ProductMark } from "../components/ProductArt";
+import { useCatalogueState } from "../app/catalogue-context";
+import { findProductById } from "../domain/model";
 
 const PURCHASE_STATUS: Record<string, string> = {
   paid: "Paid",
@@ -75,6 +78,13 @@ export function LibraryPage() {
   );
 }
 
+/** The owned product's icon, from the catalogue (the one place product artwork is defined). */
+function OwnedProductMark({ productId }: { productId: string }) {
+  const state = useCatalogueState();
+  const product = state.status === "ready" ? findProductById(state.catalogue, productId) : undefined;
+  return product ? <ProductMark product={product} size="sm" /> : null;
+}
+
 function LibraryContent({ data }: { data: Library }) {
   return (
     <>
@@ -89,6 +99,7 @@ function LibraryContent({ data }: { data: Library }) {
           <ul className="library-list">
             {data.owned.map((o) => (
               <li key={`${o.productId}:${o.editionId ?? ""}`} className="library-item">
+                <OwnedProductMark productId={o.productId} />
                 <span className="badge badge--owned">
                   <IconCheck /> Owned
                 </span>

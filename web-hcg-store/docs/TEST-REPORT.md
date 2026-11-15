@@ -19,6 +19,17 @@ provider**.
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities (`jose` pinned to 6.2.14, a release more than two weeks old) |
 | Mutation check of the acceptance suite | manual | ✔ The suite catches all 5 deliberately introduced faults: an entitlement bypass, a signature bypass, idempotency removed, central re-check removed, and the amount check removed |
 
+## Product artwork update (15 November 2026)
+
+| Check | Method | Result |
+|---|---|---|
+| Mapping: 8 new banners, 4 new icons, kept icons and Terminal/Sentinel artwork, no shared files | unit tests on the real catalogue | ✔ |
+| Every artwork file, variant and AVIF copy exists, and its real pixel size matches the catalogue | `npm run validate:catalogue` (deliberately broken entries were caught) | ✔ |
+| Product page: banner is the one high-priority image, AVIF with WebP fallback, decorative alt; real screenshots kept (lazy) and labelled; framed icons; library shows catalogue icons | component tests + e2e | ✔ |
+| All 10 product pages show the right banner and icon on direct URLs; search, category, releases (nested route), RePrompter, library and account pages | Playwright audit of the Pages build at 320, 390, 768, 1024, 1440 px (95 page loads) | ✔ no overflow, broken images, distortion, cropping or clipped names |
+| Banners and icons never cropped or stretched | e2e at 5 widths | ✔ |
+| Card summaries clamp to exactly 3 lines | Playwright at 4 widths | ✔ (fixed: a stretched grid item showed part of a 4th line) |
+
 ## Storefront redesign (15 November 2026)
 
 | Check | Command / method | Result |

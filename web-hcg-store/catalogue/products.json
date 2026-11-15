@@ -46,9 +46,42 @@
       "editions": [],
       "hcgRepo": [],
       "artwork": {
-        "icon": null,
-        "cover": null,
-        "accent": "violet"
+        "icon": {
+          "src": "media/products/hcg-lifeos/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "HCG-approved product icon for HCG Store, supplied by the founder on 15 November 2026. Original 1254×1254 kept losslessly at assets/products/hcg-lifeos/icon.webp (not published); resized only by scripts/product-art.py. Shows a progress compass with a star above steps above the HCG letters, in its own chrome frame.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-lifeos/icon-128.webp",
+              "width": 128
+            }
+          ],
+          "avif": true
+        },
+        "cover": {
+          "src": "media/products/hcg-lifeos/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG LifeOS banner: a progress compass with a glowing star and stairway beside the chrome HCG LifeOS wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-lifeos/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-lifeos/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-lifeos/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
+        "accent": "violet",
+        "iconStyle": "framed"
       },
       "currentFeatures": [
         "Quest engine with realms, XP ledger and levels (automated tests)",
@@ -202,7 +235,25 @@
           "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/assets/icons/hcg-mail-1024.png at 13d93a8 (the app's icon, also its iOS AppIcon). Resized to WebP.",
           "kind": "official"
         },
-        "cover": null,
+        "cover": {
+          "src": "media/products/hcg-mail/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG Mail banner: a faceted chrome envelope with a cyan light trail beside the HCG Mail wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-mail/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-mail/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
         "accent": "cyan"
       },
       "currentFeatures": [
@@ -273,9 +324,42 @@
       "editions": [],
       "hcgRepo": [],
       "artwork": {
-        "icon": null,
-        "cover": null,
-        "accent": "amber"
+        "icon": {
+          "src": "media/products/hcg-one-unleashed/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "HCG-approved product icon for HCG Store, supplied by the founder on 15 November 2026. Original 1254×1254 kept losslessly at assets/products/hcg-one-unleashed/icon.webp (not published); resized only by scripts/product-art.py. Shows a silver number one with gold-accented candlesticks above the HCG letters, in its own chrome frame.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-one-unleashed/icon-128.webp",
+              "width": 128
+            }
+          ],
+          "avif": true
+        },
+        "cover": {
+          "src": "media/products/hcg-one-unleashed/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG ONE: Unleashed banner: a crystal number one in a chrome ring with candlestick charts beside the HCG ONE: Unleashed wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-one-unleashed/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-one-unleashed/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-one-unleashed/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
+        "accent": "amber",
+        "iconStyle": "framed"
       },
       "currentFeatures": [
         "Simulated market engine and simulated account",
@@ -368,7 +452,25 @@
           "provenance": "F1r3srp3nt/HCG-News iOS app AppIcon.appiconset/Icon-1024.png at 26fcc42 (the app's icon). Resized to WebP.",
           "kind": "official"
         },
-        "cover": null,
+        "cover": {
+          "src": "media/products/hcg-news/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG News banner: a chrome globe with a signal antenna above open news pages beside the HCG News wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-news/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-news/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-news/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
         "accent": "silver"
       },
       "currentFeatures": [
@@ -478,7 +580,7 @@
         ]
       },
       "catalogueNotes": [
-        "The screenshots show an earlier development build (0.1.0); the current pre-release is 0.3.0. The app's icon is a temporary HCG logo."
+        "The screenshots show an earlier development build (0.1.0); the current pre-release is 0.3.0."
       ],
       "editions": [
         {
@@ -503,9 +605,42 @@
         "developer-tools"
       ],
       "artwork": {
-        "icon": null,
-        "cover": null,
-        "accent": "cyan"
+        "icon": {
+          "src": "media/products/hcg-executable-maker/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "HCG-approved product icon for HCG Store, supplied by the founder on 15 November 2026. Original 1254×1254 kept losslessly at assets/products/hcg-executable-maker/icon.webp (not published); resized only by scripts/product-art.py. Shows a metal cube being assembled in a frame above the HCG letters, in its own chrome frame.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/icon-128.webp",
+              "width": 128
+            }
+          ],
+          "avif": true
+        },
+        "cover": {
+          "src": "media/products/hcg-executable-maker/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG Executable Maker banner: the HCG crest and the HCG Executable Maker wordmark beside robotic arms assembling a glowing cube",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-executable-maker/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-executable-maker/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
+        "accent": "cyan",
+        "iconStyle": "framed"
       },
       "currentFeatures": [
         "Imports a ZIP or folder and inspects it without executing any of its code",
@@ -658,7 +793,25 @@
           "provenance": "The HCG CardX app's own icon set (AppIcon, 1024 px) in its development project, commit e6d5545. Resized to WebP.",
           "kind": "official"
         },
-        "cover": null,
+        "cover": {
+          "src": "media/products/hcg-cardx/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG CardX banner: the HCG crest beside three holographic trading cards and the chrome HCG CardX wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-cardx/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-cardx/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-cardx/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
         "accent": "amber"
       },
       "requirements": [
@@ -932,7 +1085,25 @@
           "provenance": "F1r3srp3nt/HCG-Nexus App/Assets.xcassets/AppIcon.appiconset/Icon-1024.png at 3136149 (the standalone app's real icon set, docs/ICONS.md). Resized to WebP.",
           "kind": "official"
         },
-        "cover": null,
+        "cover": {
+          "src": "media/products/hcg-nexus/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG Nexus banner: a four-pointed chrome star with a cyan core and circuit traces beside the HCG Nexus wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-nexus/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-nexus/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-nexus/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
         "accent": "violet"
       },
       "currentFeatures": [
@@ -1158,9 +1329,7 @@
           }
         ]
       },
-      "catalogueNotes": [
-        "HCG Clarity has no product-specific icon yet: its desktop build uses the generic HCG logo."
-      ],
+      "catalogueNotes": [],
       "editions": [
         {
           "id": "macos-desktop",
@@ -1190,9 +1359,42 @@
         "featured"
       ],
       "artwork": {
-        "icon": null,
-        "cover": null,
-        "accent": "silver"
+        "icon": {
+          "src": "media/products/hcg-clarity/icon-256.webp",
+          "width": 256,
+          "height": 256,
+          "alt": "",
+          "provenance": "HCG-approved product icon for HCG Store, supplied by the founder on 15 November 2026. Original 1254×1254 kept losslessly at assets/products/hcg-clarity/icon.webp (not published); resized only by scripts/product-art.py. Shows a glass prism splitting a cyan beam above the HCG letters, in its own chrome frame.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-clarity/icon-128.webp",
+              "width": 128
+            }
+          ],
+          "avif": true
+        },
+        "cover": {
+          "src": "media/products/hcg-clarity/banner-2000.webp",
+          "width": 2000,
+          "height": 667,
+          "alt": "HCG Clarity banner: a glass prism splitting tangled light into three clean layers beside the chrome HCG Clarity wordmark",
+          "provenance": "HCG-approved product banner for HCG Store, supplied by the founder on 15 November 2026. Original 2172×724 kept losslessly at assets/products/hcg-clarity/banner.webp (not published); resized only by scripts/product-art.py.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-clarity/banner-640.webp",
+              "width": 640
+            },
+            {
+              "src": "media/products/hcg-clarity/banner-1200.webp",
+              "width": 1200
+            }
+          ],
+          "avif": true
+        },
+        "accent": "silver",
+        "iconStyle": "framed"
       },
       "currentFeatures": [
         "Sources: import PDF, Word, text and images, with on-device OCR (English and Norwegian)",
