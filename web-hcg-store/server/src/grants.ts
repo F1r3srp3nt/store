@@ -35,6 +35,7 @@ interface Row {
   sub: string;
   product_id: string;
   edition: string | null;
+  features: string;
   state: "active" | "revoked";
   reason: string | null;
   starts_at: number;
@@ -72,18 +73,18 @@ export class CentralGrantOutbox {
   }
 
   /** Grant or extend. Never reactivates a revoked purchase. Call inside the ledger transaction. */
-  setActive(key: string, sub: string, productId: string, edition: string | null, startsAt: number, endsAt: number | null): void {
+  setActive(key: string, sub: string, productId: string, edition: string | null, startsAt: number, endsAt: number | null, features: string[] = []): void {
     const t = this.now();
     this.db
       .prepare(
-        `INSERT INTO central_grants (purchase_key, sub, product_id, edition, state, starts_at, ends_at, revision, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, 1, ?)
+        `INSERT INTO central_grants (purchase_key, sub, product_id, edition, features, state, starts_at, ends_at, revision, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, 1, ?)
          ON CONFLICT (purchase_key) DO UPDATE SET
            ends_at = excluded.ends_at, revision = revision + 1, next_attempt_at = 0, updated_at = excluded.updated_at
          WHERE central_grants.state = 'active'
            AND (central_grants.ends_at IS NOT NULL AND (excluded.ends_at IS NULL OR excluded.ends_at > central_grants.ends_at))`,
       )
-      .run(key, sub, productId, edition, startsAt, endsAt, t);
+      .run(key, sub, productId, edition, JSON.stringify([...features].sort()), startsAt, endsAt, t);
   }
 
   /** Terminal. A purchase that was never granted has nothing to revoke centrally. */
@@ -106,7 +107,7 @@ export class CentralGrantOutbox {
     if (!this.settings) return report;
     const rows = this.db
       .prepare(
-        `SELECT purchase_key, sub, product_id, edition, state, reason, starts_at, ends_at, revision, attempts
+        `SELECT purchase_key, sub, product_id, edition, features, state, reason, starts_at, ends_at, revision, attempts
          FROM central_grants WHERE delivered_revision < revision AND next_attempt_at <= ? ORDER BY updated_at LIMIT ?`,
       )
       .all(this.now(), limit) as unknown as Row[];
@@ -139,6 +140,7 @@ export class CentralGrantOutbox {
       sub: row.sub,
       product_id: row.product_id,
       edition: row.edition,
+      features: JSON.parse(row.features) as string[],
       starts_at: new Date(row.starts_at).toISOString(),
       ends_at: row.ends_at === null ? null : new Date(row.ends_at).toISOString(),
     };

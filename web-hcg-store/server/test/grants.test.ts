@@ -198,6 +198,24 @@ describe("grant configuration (D5)", () => {
     expect(() => parseStoreConfig({ ...base, HCG_STORE_GRANT_API_URL: "http://hcg.test/x", HCG_STORE_GRANT_CREDENTIAL: CREDENTIAL })).toThrow();
   });
 
+  it("a grant names exactly the features the offer lists; staff permissions can never be sold", async () => {
+    const { h, central, offer, event } = await setup();
+    const o = offer("fixture-quasar-unleashed-test");
+    o.grants = [{ edition: "unleashed", features: ["download", "ai.use"] }];
+    const chk = h.app.ledger.createCheckout(SUB, o, "test");
+    h.app.ledger.apply("test", event("checkout.completed", chk.id));
+    await h.outbox.deliver();
+    expect(central.requests[0]!.body).toMatchObject({ action: "grant", product_id: "fixture.quasar.shell", edition: "unleashed", features: ["ai.use", "download"] });
+
+    const cat = validateCatalogue(JSON.parse(readFileSync(join(FIXTURE_CATALOGUE, "products.json"), "utf8")), JSON.parse(readFileSync(join(FIXTURE_CATALOGUE, "releases.json"), "utf8")));
+    if (!cat.ok) throw new Error("fixture");
+    const sell = (features: string[]) => buildRegistry(cat.catalogue, (TEST_OFFERS.offers as Offer[]).map((x) => ({ ...x, grants: x.grants.map((g) => ({ ...g, features })) })), [], true);
+    expect(() => sell(["store.publish"])).toThrow(/never sold/);
+    expect(() => sell(["store.release.approve"])).toThrow(/never sold/);
+    expect(() => sell(["download", "download"])).toThrow(/twice/);
+    expect(() => sell(["download"])).not.toThrow();
+  });
+
   it("refuses an offer that grants an edition without a central edition key (D2)", () => {
     const products = JSON.parse(readFileSync(join(FIXTURE_CATALOGUE, "products.json"), "utf8")) as { products: { id: string; editions: { id: string; centralEditionKey: string | null }[] }[] };
     for (const e of products.products.find((p) => p.id === "fixture-quasar-shell")!.editions) e.centralEditionKey = null;

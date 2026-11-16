@@ -17,6 +17,12 @@ kill_timeout = 10
   HOST = "0.0.0.0"
   PORT = "8080"
   HCG_STORE_DATA_DIR = "/data"
+  # Private files (uploads, approved releases) live on the volume, outside the static root (dist/). They are only
+  # ever streamed by the server after its checks; nothing here is served as a static file.
+  HCG_STORE_ARTIFACT_STORAGE_DIR = "/data/artifacts"
+  # Daily consistent copies of the database on the volume (see Backups in docs/PRODUCTION-DEPLOY.md).
+  HCG_STORE_BACKUP_DIR = "/data/backups"
+  HCG_STORE_BACKUP_KEEP = "14"
   HCG_STORE_STATIC_DIR = "dist"
   HCG_STORE_REPO_ORIGINS = "https://repo.hakmicapitalgroup.com"
   HCG_REPO_BASE_URL = "https://repo.hakmicapitalgroup.com/"
@@ -25,6 +31,8 @@ kill_timeout = 10
   # Off until their own end-to-end tests pass and the founder approves.
   HCG_STORE_PAYMENT_PROVIDER = "none"
   HCG_STORE_PROTECTED_DOWNLOADS = "disabled"
+  HCG_STORE_PUBLISHING = "disabled"
+  HCG_STORE_UPLOAD_MAX_MB = "2048"
 
   # Phase 2: HCG Connect sign-in. Enable only after store.hakmicapitalgroup.com serves this app and
   # HCG has issued the PRODUCTION client for the callback below. Never the development client
@@ -37,10 +45,24 @@ kill_timeout = 10
   # HCG_CONNECT_REDIRECT_URI = "https://store.hakmicapitalgroup.com/auth/callback"
   # HCG_CONNECT_SCOPES = "openid email profile"
 
+  # Phase 3: Ship to Store publishing. Separate from customer payments and downloads. Enable only after phase 2 is
+  # verified, HCG has created the two permissions below as product features with per-person grants (membership of an
+  # organisation alone must not pass), and the publishing checks in docs/PRODUCTION-DEPLOY.md pass. Then set
+  # HCG_STORE_PUBLISHING above to "enabled" and uncomment these.
+  # HCG Executable Maker's production client (issued by HCG, status configured_untested). Never the Store's own client.
+  # HCG_STORE_PUBLISHING_CLIENT_IDS = "fb9b6edf-2bfc-4b5e-a354-dbb1af697029"
+  # HCG_STORE_PUBLISHER_CENTRAL_ID = "store.publish"
+  # HCG_STORE_RELEASE_APPROVER_CENTRAL_ID = "store.release.approve"
+
 [[mounts]]
   source = "hcg_store_data"
   destination = "/data"
-  initial_size = "1gb"
+  initial_size = "3gb"
+  # Fly's daily volume snapshots, kept 14 days (default 5). Grows by 1 GB at 80 % full, up to 20 GB.
+  snapshot_retention = 14
+  auto_extend_size_threshold = 80
+  auto_extend_size_increment = "1GB"
+  auto_extend_size_limit = "20GB"
 
 [http_service]
   internal_port = 8080

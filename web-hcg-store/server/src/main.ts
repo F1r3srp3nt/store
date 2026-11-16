@@ -3,6 +3,7 @@
  * environment; see .env.server.example and docs/ACCESS.md.
  */
 import { createStoreApp, listen } from "./app";
+import { backupDatabase } from "./backup";
 import { ConfigError, parseStoreConfig } from "./config";
 import { openDatabase, recordAuthEvent } from "./db";
 import { HcgEcosystemAuthority, NoAuthority, TestLedgerAuthority, type EntitlementAuthority } from "./entitlements";
@@ -26,6 +27,19 @@ function start() {
   const outbox = new CentralGrantOutbox(db, now, cfg.grants);
   if (outbox.enabled) setInterval(() => void outbox.deliver().catch(() => undefined), 30_000).unref();
   const app = createStoreApp({ cfg, db, registry, connect, authority, now, outbox });
+  if (cfg.backup && cfg.dataDir !== ":memory:") {
+    const backup = cfg.backup;
+    const run = () => {
+      try {
+        const r = backupDatabase(db, backup.dir, backup.keep, now());
+        console.log(`Database backup written (${r.file.split("/").pop()}); ${r.removed.length} older copies removed.`);
+      } catch (e) {
+        console.error(`Database backup FAILED: ${(e as Error).message}`);
+      }
+    };
+    setTimeout(run, 60_000).unref();
+    setInterval(run, 24 * 3600 * 1000).unref();
+  }
   recordAuthEvent(db, now(), "server_started", { detail: { mode: cfg.mode, hcgConnectClientId: connect?.clientId ?? null } });
   return listen(app, cfg.port, cfg.host).then((server) => {
     // Clean stop on deploys and restarts: finish in-flight requests, then close the database so the

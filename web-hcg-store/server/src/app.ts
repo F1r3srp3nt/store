@@ -20,7 +20,7 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
-import { DOWNLOADS_NOT_AVAILABLE, decideAccess, deliverableArtifacts, editionIdsOf, validEdition, type AccessDeps } from "./access";
+import { DOWNLOADS_NOT_AVAILABLE, decideAccess, editionIdsOf, mayDownload, validEdition, type AccessDeps } from "./access";
 import type { StoreConfig } from "./config";
 import { pkceChallenge, randomToken } from "./crypto";
 import { recordAuthEvent, type Db } from "./db";
@@ -255,8 +255,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     if (!artifact || !product) return errorJson(res, 404, "not_found", "Not found.");
     const access = await decideAccess(accessDeps, product, artifact.editionId, fresh.session);
     if (access.state === "unavailable") return errorJson(res, 503, "hcg_unavailable", "Your access could not be checked right now. Try again shortly.");
-    if (!access.owned) return errorJson(res, 403, "not_entitled", "Your HCG account does not include this product.");
-    if (!deliverableArtifacts(registry, product, artifact.editionId).some((a) => a.id === artifact.id)) {
+    if (!access.owned && access.state !== "free") return errorJson(res, 403, "not_entitled", "Your HCG account does not include this product.");
+    if (!mayDownload(access, artifact.id)) {
       return errorJson(res, 403, "not_released", "This file is not approved for delivery.");
     }
     return streamArtifact(res, artifact.storageKey, artifact.fileName, artifact.contentType);

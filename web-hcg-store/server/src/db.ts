@@ -214,6 +214,9 @@ const MIGRATIONS: string[] = [
      detail TEXT
    );
    CREATE INDEX auth_events_at ON auth_events(at);`,
+  // 6: a purchase grant names the central features it includes (main-site plan: a grant covers only the purchased
+  // product, edition and features).
+  `ALTER TABLE central_grants ADD COLUMN features TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 /**

@@ -35,6 +35,7 @@ import { ALLOWED, checkDeclaration, CONTENT_TYPES, FORMATS, inspectContent, inst
 import type { StoreConfig } from "./config";
 import { seal, sha256Hex, signPayload, unseal, verifyPayload, randomToken } from "./crypto";
 import { transaction, type Db } from "./db";
+import { auditChainIntact } from "./release-records";
 import type { EntitlementAuthority, Subject } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, readJson } from "./http";
@@ -60,6 +61,15 @@ export interface PublishingDeps {
   freshSession: (req: IncomingMessage) => Promise<{ session: Session | null; unavailable: boolean }>;
   streamArtifact: (res: ServerResponse, storageKey: string, fileName: string, contentType: string) => void;
 }
+
+/** A Debian version Sileo's authorize_download will match to this release: the version, or `<version>-<revision>`. */
+export function debianVersionMatches(debVersion: string, releaseVersion: string): boolean {
+  if (debVersion === releaseVersion) return true;
+  return debVersion.startsWith(`${releaseVersion}-`) && /^[A-Za-z0-9.+~]+$/.test(debVersion.slice(releaseVersion.length + 1));
+}
+
+/** HCG Store's own central product (registered: main-site handoff, 16 Nov 2026). */
+export const STORE_CENTRAL_PRODUCT_ID = "hcg.store";
 
 const kebab = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const hex64 = /^[a-f0-9]{64}$/;
@@ -139,16 +149,7 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   /** Recomputes the audit chain; false when any row was altered outside the API. */
-  function auditIntact(): boolean {
-    let prev = "0".repeat(64);
-    for (const r of db.prepare("SELECT * FROM pub_audit ORDER BY seq").all() as { at: number; actor: string; action: string; release_id: string | null; artifact_id: string | null; detail: string; prev_hash: string; hash: string }[]) {
-      if (r.prev_hash !== prev) return false;
-      const h = sha256Hex(`${prev}|${r.at}|${r.actor}|${r.action}|${r.release_id ?? ""}|${r.artifact_id ?? ""}|${r.detail}`);
-      if (h !== r.hash) return false;
-      prev = h;
-    }
-    return true;
-  }
+  const auditIntact = () => auditChainIntact(db);
 
   // ------------------------------------------------------------- who is calling, and what HCG allows
 
@@ -169,13 +170,23 @@ export function createPublishing(deps: PublishingDeps) {
     return { sub: fresh.session.sub, accessToken: fresh.session.accessToken, via: "web", email: fresh.session.email };
   }
 
+  /**
+   * The central product a publishing permission is scoped to: the product's own central ID. A product HCG has not
+   * registered (no central ID), a Store draft product, or "*" (creating a draft product) is scoped to HCG Store's own
+   * central product, `hcg.store`; such releases can never be approved for public delivery (see /approve).
+   */
+  function permissionScope(productId: string): string {
+    return (productId === "*" ? null : productInfo(productId)?.centralId) ?? STORE_CENTRAL_PRODUCT_ID;
+  }
+
   async function permitted(actor: Actor, permission: "publish" | "approve", productId: string): Promise<boolean> {
-    const central = permission === "publish" ? P.publisherCentralId! : P.approverCentralId!;
+    const feature = permission === "publish" ? P.publisherCentralId! : P.approverCentralId!;
     const subject: Subject = { sub: actor.sub, accessToken: actor.accessToken };
-    // The permission is checked per product (or "*"). HCG has published no contract for these permissions yet: the
-    // TEST ledger stands in for it, and the live ecosystem authority cannot confirm them, so publishing fails closed
-    // (503) there until HCG issues the permission IDs and a way to check them.
-    const r = await authority.check(subject, { centralProductId: central, editionId: productId, centralEditionKey: productId });
+    // A central feature of the product (HCG's planned staff permissions `store.publish` and `store.release.approve`),
+    // checked with the caller's own HCG token on every action and never cached. Owning the product, an HCG role, or
+    // anything the client sends grants nothing. Until HCG creates the features, /check answers feature_unavailable
+    // and the answer is "not permitted".
+    const r = await authority.checkFeature(subject, permissionScope(productId), feature);
     if (r.status === "unavailable") throw new HttpError(503, "hcg_unavailable", "HCG could not confirm your publishing permission right now. Nothing was changed.");
     return r.status === "granted";
   }
@@ -321,6 +332,12 @@ export function createPublishing(deps: PublishingDeps) {
       }
     }
     if (destinations.includes("hcg-repo") && a.format === "deb") {
+      // Sileo asks authorize_download for the Debian version it saw in HCG Repo's index; the Store matches it against
+      // the release version, so a package numbered differently could never be delivered.
+      const debVersion = content?.debian?.controlReadable ? content.debian.version : pkgDeclared?.version;
+      if (debVersion && !debianVersionMatches(debVersion, r.version)) {
+        problems.push(`The package's Debian version is ${debVersion}, but the release is ${r.version}. Use ${r.version} or ${r.version}-<revision>.`);
+      }
       const pkgId = content?.debian?.package ?? pkgDeclared?.id;
       const mapped = pkgId ? findByPackageId(registry, pkgId) : null;
       if (!pkgId) problems.push("HCG Repo needs the package identifier (control file or the uploading tool).");
@@ -395,6 +412,16 @@ export function createPublishing(deps: PublishingDeps) {
     return rows.map((a) => asProtected(a, productId, editionId));
   }
 
+  function freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[] {
+    if (!P.enabled) return [];
+    const rows = db.prepare(
+      `SELECT a.* FROM pub_artifacts a JOIN pub_releases r ON r.id = a.release_id
+       WHERE r.product_id = ? AND r.edition_id IS ? AND r.status = 'approved' AND r.approved_eligibility = 'public'
+         AND r.distribution = 'free' AND a.status = 'verified'`,
+    ).all(productId, editionId) as ArtifactRow[];
+    return rows.map((a) => asProtected(a, productId, editionId));
+  }
+
   function asProtected(a: ArtifactRow, productId: string, editionId: string | null): ProtectedArtifact {
     return { id: a.id, productId, releaseId: a.release_id, catalogueArtifactId: a.id, editionId, fileName: a.file_name, contentType: a.content_type,
       sha256: a.sha256!, storageKey: a.storage_key!, deliveryApproved: true, testOnly: false };
@@ -411,6 +438,38 @@ export function createPublishing(deps: PublishingDeps) {
     const a = artifact(id);
     const r = a ? release(a.release_id) : undefined;
     return a && r ? { version: r.version, architectures: JSON.parse(a.architectures) } : undefined;
+  }
+
+  // ------------------------------------------------------------- HCG Repo: approved and withdrawn packages
+
+  /**
+   * `GET /api/v1/repo/releases?destination=hcg-repo`: what HCG Repo may index, and what it must remove. Releases
+   * approved for public delivery and releases withdrawn after such an approval, with each verified `.deb`'s SHA-256,
+   * size, architectures and control fields. Metadata only: never a file or a download URL. Shown per product to the
+   * people HCG lets publish or approve that product (no separate HCG Repo role exists centrally).
+   */
+  async function repoReleases(actor: Actor, url: URL) {
+    if (url.searchParams.get("destination") !== "hcg-repo") throw new HttpError(400, "invalid_destination", "Use destination=hcg-repo.");
+    const rows = (db.prepare("SELECT * FROM pub_releases WHERE approved_eligibility = 'public' AND status IN ('approved', 'withdrawn') ORDER BY approved_at").all() as ReleaseRow[])
+      .filter((r) => (JSON.parse(r.destinations) as string[]).includes("hcg-repo"));
+    const allowed = new Map<string, boolean>();
+    const releases = [];
+    for (const r of rows) {
+      if (!allowed.has(r.product_id)) allowed.set(r.product_id, (await permitted(actor, "publish", r.product_id)) || (await permitted(actor, "approve", r.product_id)));
+      if (!allowed.get(r.product_id)) continue;
+      releases.push({
+        id: r.id, productId: r.product_id, editionId: r.edition_id, version: r.version, build: r.build, channel: r.channel, distribution: r.distribution,
+        status: r.status, approvedEligibility: r.approved_eligibility, approvedAt: r.approved_at,
+        withdrawnAt: r.status === "withdrawn" ? r.updated_at : null, withdrawnReason: r.withdrawn_reason,
+        artifacts: artifactsOf(r.id).filter((a) => a.status === "verified" && a.format === "deb").map((a) => {
+          const v = artifactView(a);
+          const control = (v.validation?.content as ContentReport | null | undefined)?.debian;
+          const pkg = control?.controlReadable ? { id: control.package ?? null, version: control.version ?? null, architecture: control.architecture ?? null, source: "control-file" } : v.package ? { ...v.package, source: "declared" } : null;
+          return { id: v.id, fileName: v.fileName, sha256: v.sha256, sizeBytes: v.sizeBytes, architectures: v.architectures, package: pkg, kind: v.kind };
+        }),
+      });
+    }
+    return { api_version: "v1", destination: "hcg-repo", generatedAt: now(), releases };
   }
 
   // ------------------------------------------------------------- router
@@ -430,7 +489,7 @@ export function createPublishing(deps: PublishingDeps) {
   async function routeInner(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
     const m = req.method ?? "GET";
-    if (!p.startsWith("/api/v1/publishing") && !p.startsWith("/publishing-upload/") && !p.startsWith("/publishing-download/") && !p.startsWith("/publishing/")) return false;
+    if (!p.startsWith("/api/v1/publishing") && !p.startsWith("/publishing-upload/") && !p.startsWith("/publishing-download/") && !p.startsWith("/publishing/") && p !== "/api/v1/repo/releases") return false;
     if (!P.enabled) { errorJson(res, 404, "publishing_disabled", "Publishing is not enabled on this Store."); return true; }
     let match: RegExpExecArray | null;
 
@@ -440,6 +499,8 @@ export function createPublishing(deps: PublishingDeps) {
     const actor = await actorOf(req);
     // Cookie-authenticated changes must come from the Store's own pages (CSRF); bearer calls carry no cookie.
     if (actor.via === "web" && m !== "GET") assertSameOrigin(req, cfg.publicOrigin);
+
+    if (p === "/api/v1/repo/releases" && m === "GET") { send(json(res, 200, await repoReleases(actor, url))); return true; }
 
     if (p === "/api/v1/publishing/whoami" && m === "GET") {
       return send(json(res, 200, { sub: actor.sub, email: actor.email ?? null, via: actor.via, publisherPermission: P.publisherCentralId, approverPermission: P.approverCentralId, maxUploadBytes: P.maxUploadBytes, chunkBytes: P.chunkBytes }));
@@ -518,6 +579,9 @@ export function createPublishing(deps: PublishingDeps) {
         const problems = checkDeclaration({ fileName: input.fileName, platform: input.platform, format: input.format, sizeBytes: input.sizeBytes, maxBytes: P.maxUploadBytes });
         const destinations = JSON.parse(r.destinations) as string[];
         if (destinations.includes("hcg-repo") && input.format === "deb" && !input.package) problems.push("For HCG Repo, send the package identifier, version and architecture from the control file.");
+        if (destinations.includes("hcg-repo") && input.format === "deb" && input.package && !debianVersionMatches(input.package.version, r.version)) {
+          problems.push(`The package's Debian version is ${input.package.version}, but the release is ${r.version}. Use ${r.version} or ${r.version}-<revision>.`);
+        }
         if (input.kind === "simulator-build") {
           problems.push("HCG Store does not accept iOS Simulator builds: they run only in the Simulator on a Mac and cannot be installed on an iPhone or iPad. Ship a device build (IPA) or a jailbreak package.");
         } else if (input.kind) {
@@ -557,7 +621,10 @@ export function createPublishing(deps: PublishingDeps) {
         // Manual approval happens in HCG Store, signed in through the browser; a desktop token cannot approve.
         if (actor.via !== "web") throw new HttpError(403, "manual_approval_required", "Releases are approved manually in HCG Store, not from a desktop app.");
         await requirePermission(actor, "approve", r.product_id);
-        const body = z.strictObject({ eligibility: z.enum(["private", "internal-testing", "public"]), confirm: z.string() }).parse(await readJson(req));
+        // `current`: the approver also makes this the product's current release in the public catalogue (generated
+        // from these records by `npm run releases:sync`; never inferred from the newest version).
+        const body = z.strictObject({ eligibility: z.enum(["private", "internal-testing", "public"]), confirm: z.string(), current: z.boolean().default(false) }).parse(await readJson(req));
+        if (body.current && body.eligibility !== "public") throw new HttpError(400, "current_needs_public", "Only a release approved for public delivery can be the catalogue's current release.");
         if (!["submitted", "approved"].includes(r.status)) throw new HttpError(409, "not_submitted", "Only a submitted release can be approved.");
         if (body.confirm !== r.version) throw new HttpError(400, "confirmation_required", `Type the version (${r.version}) to confirm.`);
         if (ELIGIBILITY_RANK[body.eligibility] > ELIGIBILITY_RANK[r.requested_eligibility as keyof typeof ELIGIBILITY_RANK]) throw new HttpError(400, "beyond_request", "Approval cannot exceed the eligibility the publisher requested.");
@@ -574,7 +641,7 @@ export function createPublishing(deps: PublishingDeps) {
         }
         transaction(db, () => {
           db.prepare("UPDATE pub_releases SET status = 'approved', approved_eligibility = ?, approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?").run(body.eligibility, actor.sub, now(), now(), r.id);
-          audit(actor.sub, "release.approved", r.id, null, { eligibility: body.eligibility });
+          audit(actor.sub, "release.approved", r.id, null, { eligibility: body.eligibility, current: body.current });
         });
         return send(json(res, 200, releaseView(release(r.id)!)));
       }
@@ -658,8 +725,9 @@ export function createPublishing(deps: PublishingDeps) {
     const download = `<script>document.querySelectorAll('button.dl').forEach(b=>b.onclick=async()=>{const r=await fetch('/api/v1/publishing/artifacts/'+b.dataset.id+'/download-url',{method:'POST'});const j=await r.json();if(r.ok)location.href=j.url;else alert(j.message);});</script>`;
     const approve = canApprove && ["submitted", "approved"].includes(r.status)
       ? `<form id="approve"><p>Manual approval. Requested: <b>${e(r.requestedEligibility)}</b>.</p><select name="eligibility"><option>private</option><option>internal-testing</option><option>public</option></select>
+         <label><input type="checkbox" name="current"> Public only: make this the product's current release in the catalogue</label>
          <label>Type the version to confirm <input name="confirm" autocomplete="off"></label><button>Approve</button></form>
-         <script>document.getElementById('approve').onsubmit=async(ev)=>{ev.preventDefault();const f=new FormData(ev.target);const r=await fetch(location.pathname.replace('/publishing/','/api/v1/publishing/')+'/approve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eligibility:f.get('eligibility'),confirm:f.get('confirm')})});const j=await r.json();alert(r.ok?'Approved: '+j.approvedEligibility:j.message);location.reload();};</script>`
+         <script>document.getElementById('approve').onsubmit=async(ev)=>{ev.preventDefault();const f=new FormData(ev.target);const r=await fetch(location.pathname.replace('/publishing/','/api/v1/publishing/')+'/approve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eligibility:f.get('eligibility'),confirm:f.get('confirm'),current:f.get('current')==='on'})});const j=await r.json();alert(r.ok?'Approved: '+j.approvedEligibility:j.message);location.reload();};</script>`
       : "";
     return html(res, 200, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Release review · HCG Store</title>
       <style>body{font:15px system-ui;margin:2rem;max-width:72rem}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:.4rem;text-align:left;font-size:13px}code{font-size:12px}.ok{color:#176b2c}.warn{color:#8a4b00}</style></head><body>
@@ -675,5 +743,5 @@ export function createPublishing(deps: PublishingDeps) {
       </body></html>`);
   }
 
-  return { route, publishedFor, publishedById, publishedMeta, auditIntact, allowedFormats: ALLOWED };
+  return { route, publishedFor, freePublicFor, publishedById, publishedMeta, auditIntact, allowedFormats: ALLOWED };
 }

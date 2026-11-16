@@ -36,6 +36,8 @@ export interface StoreConfig {
   port: number;
   host: string;
   dataDir: string;
+  /** Daily consistent copies of the database (backup.ts); null = off. */
+  backup: { dir: string; keep: number } | null;
   /** Built single-page app to serve (dist/). Empty = API only. */
   staticDir: string;
   catalogueDir: string;
@@ -266,6 +268,14 @@ export function parseStoreConfig(env: Env): StoreConfig {
     if (!publisherCentralId || !centralPermission.test(publisherCentralId)) problems.push("Publishing needs HCG_STORE_PUBLISHER_CENTRAL_ID: the central permission HCG grants to publishers.");
     if (!approverCentralId || !centralPermission.test(approverCentralId)) problems.push("Publishing needs HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: the central permission HCG grants to release approvers.");
     if (publisherCentralId && publisherCentralId === approverCentralId) problems.push("Publisher and approver permissions must be different central IDs.");
+    if (!publishingClientIds.length) problems.push("Publishing needs HCG_STORE_PUBLISHING_CLIENT_IDS: the HCG Connect client of the publishing app (HCG Executable Maker).");
+  }
+  for (const id of publishingClientIds) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) problems.push(`HCG_STORE_PUBLISHING_CLIENT_IDS: "${id}" is not an issued HCG Connect client ID.`);
+    // A desktop app publishes with its own client. The Store's own sign-in client, and development clients in
+    // production, never call the publishing API.
+    if (id === hcgConnect?.clientId) problems.push("HCG_STORE_PUBLISHING_CLIENT_IDS must not contain HCG Store's own sign-in client.");
+    if (!test && DEVELOPMENT_CLIENT_IDS.includes(id)) problems.push(`HCG_STORE_PUBLISHING_CLIENT_IDS: ${id} is a development client and is refused in production.`);
   }
 
   if (problems.length) throw new ConfigError(problems);
@@ -277,6 +287,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
     port: int("PORT", 8787, 1, 65535),
     host: env.HOST ?? "127.0.0.1",
     dataDir: env.HCG_STORE_DATA_DIR ?? (test ? ":memory:" : "data"),
+    backup: env.HCG_STORE_BACKUP_DIR?.trim() ? { dir: env.HCG_STORE_BACKUP_DIR.trim(), keep: int("HCG_STORE_BACKUP_KEEP", 7, 1, 60) } : null,
     staticDir,
     catalogueDir: env.HCG_CATALOGUE_DIR ?? "catalogue",
     offersFile: env.HCG_STORE_OFFERS_FILE ?? "server/data/offers.json",

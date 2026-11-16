@@ -22,9 +22,10 @@ import { join } from "node:path";
 import { createStoreApp } from "../src/app";
 import { parseStoreConfig } from "../src/config";
 import { openDatabase } from "../src/db";
-import { TestLedgerAuthority } from "../src/entitlements";
+import { featureEdition, TestLedgerAuthority } from "../src/entitlements";
+import { STORE_CENTRAL_PRODUCT_ID } from "../src/publishing";
 import { HcgConnectClient } from "../src/hcg-connect";
-import { loadRegistry } from "../src/registry";
+import { findProduct, loadRegistry } from "../src/registry";
 import { Client, FIXTURE_CATALOGUE, TEST_OFFERS } from "./harness";
 import { MockHcgConnect } from "./mock-hcg-connect";
 
@@ -63,8 +64,8 @@ const cfg = parseStoreConfig({
   HCG_STORE_ARTIFACTS_FILE: join(reg, "artifacts.json"),
   HCG_STORE_PUBLISHING: "enabled",
   HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER_CLIENT,
-  HCG_STORE_PUBLISHER_CENTRAL_ID: "hcg.store.publish",
-  HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "hcg.store.approve",
+  HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
+  HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
   HCG_STORE_UPLOAD_CHUNK_MB: "1",
   HCG_STORE_UPLOAD_URL_TTL_SECONDS: process.env.UPLOAD_TTL ?? "900",
 });
@@ -95,7 +96,16 @@ const control = createServer(async (req, res) => {
   const b = raw ? (JSON.parse(raw) as Record<string, string>) : {};
   const out = (status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
   try {
-    if (req.url === "/grant") { authority.grant(b.sub!, b.central!, b.edition ?? "*", "e2e", null); return out(200, { ok: true }); }
+    if (req.url === "/grant") {
+      // Publishing permissions are central features of a product (store.publish, store.release.approve). Older
+      // callers name them hcg.store.publish / hcg.store.approve with edition = Store product ID or "*".
+      const feature = ({ "hcg.store.publish": "store.publish", "hcg.store.approve": "store.release.approve" } as Record<string, string>)[b.central!] ?? b.central!;
+      if (feature === cfg.publishing.publisherCentralId || feature === cfg.publishing.approverCentralId) {
+        const product = !b.edition || b.edition === "*" ? "*" : (findProduct(registry, b.edition)?.registry.centralId ?? STORE_CENTRAL_PRODUCT_ID);
+        authority.grant(b.sub!, product, featureEdition(feature), "e2e", null);
+      } else authority.grant(b.sub!, b.central!, b.edition ?? "*", "e2e", null);
+      return out(200, { ok: true });
+    }
     if (req.url === "/revoke-all") { authority.revokeAll(b.sub!); return out(200, { ok: true }); }
     if (req.url === "/token") return out(200, { token: await idp.accessToken({ sub: b.sub!, email: `${b.sub}@example.test` }, MAKER_CLIENT) });
     if (req.url === "/review") {

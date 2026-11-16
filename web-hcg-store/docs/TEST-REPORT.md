@@ -19,6 +19,28 @@ provider**.
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities (`jose` pinned to 6.2.14, a release more than two weeks old) |
 | Mutation check of the acceptance suite | manual | ✔ The suite catches all 5 deliberately introduced faults: an entitlement bypass, a signature bypass, idempotency removed, central re-check removed, and the amount check removed |
 
+## Production integration preparation (16 November 2026, late)
+
+Nothing was deployed and nothing ran against a production HCG Store; every result below is from this repository's
+build environment.
+
+| Check | How | Result |
+| --- | --- | --- |
+| Full check | `npm run check` | ✔ catalogue valid; typecheck clean; **203 tests passed**; build and bundle secret scan passed |
+| End to end in Chromium | `npm run test:e2e` | ✔ **44 passed**, 2 opt-in screenshot tests skipped |
+| Store ⇄ HCG Repo mapping | `npm run check:repo-mapping -- <HCG-repo>` | ✔ 3 products, package IDs equal |
+| Publishing permissions per product (central features `store.publish`, `store.release.approve`) | `server/test/publishing.test.ts`, `server/test/ecosystem.test.ts` | ✔ the exact deployed `/check` request per organisation; a grant for one product, ownership, a role or the publisher feature never permits another product or approval; `feature_unavailable` = not permitted; HCG unreachable = 503 |
+| Publishing client guards | `server/test/connect-evidence.test.ts` | ✔ only issued client UUIDs; the Store's own client and, in production, development clients refused |
+| Release records → `catalogue/releases.json` | `server/test/publishing.test.ts` | ✔ generated from approvals only; hand-written entries kept; current release only by the approver's explicit choice; withdrawal kept as history and clears current; a tampered audit chain refuses the export; no account IDs, file locations or URLs |
+| HCG Repo companion changes | `server/test/publishing.test.ts` | ✔ Debian version must equal the release version (or `-<revision>`); public + free releases available to any signed-in account without ownership; release listing for HCG Repo with withdrawal |
+| Purchase grants carry features | `server/test/grants.test.ts` | ✔ the offer's explicit feature keys reach the grant body; `store.*` can never be sold |
+| Database backups | `server/test/config.test.ts` | ✔ complete copies, mode 0600, newest N kept |
+| HCG Repo's staging end to end against this Store (its `tools/staging/store_e2e.py`, TEST mode, harmless rootless test packages) | run from HCG Repo with two local harness updates (new permission names; same Debian version for the second draft) | ✔ **paid package 38/38**. Sign-in-only package **36/38**: the three checks that failed on 16 Nov (free access for any signed-in account) now pass; the two remaining expect an entitlement revocation to block a *free* package, which no longer applies (withdrawal and sign-out do, and pass). Harness updates proposed to HCG Repo, not made. |
+| Built server with `fly.toml`'s production settings | `node server-dist/main.mjs` | ✔ health `production`, sign-in not configured, payments/downloads/publishing off (404); first backup written after 60 s, mode 0600; clean SIGTERM stop |
+| Phase-3 settings against the real HCG Connect keys | same, with publishing enabled and Executable Maker's client | ✔ starts; unsigned and forged bearer tokens 401; approval without a session 401; the development client in the publishing list refused |
+| Executable Maker's `ship-to-store-e2e.sh` | needs .NET | not run here (no .NET in this environment); its control endpoint stays compatible (`/grant` accepts the old names) |
+| Real-account sign-in, uploads, approval, download and withdrawal in production | PRODUCTION-DEPLOY.md phases 2–3 | **not run**: no server is deployed |
+
 ## HCG Connect development client (16 November 2026)
 
 **Configuration checks against the real HCG Connect: passed** (`npm run hcg:dev:verify -- --auto-only`, run from HCG Store's build environment once it was allowed to reach HCG):

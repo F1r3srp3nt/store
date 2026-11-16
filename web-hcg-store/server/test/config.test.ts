@@ -92,3 +92,25 @@ describe("offers and protected artifacts", () => {
     expect(() => buildRegistry(fixture(), [{ ...base, grants: [{ edition: "pro" }] }], [], true)).toThrow(/unknown edition/);
   });
 });
+
+describe("database backups", () => {
+  it("writes complete, private copies and keeps the newest N", async () => {
+    const { mkdtempSync, readdirSync, statSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { DatabaseSync } = await import("node:sqlite");
+    const { openDatabase } = await import("../src/db");
+    const { backupDatabase } = await import("../src/backup");
+    const dir = mkdtempSync(join(tmpdir(), "hcg-backup-"));
+    const db = openDatabase(":memory:");
+    db.prepare("INSERT INTO auth_events (at, type) VALUES (1, 'server_started')").run();
+    let t = Date.parse("2026-11-16T00:00:00Z");
+    for (let i = 0; i < 4; i++) backupDatabase(db, join(dir, "b"), 3, (t += 86_400_000));
+    const files = readdirSync(join(dir, "b")).sort();
+    expect(files).toEqual(["hcg-store-20261118T000000Z.sqlite", "hcg-store-20261119T000000Z.sqlite", "hcg-store-20261120T000000Z.sqlite"]);
+    expect(statSync(join(dir, "b", files[2]!)).mode & 0o777).toBe(0o600);
+    const copy = new DatabaseSync(join(dir, "b", files[2]!), { readOnly: true });
+    expect(copy.prepare("SELECT type FROM auth_events").all()).toEqual([{ type: "server_started" }]);
+    copy.close();
+  });
+});

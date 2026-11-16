@@ -21,13 +21,14 @@
     "check": "npm run validate:catalogue && npm run typecheck && npm test && npm run build",
     "test:e2e:full": "npm run build && npm run build:fixture && playwright test",
     "screenshots": "HCG_CAPTURE_SCREENSHOTS=1 playwright test e2e/screenshots.spec.ts",
-    "server:build": "esbuild server/src/main.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=server-dist/main.mjs --log-level=warning && esbuild server/src/auth-evidence-cli.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=server-dist/auth-evidence.mjs --log-level=warning",
+    "server:build": "esbuild server/src/main.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=server-dist/main.mjs --log-level=warning && esbuild server/src/auth-evidence-cli.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=server-dist/auth-evidence.mjs --log-level=warning && esbuild server/src/release-records-cli.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=server-dist/release-records.mjs --log-level=warning",
     "server:start": "node server-dist/main.mjs",
     "server:dev": "tsx server/src/main.ts",
     "server:e2e": "tsx server/test/e2e-server.ts",
     "check:repo-mapping": "tsx scripts/check-repo-mapping.ts",
     "hcg:dev": "tsx scripts/hcg-dev.ts",
-    "hcg:dev:verify": "tsx scripts/hcg-dev-verify.ts"
+    "hcg:dev:verify": "tsx scripts/hcg-dev-verify.ts",
+    "releases:sync": "tsx scripts/sync-releases.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

@@ -175,7 +175,7 @@ function EditionCard({
           )}
         </p>
         <div className="edition__actions">
-          {loading ? null : state === "owned" ? (
+          {loading ? null : state === "owned" || state === "free" ? (
             <>
               {repo && edition?.channel === "jailbreak-package" ? (
                 <a className="button button--primary" href={hcgRepoProductUrl(repo.key)}>
@@ -194,7 +194,7 @@ function EditionCard({
           ) : (
             <span className="status-note">{released ? "Not for sale yet" : "In development: not for sale"}</span>
           )}
-          {repo && state !== "owned" && (
+          {repo && state !== "owned" && state !== "free" && (
             <a className="button button--ghost" href={hcgRepoProductUrl(repo.key)}>
               View on HCG Repo <IconArrowRight />
             </a>
@@ -217,6 +217,8 @@ function OwnershipBadge({ access, loading, signInAvailable }: { access: EditionA
           <IconCheck /> Owned
         </span>
       );
+    case "free":
+      return <span className="badge badge--muted">Free with your HCG account</span>;
     case "not-owned":
       return <span className="badge badge--muted">Not owned</span>;
     case "not-for-sale":

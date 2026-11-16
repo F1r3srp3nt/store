@@ -30,12 +30,26 @@ export const OfferSchema = z.strictObject({
    * What a verified purchase grants. Each entry is an edition of the same central product, or "*"
    * for every edition — only when the configured licence explicitly says so.
    */
-  grants: z.array(z.strictObject({ edition: z.union([kebab, z.literal("*")]) })).min(1),
+  grants: z
+    .array(
+      z.strictObject({
+        edition: z.union([kebab, z.literal("*")]),
+        /**
+         * Central feature keys of the product this purchase includes (e.g. "download" once HCG registers it, D3),
+         * listed explicitly; nothing is implied. Staff permissions (store.*) can never be sold.
+         */
+        features: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/)).optional(),
+      }),
+    )
+    .min(1),
   status: z.enum(["draft", "approved-for-sale"]),
   /** Test-mode offers are ignored outside test mode. */
   testOnly: z.boolean(),
 });
 export type Offer = z.infer<typeof OfferSchema>;
+
+/** HCG Store's staff permissions (store.publish, store.release.approve, …): HCG grants them per person, never a purchase. */
+export const STAFF_PERMISSION = /^store\./;
 
 export const ProtectedArtifactSchema = z.strictObject({
   /** Globally unique ID used in /api/v1/downloads/<id>. */
@@ -67,6 +81,8 @@ export interface Registry {
 
 export interface PublishedSource {
   publishedFor(productId: string, editionId: string | null): ProtectedArtifact[];
+  /** Of those, the files of releases approved as public AND free: any signed-in HCG account may download them. */
+  freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[];
   publishedById(id: string): ProtectedArtifact | undefined;
   publishedMeta(id: string): { version: string; architectures: string[] } | undefined;
 }
@@ -129,6 +145,11 @@ export function buildRegistry(catalogue: Catalogue, offers: Offer[], artifacts: 
       if (g.edition !== "*" && !p.editions.some((e) => e.id === g.edition) && !(p.editions.length === 0 && g.edition === "default")) {
         problems.push(`Offer "${o.id}" grants unknown edition "${g.edition}".`);
       }
+      const features = g.features ?? [];
+      for (const f of features) {
+        if (STAFF_PERMISSION.test(f)) problems.push(`Offer "${o.id}" grants "${f}": publishing and approval permissions are never sold.`);
+      }
+      if (new Set(features).size !== features.length) problems.push(`Offer "${o.id}" lists a feature twice.`);
       const granted = p.editions.find((e) => e.id === g.edition);
       if (granted && !granted.centralEditionKey) {
         // D2: HCG checks editions by their central key; an unmapped edition could never be checked.

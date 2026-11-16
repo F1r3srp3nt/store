@@ -12,7 +12,8 @@ export interface SessionInfo {
   endedReason?: string;
 }
 
-export type AccessState = "signed-out" | "owned" | "not-owned" | "not-for-sale" | "unavailable";
+/** "free": a release approved as public and free; any signed-in HCG account may download it. Not ownership. */
+export type AccessState = "signed-out" | "owned" | "free" | "not-owned" | "not-for-sale" | "unavailable";
 
 export interface PublicOffer {
   id: string;

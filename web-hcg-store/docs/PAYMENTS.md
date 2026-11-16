@@ -49,6 +49,19 @@ Editions: buying one edition grants only what the offer's `grants` lists, for ex
 `[{ "edition": "unleashed" }]`. `"*"` (every edition) is allowed only when the configured licence
 says so.
 
+Mapping to HCG (`server/data/offers.json`, validated at start):
+
+| Offer field | Maps to | Rule |
+| --- | --- | --- |
+| `productId` | Store catalogue product | must exist |
+| `centralProductId` | HCG central product ID | must equal the product's confirmed `registry.centralId`; products without one cannot be sold |
+| `editionId`, `grants[].edition` | HCG edition key (`centralEditionKey`, licence scope `edition:<key>`, D2) | every granted edition must have a central key; `"*"` only by explicit licence |
+| `grants[].features` | HCG feature keys of that product (e.g. `download` once registered, D3) | listed explicitly, never implied; no duplicates; `store.*` staff permissions are refused |
+
+Each verified purchase becomes one central grant per granted edition (`store:<provider>:<environment>:<purchase>:<edition>`)
+through the outbox, with exactly those features. Refunds, disputes and expiry revoke that purchase's grants only.
+`offers.json` stays empty: HCG has set no price and approved no provider.
+
 Preorders: none. An offer can be `approved-for-sale` only for an edition with an approved current
 release. The server refuses to start otherwise.
 

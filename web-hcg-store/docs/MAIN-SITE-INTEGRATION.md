@@ -31,7 +31,36 @@ credential activation and publication stay under the founder's manual control.
 | Product IDs (D3) | 8 products LIVE-VERIFIED; Nexus, Sentinel, Clarity to register | Catalogue mapped to the 8; the 3 stay unmapped | main-site D3 |
 | Customer licences (D4) | PROPOSED below | nothing needed | main-site D4 |
 | Purchase grants (D5) | PROPOSED below | STORE: IMPLEMENTED (outbox, inert until configured) | main-site D5, credential |
-| Releases (D6) | none | Store catalogue and protected storage stay authoritative | not a blocker |
+| Releases (D6) | none | Store approval is the release review; the catalogue is generated from it | not a blocker |
+| Publishing permissions | `store.publish`, `store.release.approve` PLANNED (16 Nov plan), not created; per-person grants for staff features planned | STORE: IMPLEMENTED: checked per product as central features, fail closed | main-site plan steps 3–4 (founder approval) |
+| Executable Maker client | production client ISSUED (`fb9b6edf-2bfc-4b5e-a354-dbb1af697029`, `configured_untested`) | configured for publishing in `fly.toml` (commented until phase 3) | Store deployment and sign-in first |
+
+### What the main site has done since its handoff answer (read 16 Nov 2026, 22:50 UTC)
+
+From the main site's own records (its implementation plan and Executable Maker handoff), not from a live call:
+- HCG Executable Maker's **production** HCG Connect client is issued: public, PKCE, loopback callbacks on ports
+  47820–47822, status `configured_untested`. Its development client is not issued.
+- HCG Store's development client is issued (`af487795-…`), `configured_untested`. No production client.
+- **Planned, not built:** feature keys `store.publish` and `store.release.approve` as staff permissions that a purchase can
+  never grant; an access-check upgrade so that a staff feature needs an explicit per-member grant (today any member of
+  a licensed organisation passes); customer organisations and an edition field (D4, D2); the purchase grant endpoint
+  (D5) covering "only the purchased product, edition and features". The plan is awaiting the founder's approval of its
+  database changes.
+- The plan asks for Executable Maker's capability list and development callback; both live in the Executable Maker
+  repository (`docs/SHIP-TO-STORE.md`, `docs/hcg-connect/HANDOFF.md`).
+
+### Requests from HCG Store to the main site (for the founder to approve)
+
+1. **Production Store client** after phase 1 of [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md) (request text there).
+2. **Publishing permissions as product features:** create `store.publish` and `store.release.approve` on each product
+   that is published through HCG Store (at least `hcg.executable.maker`), and on `hcg.store` for products HCG has not
+   registered yet; grant them per person; and make `/check` answer `allowed: false` for an organisation member without
+   that person's grant. HCG Store asks `POST /check {org_id, product_id, feature_key}` exactly as deployed.
+3. **Two different people** with these grants for at least one product (publisher, approver), so a release can be
+   approved for public delivery.
+4. **The grant endpoint (D5) with a `features` list:** HCG Store now sends the features an offer includes, e.g.
+   `"features": ["download"]`. A purchase never includes a `store.*` feature; the Store refuses such an offer.
+5. The `download` feature (D3) and the edition check (D2), before any customer download.
 
 ## D1: hosting and the production callback (DECISION; target chosen, not deployed)
 
@@ -193,7 +222,7 @@ Store server.
 | Auth | `Authorization: HCG-Store-Server <credential>`. Separate test and production credentials, issued and rotated by the Owner, stored only server-side. |
 | Environment | Bound to the credential. The body's `environment` must match it or the call is refused (`environment_mismatch`); it can never raise a test call to production. |
 | Purchase ID | `store:<provider>:<environment>:<purchase id>:<edition key or "product">`, unique, at most 128 characters |
-| Grant | `{ action: "grant", purchase_id, revision, environment, sub, product_id, edition, starts_at, ends_at }` (edition key, `*` or null) |
+| Grant | `{ action: "grant", purchase_id, revision, environment, sub, product_id, edition, features, starts_at, ends_at }` (edition key, `*` or null; `features`: the central feature keys the offer explicitly includes, possibly empty, never `store.*`) |
 | Revoke | `{ action: "revoke", purchase_id, revision, environment, reason }`, reason `refund`, `chargeback`, `subscription_ended` or `admin` |
 | Ordering | Each purchase has a revision that only grows. HCG applies a message only if its revision is newer than the one it holds. |
 | Revoked is terminal | A grant never reactivates a revoked purchase. A revoke for a purchase not seen yet is stored as a tombstone, so a delayed grant cannot activate it. |
@@ -218,9 +247,11 @@ HCG Store's side (STORE: IMPLEMENTED, `server/src/grants.ts`, `server/src/paymen
 
 ## Releases and files (D6, DECISION)
 
-HCG Store's founder-reviewed `catalogue/releases.json` and its protected storage stay authoritative for
-releases and files in this phase. Central HCG stays authoritative for identity, licences and access. No
-second release-approval authority is created.
+HCG Store stays authoritative for releases and files. Its manual approval (a person with `store.release.approve` for
+the product, other than the creator, typing the version, in the hash-chained audit) is the release review; the public
+`catalogue/releases.json` entries for those releases are generated from it (`npm run releases:sync`), not reviewed a
+second time. Central HCG stays authoritative for identity, licences and permissions. No second release-approval
+authority is created.
 
 On the main site's §9 listing D6 as a blocker: it is not one. Store-managed artifacts are permitted
 (its §7). The end-to-end download test is blocked by other things:
@@ -246,6 +277,8 @@ Only the purchase items of the checklist need D4 and D5.
 
 - Deploy the Store server to Fly.io and move `store.hakmicapitalgroup.com` (D1,
   [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md)); then request the production client.
+- Approve the main-site plan's permission and access-check changes, and have HCG grant the publishing permissions
+  to two different people.
 - Apply the D2–D5 main-site migrations to production after their non-production tests pass.
 - Issue and activate the grant credentials (test first) and set them in the Store server's secret store.
 - Publish `/library` and the new routes; enable the `download` feature per product; launch.

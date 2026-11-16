@@ -109,4 +109,32 @@ describe("development client guard", () => {
     expect(() => parseStoreConfig({ ...base, HCG_CONNECT_CLIENT_ID: DEVELOPMENT_CLIENT_IDS[0]! })).toThrow(ConfigError);
     expect(() => parseStoreConfig({ ...base, HCG_CONNECT_CLIENT_ID: DEVELOPMENT_CLIENT_IDS[0]! })).toThrow(/development client/);
   });
+
+  it("publishing accepts only the publishing app's issued client, never the Store's own or a development client", () => {
+    const STORE_CLIENT = "12345678-1234-4123-8123-123456789abc";
+    const MAKER = "fb9b6edf-2bfc-4b5e-a354-dbb1af697029";
+    const base = {
+      HCG_STORE_PUBLIC_ORIGIN: "https://store.example.test",
+      HCG_STORE_SECRET_KEY: Buffer.alloc(32, 7).toString("base64"),
+      HCG_CONNECT_ISSUER: "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1",
+      HCG_CONNECT_AUTHORIZATION_ENDPOINT: "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1/oauth/authorize",
+      HCG_CONNECT_TOKEN_ENDPOINT: "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1/oauth/token",
+      HCG_CONNECT_JWKS_URI: "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1/.well-known/jwks.json",
+      HCG_CONNECT_REDIRECT_URI: "https://store.example.test/auth/callback",
+      HCG_CONNECT_CLIENT_ID: STORE_CLIENT,
+      HCG_STORE_ENTITLEMENT_AUTHORITY: "hcg-ecosystem",
+      HCG_ECOSYSTEM_API_URL: "https://beta.hakmicapitalgroup.com/api/public/ecosystem/v1",
+      HCG_STORE_ARTIFACT_STORAGE_DIR: "/tmp/hcg-store-artifacts-test",
+      HCG_STORE_PUBLISHING: "enabled",
+      HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
+      HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
+    };
+    const ok = parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER });
+    expect(ok.publishing).toMatchObject({ enabled: true, clientIds: [MAKER], publisherCentralId: "store.publish", approverCentralId: "store.release.approve" });
+    expect(() => parseStoreConfig(base)).toThrow(/HCG_STORE_PUBLISHING_CLIENT_IDS/);
+    expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER},${STORE_CLIENT}` })).toThrow(/own sign-in client/);
+    expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER},${DEVELOPMENT_CLIENT_IDS[0]}` })).toThrow(/development client/);
+    expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: "<maker client>" })).toThrow(/not an issued/);
+    expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER, HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.publish" })).toThrow(/different/);
+  });
 });

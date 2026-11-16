@@ -39,7 +39,7 @@ function flyConfig(): { app: string; env: Record<string, string> } {
   const app = /^app\s*=\s*"([^"]+)"/m.exec(toml)?.[1] ?? "";
   const section = toml.split(/^\[env\]\s*$/m)[1]?.split(/^\[/m)[0] ?? "";
   const env: Record<string, string> = {};
-  for (const m of section.matchAll(/^\s*([A-Z0-9_]+)\s*=\s*"([^"]*)"\s*$/gm)) env[m[1]!] = m[2]!;
+  for (const m of section.matchAll(/^\s*([A-Z0-9_]+)\s*=\s*"([^"]*)"\s*(?:#.*)?$/gm)) env[m[1]!] = m[2]!;
   return { app, env };
 }
 const fly = production ? flyConfig() : null;
