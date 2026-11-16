@@ -25,6 +25,7 @@ import type { StoreConfig } from "./config";
 import { pkceChallenge, randomToken } from "./crypto";
 import type { Db } from "./db";
 import type { EntitlementAuthority } from "./entitlements";
+import type { CentralGrantOutbox } from "./grants";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
 import { PaymentLedger, signTestEvent, TEST_SIGNATURE_HEADER, verifyTestEvent, type PaymentEventType } from "./payments";
@@ -40,6 +41,8 @@ export interface AppDeps {
   connect: HcgConnectClient | null;
   authority: EntitlementAuthority;
   now: () => number;
+  /** Reports verified purchases to HCG (decision D5). Inert unless configured. */
+  outbox?: CentralGrantOutbox;
   /** Used by the test checkout page to deliver its signed webhook. Defaults to an in-process call. */
   deliverTestWebhook?: (rawBody: string, signature: string) => Promise<void>;
 }
@@ -57,8 +60,8 @@ const LOGIN_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 export function createStoreApp(deps: AppDeps): StoreApp {
   const { cfg, db, registry, connect, authority, now } = deps;
   const sessions = new SessionStore(db, cfg, connect, now);
-  const ledger = new PaymentLedger(db, registry, authority, now);
-  const paymentsReady = cfg.paymentProvider !== "none" && authority.canGrant && !!connect;
+  const ledger = new PaymentLedger(db, registry, authority, now, deps.outbox ?? null);
+  const paymentsReady = cfg.paymentProvider !== "none" && ledger.canFulfil && !!connect;
   const accessDeps: AccessDeps = { cfg, registry, authority, sessions, paymentsReady };
   const staticRoot = cfg.staticDir ? resolve(cfg.staticDir) : "";
 
@@ -317,7 +320,10 @@ export function createStoreApp(deps: AppDeps): StoreApp {
   function applyTestWebhook(raw: string, signature: string | undefined) {
     const event = verifyTestEvent(cfg.testPaymentWebhookSecret ?? "", raw, signature, now());
     if (!event) throw new HttpError(400, "invalid_signature", "Event signature could not be verified.");
-    return ledger.apply("test", event);
+    const outcome = ledger.apply("test", event);
+    // Report the change to HCG right away; failures stay in the outbox and are retried.
+    if (outcome === "processed") void deps.outbox?.deliver().catch(() => undefined);
+    return outcome;
   }
 
   // ---------------------------------------------------------------- static app

@@ -104,8 +104,14 @@ No storage administrator key exists anywhere: files are written by the Store pro
 
 ## 7. Launch prerequisites (founder decisions, not made)
 
+0. **Decision D6** ([MAIN-SITE-INTEGRATION.md](MAIN-SITE-INTEGRATION.md)) keeps releases and files with HCG Store, with no
+   central release-approval authority, so Ship to Store needs nothing from the main site for releases. D6 names the
+   founder-reviewed `catalogue/releases.json` as the release record. **Open for the founder:** whether a release
+   approved here must also be added to `catalogue/releases.json` (reviewed in git) before public delivery, or whether
+   this approval (a different person, typed confirmation, audited) is that review. Until decided, keep publishing off.
 1. HCG issues/confirms the central permission IDs for publishing and approval, and the entitlement API serves them
-   (`hcg-ecosystem` authority). Until then publishing can only run in TEST mode.
+   (`hcg-ecosystem` authority). The deployed `/check` takes `feature_key: "download"` only, so the live authority
+   cannot confirm these permissions and publishing fails closed (503); until then it can only run in TEST mode.
 2. HCG Executable Maker's HCG Connect client is registered (its configuration still ships a placeholder) and added to
    `HCG_STORE_PUBLISHING_CLIENT_IDS`.
 3. The Store is deployed with private storage and backups; the launch conditions in [ACCESS.md](ACCESS.md) still govern

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" fill="none">
+  <!-- Faint circuitry pattern for localized backgrounds. Tiles seamlessly at 240 px. Decorative only. -->
+  <g stroke="#9fd8e6" stroke-opacity="0.18" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 40h52l18 18h60l14-14h96"/>
+    <path d="M0 120h28l14 14h44l20-20h40l12 12h82"/>
+    <path d="M0 200h70l16-16h58l22 22h74"/>
+    <path d="M40 0v20l14 14v48"/>
+    <path d="M150 0v32l-12 12v40l16 16v28"/>
+    <path d="M206 240v-30l-14-14v-36l12-12v-30"/>
+    <path d="M96 240v-26l12-12v-30"/>
+  </g>
+  <g fill="#9fd8e6" fill-opacity="0.28">
+    <circle cx="54" cy="82" r="2"/>
+    <circle cx="154" cy="128" r="2"/>
+    <circle cx="204" cy="118" r="2"/>
+    <circle cx="108" cy="172" r="2"/>
+    <circle cx="130" cy="58" r="1.6"/>
+    <circle cx="86" cy="134" r="1.6"/>
+    <circle cx="144" cy="184" r="1.6"/>
+  </g>
+</svg>

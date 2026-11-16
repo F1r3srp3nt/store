@@ -4,6 +4,7 @@
  *
  * The defaults are deliberately closed: no sign-in, no payments, no protected downloads.
  */
+import type { GrantSettings } from "./grants";
 import { randomBytes } from "node:crypto";
 
 export type StoreMode = "test" | "production";
@@ -46,6 +47,11 @@ export interface StoreConfig {
   secretKey: Buffer;
   hcgConnect: HcgConnectSettings | null;
   ecosystem: EcosystemSettings | null;
+  /**
+   * HCG's purchase grant endpoint (decision D5, PROPOSED). The environment is this server's mode;
+   * the credential is bound to it by HCG. Null = verified purchases are not reported to HCG.
+   */
+  grants: GrantSettings | null;
   /** "test-ledger" exists only in test mode; "hcg-ecosystem" asks HCG's API. */
   entitlementAuthority: "none" | "test-ledger" | "hcg-ecosystem";
   paymentProvider: "none" | "test";
@@ -181,6 +187,17 @@ export function parseStoreConfig(env: Env): StoreConfig {
   const ecosystemUrl = httpsUrl(env.HCG_ECOSYSTEM_API_URL, "HCG_ECOSYSTEM_API_URL", problems, test);
   const ecosystem = ecosystemUrl ? { baseUrl: ecosystemUrl.replace(/\/$/, "") } : null;
 
+  const grantUrl = httpsUrl(env.HCG_STORE_GRANT_API_URL, "HCG_STORE_GRANT_API_URL", problems, test);
+  const grantCredential = env.HCG_STORE_GRANT_CREDENTIAL;
+  let grants: GrantSettings | null = null;
+  if (!!grantUrl !== !!grantCredential) {
+    problems.push("HCG_STORE_GRANT_API_URL and HCG_STORE_GRANT_CREDENTIAL must be set together.");
+  } else if (grantUrl && grantCredential) {
+    // The value is never repeated in an error message.
+    if (grantCredential.length < 32 || /\s/.test(grantCredential)) problems.push("HCG_STORE_GRANT_CREDENTIAL is not a valid credential (at least 32 characters, no spaces).");
+    else grants = { url: grantUrl, credential: grantCredential, environment: test ? "test" : "production" };
+  }
+
   const authority = (env.HCG_STORE_ENTITLEMENT_AUTHORITY ?? "none") as StoreConfig["entitlementAuthority"];
   if (!["none", "test-ledger", "hcg-ecosystem"].includes(authority)) problems.push("HCG_STORE_ENTITLEMENT_AUTHORITY is not recognised.");
   if (authority === "test-ledger" && !test) problems.push("The test entitlement ledger can only be used in test mode.");
@@ -258,6 +275,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
     secretKey,
     hcgConnect,
     ecosystem,
+    grants,
     entitlementAuthority: authority,
     paymentProvider,
     testPaymentWebhookSecret,

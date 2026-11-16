@@ -115,7 +115,10 @@ export async function decideAccess(
     // Without a confirmed central product ID no entitlement can exist for this product.
     return { ...signedIn, state: offers.length ? "not-owned" : "not-for-sale" };
   }
-  const check = await authority.check({ sub: session.sub, accessToken: session.accessToken }, centralId, editionId);
+  const check = await authority.check(
+    { sub: session.sub, accessToken: session.accessToken },
+    { centralProductId: centralId, editionId, centralEditionKey: findEdition(product, editionId)?.centralEditionKey ?? null },
+  );
   if (check.status === "unavailable") {
     return { ...signedIn, state: "unavailable", message: "Your access could not be checked right now. Nothing has changed; try again shortly." };
   }

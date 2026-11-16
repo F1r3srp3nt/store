@@ -61,7 +61,8 @@ function access(over: Partial<EditionAccess> & { editionId: string | null }): Ed
 function renderAt(path: string, catalogue: Catalogue = realCatalogue()) {
   return render(
     <CatalogueStateProvider provider={staticProvider(catalogue)}>
-      <AccountProvider>
+      {/* Explicit, so a VITE_STORE_ACCOUNT_SERVICE in the environment cannot change what is tested. */}
+      <AccountProvider accountService="same-origin-server">
         <MemoryRouter initialEntries={[path]}>
           <AppRoutes />
         </MemoryRouter>
@@ -80,29 +81,45 @@ const expectNoFabrication = (container: HTMLElement) => {
 };
 
 describe("store pages with the shipped catalogue", () => {
-  it("home shows real counts, no download section, and honest messaging", async () => {
+  it("home: compact hero, featured products, jailbreak collection, every listed product and honest guidance", async () => {
     const { container } = renderAt("/");
     expect(await screen.findByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
-    const stats = screen.getByLabelText("Catalogue status");
-    expect(within(stats).getByText("Released").nextSibling).toHaveTextContent("0");
-    expect(within(stats).getByText("Products listed").nextSibling).toHaveTextContent("11");
-    expect(screen.queryByRole("heading", { name: "Released products" })).toBeNull();
-    expect(screen.getByText(/No product has an approved release yet/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "In development" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "HCG Development Tools" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Browse Products/ })).toHaveAttribute("href", "/apps");
+    expect(screen.getByRole("heading", { name: "Featured products" })).toBeInTheDocument();
+    const jb = screen.getByRole("heading", { name: /Packages for jailbroken iPhone and iPad/ }).closest("section")!;
+    expect(within(jb).getByRole("heading", { name: "HCG Terminal Unleashed" })).toBeInTheDocument();
+    expect(within(jb).getAllByRole("link", { name: /View on HCG Repo/ }).map((a) => a.getAttribute("href"))).toEqual([
+      "https://repo.hakmicapitalgroup.com/products/hcg-terminal-unleashed/",
+      "https://repo.hakmicapitalgroup.com/products/hcg-nexus/",
+    ]);
+    const all = screen.getByRole("heading", { name: "All products" }).closest("section")!;
+    expect(within(all).getAllByRole("listitem")).toHaveLength(10); // RePrompter is now part of Clarity
+    expect(within(all).queryByText("HCG RePrompter")).toBeNull();
+    expect(screen.getAllByText("Downloads are not available yet.", { exact: false }).length).toBeGreaterThan(0);
+    // No counters, no internal labels, no download links.
+    expect(screen.queryByLabelText("Catalogue status")).toBeNull();
+    expect(container.textContent).not.toMatch(/generated tile/i);
     expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
     expectNoFabrication(container);
+  });
+
+  it("navigation offers Store, Browse, HCG Repo and Account", async () => {
+    renderAt("/");
+    const nav = await screen.findByRole("navigation", { name: "Primary" });
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Store", "Browse", "HCG Repo", "Account"]);
   });
 
   it("home hero uses the banner as a labelled illustration and keeps the heading if it fails", async () => {
     renderAt("/");
     await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
-    const banner = screen.getByRole("img", { name: /illustration of the HCG Store wordmark/i });
+    const banner = screen.getByRole("img", { name: /HCG Store wordmark/i });
     expect(banner).toHaveAttribute("loading", "eager");
-    expect(banner.getAttribute("srcset")).toMatch(/hcg-store-banner-800\.webp 800w/);
-    expect(screen.getByText("Illustration")).toBeInTheDocument();
+    expect(banner).toHaveAttribute("width", "2000");
+    expect(banner).toHaveAttribute("height", "667");
+    expect(banner.getAttribute("srcset")).toMatch(/hcg-store-hero-800\.webp 800w/);
+    expect(screen.getAllByText("Illustration").length).toBeGreaterThan(0);
     fireEvent.error(banner);
-    expect(screen.queryByRole("img", { name: /illustration of the HCG Store wordmark/i })).toBeNull();
+    expect(screen.queryByRole("img", { name: /HCG Store wordmark/i })).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
   });
 
@@ -117,11 +134,75 @@ describe("store pages with the shipped catalogue", () => {
     expectNoFabrication(container);
   });
 
-  it("labels real screenshots and generated tiles", async () => {
-    renderAt("/apps/hcg-executable-maker");
+  it("labels real screenshots and keeps planned features apart from current ones", async () => {
+    const { container } = renderAt("/apps/hcg-executable-maker");
     await screen.findByRole("heading", { level: 1, name: "HCG Executable Maker" });
-    expect(screen.getAllByText("Screenshot").length).toBe(2);
-    expect(screen.getByRole("img", { name: /generated artwork, not a screenshot/ })).toBeInTheDocument();
+    expect(screen.getAllByText("Screenshot").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Available in the current build" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Planned (not available yet)" })).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/generated tile|generated artwork/i);
+  });
+
+  it("product page: the banner is the one priority image, AVIF with WebP fallback, decorative; screenshots stay", async () => {
+    const { container } = renderAt("/apps/hcg-executable-maker");
+    await screen.findByRole("heading", { level: 1, name: "HCG Executable Maker" });
+    const banner = container.querySelector(".product-banner img")!;
+    expect(banner).toHaveAttribute("src", "/media/products/hcg-executable-maker/banner-2000.webp");
+    expect(banner).toHaveAttribute("alt", ""); // the h1 below already names the product
+    expect(banner).toHaveAttribute("loading", "eager");
+    expect(banner).toHaveAttribute("fetchpriority", "high");
+    expect([banner.getAttribute("width"), banner.getAttribute("height")]).toEqual(["2000", "667"]);
+    expect(container.querySelector(".product-banner source[type='image/avif']")!.getAttribute("srcset")).toMatch(/banner-640\.avif 640w/);
+    // Both real screenshots are still shown, lazily, and labelled; the banner is never called a screenshot.
+    const shots = container.querySelectorAll(".product-gallery img");
+    expect(shots).toHaveLength(2);
+    shots.forEach((img) => expect(img).toHaveAttribute("loading", "lazy"));
+    expect(screen.getAllByText("Screenshot")).toHaveLength(1);
+    expect(container.querySelector(".product-banner .art-label")).toBeNull();
+    // Exactly one high-priority image on the page.
+    expect(container.querySelectorAll("img[fetchpriority='high']")).toHaveLength(1);
+  });
+
+  it.each([
+    ["hcg-clarity", "HCG Clarity"],
+    ["hcg-lifeos", "HCG LifeOS"],
+    ["hcg-one-unleashed", "HCG ONE: Unleashed"],
+  ])("%s shows its framed icon whole, next to an HTML heading", async (slug, name) => {
+    const { container } = renderAt(`/apps/${slug}`);
+    await screen.findByRole("heading", { level: 1, name });
+    const mark = container.querySelector(".product-hero .product-mark")!;
+    expect(mark).toHaveClass("product-mark--framed");
+    expect(mark).toHaveAttribute("aria-hidden", "true");
+    expect(mark.querySelector("img")).toHaveAttribute("src", `/media/products/${slug}/icon-256.webp`);
+    expect(container.querySelector(".product-banner img")).toHaveAttribute("src", `/media/products/${slug}/banner-2000.webp`);
+  });
+
+  it("home and browse cards show each product's banner, lazy-loaded, with the name as text", async () => {
+    const { container } = renderAt("/apps");
+    await screen.findByText("10 products");
+    const cards = [...container.querySelectorAll("article.product-card")];
+    expect(cards).toHaveLength(10);
+    for (const card of cards) {
+      const id = card.getAttribute("data-product-id");
+      const img = card.querySelector(".product-cover img")!;
+      expect(img.getAttribute("src")).toMatch(new RegExp(`^/media/products/${id}/(banner|cover)-2000\\.webp$`));
+      expect(img).toHaveAttribute("loading", "lazy");
+      expect(img).toHaveAttribute("alt", "");
+      expect(card.querySelector("h3")!.textContent).toBeTruthy();
+    }
+  });
+
+  it("superseded products keep their page and point to the successor", async () => {
+    renderAt("/apps/hcg-reprompter");
+    await screen.findByRole("heading", { level: 1, name: "HCG RePrompter" });
+    expect(screen.getByText(/HCG RePrompter is now part of HCG Clarity/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Go to HCG Clarity/ })).toHaveAttribute("href", "/apps/hcg-clarity");
+  });
+
+  it("the successor shows its former names", async () => {
+    renderAt("/apps/hcg-clarity");
+    await screen.findByRole("heading", { level: 1, name: "HCG Clarity" });
+    expect(screen.getByText("Formerly HCG RePrompter and Distil")).toBeInTheDocument();
   });
 
   it("release history shows an empty state", async () => {
@@ -146,17 +227,17 @@ describe("store pages with the shipped catalogue", () => {
   it("browse filters work and sync with the URL", async () => {
     const user = userEvent.setup();
     renderAt("/apps?platform=ios");
-    expect(await screen.findByText("5 of 11 products match")).toBeInTheDocument();
+    expect(await screen.findByText("6 of 10 products match")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "HCG CardX" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "iOS" }));
-    expect(screen.getByText("11 products")).toBeInTheDocument();
+    expect(screen.getByText("10 products")).toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search" }), "imap");
-    expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
+    expect(screen.getByText("1 of 10 products match")).toBeInTheDocument();
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
     await user.click(screen.getByRole("radio", { name: "Release approved" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
-    expect(screen.getByText("11 products")).toBeInTheDocument();
+    expect(screen.getByText("10 products")).toBeInTheDocument();
   });
 
   it("getting started never tells people to disable security and explains IPA installs", async () => {
@@ -178,7 +259,7 @@ describe("HCG Repo links and editions (shipped catalogue)", () => {
       "https://repo.hakmicapitalgroup.com/products/hcg-terminal-unleashed/",
     );
     expect(within(unleashed).getAllByText("com.hakmicapitalgroup.hcgterminal.unleashed", { selector: "dd" })).toHaveLength(2);
-    const standard = screen.getByRole("heading", { name: "HCG Terminal (standard)" }).closest("li")!;
+    const standard = screen.getByRole("heading", { name: "HCG Terminal", level: 3 }).closest("li")!;
     expect(within(standard).queryByRole("link", { name: /HCG Repo/ })).toBeNull();
     expectNoFabrication(container);
   });
@@ -186,7 +267,7 @@ describe("HCG Repo links and editions (shipped catalogue)", () => {
   it("links Nexus and Sentinel to their HCG Repo pages", async () => {
     renderAt("/apps/hcg-nexus");
     await screen.findByRole("heading", { level: 1, name: "HCG Nexus" });
-    expect(screen.getByRole("link", { name: /View on HCG Repo/ })).toHaveAttribute("href", "https://repo.hakmicapitalgroup.com/products/hcg-nexus/");
+    expect(screen.getAllByRole("link", { name: /View on HCG Repo/ })[0]).toHaveAttribute("href", "https://repo.hakmicapitalgroup.com/products/hcg-nexus/");
   });
 });
 
@@ -197,16 +278,22 @@ describe("account and ownership (stubbed HCG Store server)", () => {
     server = {
       session: { configured: true, signedIn: true, user: ALICE },
       library: {
-        owned: [{ productId: "hcg-terminal", slug: "hcg-terminal", name: "HCG Terminal", editionId: "unleashed", editionName: "HCG Terminal Unleashed", state: "downloads-not-available" }],
+        owned: [
+          { productId: "hcg-terminal", slug: "hcg-terminal", name: "HCG Terminal", editionId: "unleashed", editionName: "HCG Terminal Unleashed", state: "downloads-not-available" },
+          { productId: "hcg-lifeos", slug: "hcg-lifeos", name: "HCG LifeOS", editionId: null, editionName: null, state: "downloads-not-available" },
+        ],
         purchases: [],
         ownershipUnavailable: false,
         downloadsMessage: "Downloads are not available yet.",
       },
     };
-    renderAt("/library");
+    const { container } = renderAt("/library");
     expect(await screen.findByRole("link", { name: "HCG Terminal Unleashed" })).toBeInTheDocument();
-    expect(screen.getByText("Owned")).toBeInTheDocument();
-    expect(screen.getByText("Downloads are not available yet.")).toBeInTheDocument();
+    expect(screen.getAllByText("Owned")).toHaveLength(2);
+    expect(screen.getAllByText("Downloads are not available yet.").length).toBeGreaterThan(0);
+    // Owned products show the same icons as the rest of the store, from the catalogue.
+    const icons = [...container.querySelectorAll(".library-item .product-mark img")].map((i) => i.getAttribute("src"));
+    expect(icons).toEqual(["/media/products/hcg-terminal/icon-256.webp", "/media/products/hcg-lifeos/icon-256.webp"]);
   });
 
   it("asks signed-out visitors to sign in for the library", async () => {
@@ -259,6 +346,22 @@ describe("account and ownership (stubbed HCG Store server)", () => {
     expectNoFabrication(container);
   });
 
+  it("on a static host (no account service) makes no account requests and says sign-in is unavailable", async () => {
+    server = { session: { configured: true, signedIn: true, user: ALICE } };
+    render(
+      <CatalogueStateProvider provider={staticProvider(realCatalogue())}>
+        <AccountProvider accountService="none">
+          <MemoryRouter initialEntries={["/apps/hcg-terminal"]}>
+            <AppRoutes />
+          </MemoryRouter>
+        </AccountProvider>
+      </CatalogueStateProvider>,
+    );
+    expect(await screen.findByText(/Sign-in and purchases are not available on this site/)).toBeInTheDocument();
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    for (const b of screen.queryAllByRole("button", { name: "Buy Product" })) expect(b).toBeDisabled();
+  });
+
   it("the checkout return page never claims success by itself", async () => {
     server = { session: { configured: true, signedIn: true, user: ALICE } };
     renderAt("/checkout/return?checkout=chk_forged&status=success");
@@ -291,7 +394,7 @@ describe("store pages with release data (test fixture)", () => {
     const img = screen.getByAltText("Missing fixture image");
     fireEvent.error(img);
     expect(screen.getByRole("img", { name: "Image unavailable: Missing fixture image" })).toBeInTheDocument();
-    expect(screen.getByText(/Concept artwork — not the working app/)).toBeInTheDocument();
+    expect(screen.getAllByText("Illustration").length).toBeGreaterThan(0);
   });
 
   it("release history distinguishes current, previous and withdrawn releases and never delivers withdrawn ones", async () => {

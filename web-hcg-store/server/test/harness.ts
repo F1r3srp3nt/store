@@ -8,6 +8,8 @@ import { createStoreApp, type StoreApp } from "../src/app";
 import { parseStoreConfig, type StoreConfig } from "../src/config";
 import { openDatabase } from "../src/db";
 import { HcgEcosystemAuthority, NoAuthority, TestLedgerAuthority, type EntitlementAuthority } from "../src/entitlements";
+import { CentralGrantOutbox } from "../src/grants";
+import type { Db } from "../src/db";
 import { HcgConnectClient } from "../src/hcg-connect";
 import { loadRegistry } from "../src/registry";
 import { MockHcgConnect, type MockUser } from "./mock-hcg-connect";
@@ -31,6 +33,8 @@ export class Clock {
 
 export interface Harness {
   app: StoreApp;
+  outbox: CentralGrantOutbox;
+  db: Db;
   cfg: StoreConfig;
   idp: MockHcgConnect;
   clock: Clock;
@@ -83,6 +87,8 @@ export interface HarnessOptions {
   env?: Record<string, string>;
   authority?: "test-ledger" | "none" | "hcg-ecosystem";
   ecosystemFetch?: typeof fetch;
+  /** fetch used by the central grant outbox (D5); set HCG_STORE_GRANT_API_URL/CREDENTIAL in env to enable it. */
+  grantFetch?: typeof fetch;
   withStaticDir?: string;
 }
 
@@ -137,7 +143,8 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
       : authorityKind === "hcg-ecosystem"
         ? new HcgEcosystemAuthority(cfg.ecosystem!.baseUrl, opts.ecosystemFetch)
         : new NoAuthority();
-  const app = createStoreApp({ cfg, db, registry, connect, authority, now: clock.now });
+  const outbox = new CentralGrantOutbox(db, clock.now, cfg.grants, opts.grantFetch);
+  const app = createStoreApp({ cfg, db, registry, connect, authority, now: clock.now, outbox });
   server.on("request", (req, res) => void app.handle(req, res));
 
   const anonymous = () => new Client(origin);
@@ -155,6 +162,8 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
 
   return {
     app,
+    outbox,
+    db,
     cfg,
     idp,
     clock,

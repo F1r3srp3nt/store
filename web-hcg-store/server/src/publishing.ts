@@ -172,7 +172,10 @@ export function createPublishing(deps: PublishingDeps) {
   async function permitted(actor: Actor, permission: "publish" | "approve", productId: string): Promise<boolean> {
     const central = permission === "publish" ? P.publisherCentralId! : P.approverCentralId!;
     const subject: Subject = { sub: actor.sub, accessToken: actor.accessToken };
-    const r = await authority.check(subject, central, productId);
+    // The permission is checked per product (or "*"). HCG has published no contract for these permissions yet: the
+    // TEST ledger stands in for it, and the live ecosystem authority cannot confirm them, so publishing fails closed
+    // (503) there until HCG issues the permission IDs and a way to check them.
+    const r = await authority.check(subject, { centralProductId: central, editionId: productId, centralEditionKey: productId });
     if (r.status === "unavailable") throw new HttpError(503, "hcg_unavailable", "HCG could not confirm your publishing permission right now. Nothing was changed.");
     return r.status === "granted";
   }
@@ -373,7 +376,8 @@ export function createPublishing(deps: PublishingDeps) {
     const central = productInfo(r.product_id)?.centralId;
     if (r.approved_eligibility === "public" && r.distribution === "free") return { ok: true, basis: "public-free" };
     if (!central) return { ok: false, status: 403, code: "not_entitled", message: "This product has no confirmed central product ID, so no one can be entitled to it yet." };
-    const check = await authority.check(subject, central, r.edition_id);
+    const edition = r.edition_id ? findProduct(registry, r.product_id)?.editions.find((e) => e.id === r.edition_id) : undefined;
+    const check = await authority.check(subject, { centralProductId: central, editionId: r.edition_id, centralEditionKey: edition?.centralEditionKey ?? null });
     if (check.status === "unavailable") return { ok: false, status: 503, code: "hcg_unavailable", message: "Your access could not be checked right now." };
     if (check.status !== "granted") return { ok: false, status: 403, code: "not_entitled", message: "Your HCG account does not include this product." };
     return { ok: true, basis: r.approved_eligibility === "public" ? "entitlement" : "internal-testing-entitlement" };

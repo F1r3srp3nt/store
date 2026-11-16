@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixtureCatalogue, realCatalogue } from "../test/fixtures";
+import { listedProducts } from "./model";
 import { EMPTY_QUERY, filterProducts, paramsFromQuery, queryFromParams, type CatalogueQuery } from "./query";
 
 const q = (patch: Partial<CatalogueQuery>): CatalogueQuery => ({ ...EMPTY_QUERY, ...patch });
@@ -8,8 +9,14 @@ const ids = (c: ReturnType<typeof realCatalogue>, query: CatalogueQuery) => filt
 describe("search and filters (shipped catalogue)", () => {
   const c = realCatalogue();
 
-  it("returns everything for an empty query", () => {
-    expect(filterProducts(c, EMPTY_QUERY)).toHaveLength(c.products.length);
+  it("returns every listed product for an empty query, and never superseded ones", () => {
+    expect(filterProducts(c, EMPTY_QUERY)).toHaveLength(listedProducts(c).length);
+    expect(ids(c, EMPTY_QUERY)).not.toContain("hcg-reprompter");
+  });
+
+  it("finds a product by a former name", () => {
+    expect(ids(c, q({ q: "reprompter" }))).toEqual(["hcg-clarity"]);
+    expect(ids(c, q({ q: "distil" }))).toEqual(["hcg-clarity"]);
   });
 
   it("searches names case- and accent-insensitively and ranks name hits first", () => {
@@ -28,19 +35,19 @@ describe("search and filters (shipped catalogue)", () => {
   });
 
   it("filters by platform (including in-development/planned support)", () => {
-    expect(ids(c, q({ platforms: ["ios"] })).sort()).toEqual(["hcg-cardx", "hcg-mail", "hcg-nexus", "hcg-sentinel", "hcg-terminal"]);
+    expect(ids(c, q({ platforms: ["ios"] })).sort()).toEqual(["hcg-cardx", "hcg-mail", "hcg-news", "hcg-nexus", "hcg-sentinel", "hcg-terminal"]);
     expect(ids(c, q({ platforms: ["windows"] })).sort()).toEqual(["hcg-executable-maker", "hcg-mail"]);
     expect(ids(c, q({ platforms: ["android"] }))).toEqual([]);
   });
 
   it("filters by category", () => {
-    expect(ids(c, q({ category: "developer-tools" })).sort()).toEqual(["hcg-executable-maker", "hcg-reprompter", "hcg-terminal"]);
+    expect(ids(c, q({ category: "developer-tools" })).sort()).toEqual(["hcg-executable-maker", "hcg-terminal"]);
     expect(ids(c, q({ category: "security" }))).toEqual(["hcg-sentinel"]);
   });
 
   it("filters by release availability", () => {
     expect(ids(c, q({ availability: "released" }))).toEqual([]);
-    expect(ids(c, q({ availability: "coming-soon" }))).toHaveLength(c.products.length);
+    expect(ids(c, q({ availability: "coming-soon" }))).toHaveLength(listedProducts(c).length);
   });
 
   it("combines filters", () => {

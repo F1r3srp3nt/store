@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: basePath,
-    plugins: [react(), hcgHostingPlugin({ env, catalogueDir, basePath })],
+    plugins: [react(), hcgHostingPlugin({ env, catalogueDir, basePath, outDir, hostingTarget: process.env.HCG_HOSTING_TARGET })],
     resolve: {
       alias: { "@catalogue": catalogueDir },
     },
@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: "jsdom",
       setupFiles: ["./src/test/setup.ts"],
-      include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts", "server/test/**/*.test.ts"],
+      include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts", "server/test/**/*.test.ts", "build/**/*.test.ts"],
       css: false,
     },
   };

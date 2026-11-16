@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { assetUrl } from "../lib/format";
 
-const SIZES = [800, 1200, 1774] as const;
-const LARGEST = 1774;
-const HEIGHT = 887;
+const SIZES = [800, 1200, 2000] as const;
+const LARGEST = 2000;
+const HEIGHT = 667;
 
 /**
- * Founder-supplied HCG Store banner used as the home hero image.
- *
- * It is marketing artwork: the devices show a stylised store screen, not screenshots of real
- * apps, so it carries a visible "Illustration" label. It is the largest above-the-fold image, so
- * it loads eagerly. If it fails to load it is removed and the hero text remains.
+ * The approved HCG Store banner (founder-supplied artwork). Always shown in full at its own 3:1
+ * aspect ratio — never cropped — so the "HCG STORE · HAKMI CAPITAL GROUP" lettering stays intact.
+ * It is marketing illustration (the app icons in it are not screenshots), so it is labelled.
  */
 export function HeroBanner() {
   const [failed, setFailed] = useState(false);
@@ -19,12 +17,12 @@ export function HeroBanner() {
     <figure className="hero-banner">
       <img
         className="hero-banner__img"
-        src={assetUrl(`brand/hcg-store-banner-${LARGEST}.webp`)}
-        srcSet={SIZES.map((w) => `${assetUrl(`brand/hcg-store-banner-${w}.webp`)} ${w}w`).join(", ")}
+        src={assetUrl(`brand/hcg-store-hero-${LARGEST}.webp`)}
+        srcSet={SIZES.map((w) => `${assetUrl(`brand/hcg-store-hero-${w}.webp`)} ${w}w`).join(", ")}
         sizes="(max-width: 1240px) 100vw, 1160px"
         width={LARGEST}
         height={HEIGHT}
-        alt="HCG Store by Hakmi Capital Group: illustration of the HCG Store wordmark beside a laptop, tablet and phone showing a stylised store screen"
+        alt="HCG Store by Hakmi Capital Group: the chrome HCG Store wordmark beside glowing glass app tiles for a terminal, security, mail and layers, above a lit platform with a tablet and phone"
         loading="eager"
         fetchPriority="high"
         decoding="async"

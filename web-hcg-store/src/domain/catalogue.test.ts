@@ -31,14 +31,43 @@ describe("shipped catalogue", () => {
     expect(names).not.toMatch(/development tools|hcg store|appstore|unimatch/);
   });
 
-  it("claims no releases, downloads or central registry IDs that were never supplied", () => {
+  it("claims no releases or downloads, and only the central registry IDs HCG confirmed", () => {
     expect(c.releases).toHaveLength(0);
+    // Confirmed by the main-site handoff (16 Nov 2026, VERIFIED against app_applications.product_id).
+    const confirmed: Record<string, string> = {
+      "hcg-terminal": "hcg.terminal",
+      "hcg-executable-maker": "hcg.executable.maker",
+      "hcg-mail": "hcg.mail",
+      "hcg-news": "hcg.news",
+      "hcg-cardx": "hcg-cardx",
+      "hcg-lifeos": "hcg.lifeos",
+      "hcg-one-unleashed": "hcg.one.unleashed",
+      "hcg-reprompter": "hcg.reprompter",
+    };
     for (const p of c.products) {
       expect(p.currentReleaseId).toBeNull();
-      expect(p.registry.status).toBe("provisional");
-      expect(p.registry.centralId).toBeNull();
+      expect(p.registry.centralId, p.id).toBe(confirmed[p.id] ?? null);
+      expect(p.registry.status, p.id).toBe(confirmed[p.id] ? "central" : "provisional");
+      // Not registered centrally yet (decision D3): no edition may be mapped either.
+      if (!confirmed[p.id]) for (const e of p.editions) expect(e.centralEditionKey, `${p.id}/${e.id}`).toBeNull();
       for (const pl of p.platforms) expect(pl.support).not.toBe("confirmed");
     }
+  });
+
+  it("rejects duplicate central edition keys and edition keys without a central product ID", () => {
+    const products = clone(raw.realProducts) as { products: { id: string; registry: { status: string; centralId: string | null }; editions: { centralEditionKey: string | null }[] }[] };
+    const terminal = products.products.find((p) => p.id === "hcg-terminal")!;
+    terminal.editions[1]!.centralEditionKey = terminal.editions[0]!.centralEditionKey;
+    const dup = validateCatalogue(products, raw.realReleases);
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.errors.join("\n")).toMatch(/same central edition key/);
+
+    const unregistered = clone(raw.realProducts) as typeof products;
+    const nexus = unregistered.products.find((p) => p.id === "hcg-nexus")!;
+    nexus.editions[0]!.centralEditionKey = "app";
+    const res = validateCatalogue(unregistered, raw.realReleases);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.errors.join("\n")).toMatch(/no central product ID/);
   });
 
   it("contains no Dropbox or other download URLs", () => {
@@ -168,5 +197,53 @@ describe("catalogue validation errors", () => {
     const e = errorsOf(p, r);
     expect(e).toMatch(/Withdrawn releases need a reason/);
     expect(e).toMatch(/relative path/);
+  });
+});
+
+describe("approved product artwork mapping (catalogue is the single source)", () => {
+  const c = realCatalogue();
+  const product = (id: string) => c.products.find((p) => p.id === id)!;
+
+  it.each(["hcg-cardx", "hcg-clarity", "hcg-executable-maker", "hcg-lifeos", "hcg-mail", "hcg-news", "hcg-nexus", "hcg-one-unleashed"])(
+    "%s uses its own 3:1 banner, with AVIF and responsive renditions",
+    (id) => {
+      const cover = product(id).artwork.cover!;
+      expect(cover.src).toBe(`media/products/${id}/banner-2000.webp`);
+      expect(cover.variants.map((v) => v.src)).toEqual([`media/products/${id}/banner-640.webp`, `media/products/${id}/banner-1200.webp`]);
+      expect(cover.width / cover.height).toBeCloseTo(3, 1);
+      expect(cover.avif).toBe(true);
+      expect(cover.kind).toBe("official");
+    },
+  );
+
+  it.each(["hcg-clarity", "hcg-executable-maker", "hcg-lifeos", "hcg-one-unleashed"])("%s uses its new framed icon", (id) => {
+    const a = product(id).artwork;
+    expect(a.icon!.src).toBe(`media/products/${id}/icon-256.webp`);
+    expect([a.icon!.width, a.icon!.height]).toEqual([256, 256]);
+    expect(a.iconStyle).toBe("framed");
+  });
+
+  it("keeps the existing CardX, Mail, News and Nexus icons, and Terminal and Sentinel artwork", () => {
+    for (const id of ["hcg-cardx", "hcg-mail", "hcg-news", "hcg-nexus", "hcg-terminal", "hcg-sentinel"]) {
+      expect(product(id).artwork.icon!.src).toBe(`media/products/${id}/icon-256.webp`);
+      expect(product(id).artwork.iconStyle).toBe("app");
+    }
+    expect(product("hcg-terminal").artwork.cover!.src).toBe("media/products/hcg-terminal/cover-2000.webp");
+    expect(product("hcg-sentinel").artwork.cover!.src).toBe("media/products/hcg-sentinel/cover-2000.webp");
+  });
+
+  it("no two products share a banner or an icon", () => {
+    const covers = c.products.flatMap((p) => (p.artwork.cover ? [p.artwork.cover.src] : []));
+    const icons = c.products.flatMap((p) => (p.artwork.icon ? [p.artwork.icon.src] : []));
+    expect(new Set(covers).size).toBe(covers.length);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+
+  it("keeps real screenshots and does not restore the RePrompter listing", () => {
+    expect(product("hcg-executable-maker").media.filter((m) => m.kind === "screenshot")).toHaveLength(2);
+    expect(product("hcg-clarity").media.filter((m) => m.kind === "screenshot")).toHaveLength(3);
+    expect(product("hcg-mail").media.filter((m) => m.kind === "screenshot")).toHaveLength(2);
+    expect(product("hcg-reprompter").supersededBy).toBe("hcg-clarity");
+    expect(product("hcg-reprompter").artwork.cover).toBeNull();
   });
 });

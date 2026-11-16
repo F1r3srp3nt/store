@@ -129,6 +129,11 @@ export function buildRegistry(catalogue: Catalogue, offers: Offer[], artifacts: 
       if (g.edition !== "*" && !p.editions.some((e) => e.id === g.edition) && !(p.editions.length === 0 && g.edition === "default")) {
         problems.push(`Offer "${o.id}" grants unknown edition "${g.edition}".`);
       }
+      const granted = p.editions.find((e) => e.id === g.edition);
+      if (granted && !granted.centralEditionKey) {
+        // D2: HCG checks editions by their central key; an unmapped edition could never be checked.
+        problems.push(`Offer "${o.id}" grants edition "${g.edition}", which has no central edition key.`);
+      }
     }
     if ((o.kind === "subscription") !== (o.interval !== null)) problems.push(`Offer "${o.id}": subscriptions need an interval, one-time offers must not have one.`);
     if (o.status === "approved-for-sale" && !releasedEdition(catalogue, p, o.editionId)) {

@@ -15,11 +15,15 @@ export function AccountPage() {
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
+    if (account.status === "no-server") {
+      setHealth("unavailable");
+      return;
+    }
     storeApi
       .health()
       .then(setHealth)
       .catch(() => setHealth("unavailable"));
-  }, []);
+  }, [account.status]);
 
   const h = health && health !== "unavailable" ? health : null;
   const accountLabel =
@@ -116,7 +120,7 @@ export function AccountPage() {
                 </button>
                 <p id="signin-why" className="fine">
                   {account.status === "no-server"
-                    ? "This site is a static preview without HCG Store's account service, so sign-in is not available here."
+                    ? "This site is served without HCG Store's account service yet, so sign-in is not available here."
                     : "HCG has not yet issued HCG Store's HCG Connect client, so sign-in is switched off. HCG Store never simulates accounts or sessions."}
                 </p>
               </>

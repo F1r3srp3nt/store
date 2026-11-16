@@ -1,0 +1,888 @@
+/*
+ * HCG storefront layer: smoked-glass surfaces, brushed-metal details and fine cyan edges.
+ * Glow is reserved for active controls and featured artwork; nothing pulses; all transitions
+ * collapse under prefers-reduced-motion (see base.css and tokens.css).
+ */
+
+/* ---------- Shared surfaces ---------- */
+.glass,
+.panel,
+.product-card,
+.release-panel,
+.edition,
+.connection {
+  background: linear-gradient(180deg, rgba(22, 27, 37, 0.78), rgba(11, 14, 20, 0.88));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-panel);
+}
+.panel {
+  border-radius: var(--radius-lg);
+}
+
+/* Faint circuitry, only behind specific content, fading out at the edges. */
+.circuit-bg {
+  position: relative;
+  isolation: isolate;
+}
+.circuit-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: url("/brand/circuit.svg") repeat;
+  background-size: 240px 240px;
+  opacity: 0.55;
+  -webkit-mask-image: radial-gradient(70% 80% at 50% 45%, #000 0%, transparent 75%);
+  mask-image: radial-gradient(70% 80% at 50% 45%, #000 0%, transparent 75%);
+  pointer-events: none;
+}
+
+/* ---------- Header ---------- */
+.site-header {
+  background: rgba(5, 7, 10, 0.78);
+}
+.site-header::after {
+  background: linear-gradient(90deg, transparent, rgba(69, 225, 245, 0.32), rgba(206, 220, 236, 0.18), transparent);
+}
+.site-nav__link.active {
+  background: rgba(206, 220, 236, 0.06);
+  box-shadow: inset 0 0 0 1px var(--edge-cyan);
+}
+.nav-external {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-left: 2px;
+  opacity: 0.7;
+}
+
+/* ---------- Buttons: brushed metal primary, smoked-glass secondary ---------- */
+.button--primary {
+  color: #070a0f;
+  background: var(--metal-button);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.35) inset,
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 10px 26px -14px rgba(0, 0, 0, 0.9);
+}
+.button--primary:hover {
+  color: #070a0f;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.4) inset,
+    0 0 0 1px var(--edge-cyan),
+    0 10px 30px -12px var(--cyan-glow);
+}
+.button--ghost {
+  color: var(--text);
+  background: rgba(18, 22, 30, 0.6);
+  border-color: var(--line-strong);
+}
+.button--ghost:hover {
+  color: var(--text);
+  border-color: var(--edge-cyan);
+  background: rgba(69, 225, 245, 0.05);
+}
+.button svg {
+  flex-shrink: 0;
+}
+
+/* ---------- Compact hero ---------- */
+.hero {
+  position: relative;
+}
+.hero__inner {
+  display: grid;
+  gap: 18px;
+  padding-block: clamp(14px, 2.4vw, 28px) clamp(18px, 3vw, 32px);
+}
+/* The approved banner, always complete: 3:1, never cropped (object-fit: contain). */
+.hero-banner {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 2000 / 667;
+  max-height: 360px;
+  width: 100%;
+  margin-inline: auto;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background: #030407;
+  box-shadow:
+    0 28px 60px -40px rgba(0, 0, 0, 0.95),
+    0 0 60px -42px rgba(69, 225, 245, 0.55);
+}
+@supports (aspect-ratio: 1) {
+  .hero-banner {
+    /* When max-height binds, shrink the width so the 3:1 frame always fits the whole image. */
+    width: min(100%, calc(360px * 3));
+  }
+}
+.hero-banner__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.hero-banner .art-label {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+}
+.hero__bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px 32px;
+}
+.hero__title {
+  font-size: clamp(28px, 3.4vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.hero__lead {
+  margin-top: 6px;
+  max-width: 40em;
+  font-size: clamp(15px, 1.4vw, 17px);
+  color: var(--text-muted);
+}
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+@media (max-width: 760px) {
+  .hero__bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hero-banner {
+    border-radius: var(--radius);
+  }
+}
+
+/* ---------- Discover: search + category/platform chips ---------- */
+.discover {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(13, 16, 22, 0.7);
+}
+.discover__search {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.discover__search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px 0 40px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: rgba(5, 7, 10, 0.7);
+  color: var(--text);
+}
+.discover__search input::placeholder {
+  color: var(--text-faint);
+}
+.discover__search input:focus-visible {
+  border-color: var(--edge-cyan);
+}
+.discover__search-icon {
+  position: absolute;
+  left: 13px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.discover__groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chip-row__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  min-width: 92px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  font-size: 14px;
+  text-decoration: none;
+  background: rgba(18, 22, 30, 0.5);
+  transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+}
+.chip:hover {
+  color: var(--text);
+  border-color: var(--edge-cyan);
+  background: rgba(69, 225, 245, 0.05);
+}
+.chip__count {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+@media (max-width: 600px) {
+  .chip-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .chip-row::-webkit-scrollbar {
+    display: none;
+  }
+  .chip,
+  .chip-row__label {
+    flex-shrink: 0;
+  }
+  .chip-row__label {
+    min-width: 0;
+  }
+}
+
+/* ---------- Product mark (icon or branded fallback) ---------- */
+.product-mark {
+  --accent: var(--cyan);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 22%;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 30% 10%, rgba(255, 255, 255, 0.08), transparent 55%),
+    linear-gradient(160deg, #1a1f29, #0a0d12);
+  box-shadow:
+    0 0 0 1px rgba(206, 220, 236, 0.16) inset,
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 8px 20px -12px rgba(0, 0, 0, 0.9);
+}
+.product-mark--sm {
+  width: 44px;
+  height: 44px;
+}
+.product-mark--md {
+  width: 56px;
+  height: 56px;
+}
+.product-mark--lg {
+  width: 96px;
+  height: 96px;
+}
+.product-mark__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Icons that draw their own chrome frame: shown whole, square, with no mask, ring or glow added. */
+.product-mark--framed {
+  border-radius: 8%;
+  background: #000;
+  box-shadow: 0 8px 20px -12px rgba(0, 0, 0, 0.9);
+}
+.product-mark--framed .product-mark__img {
+  object-fit: contain;
+}
+/* <picture> wrappers (AVIF with WebP fallback) must not change layout. */
+.art-picture {
+  display: contents;
+}
+.product-mark__monogram {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--metal);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.product-mark--sm .product-mark__monogram {
+  font-size: 15px;
+}
+.product-mark--md .product-mark__monogram {
+  font-size: 19px;
+}
+.product-mark--lg .product-mark__monogram {
+  font-size: 32px;
+}
+
+/* ---------- Product cover (artwork, framed screenshot or composed mark) ---------- */
+.product-cover {
+  --accent: var(--cyan);
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background:
+    radial-gradient(70% 90% at 50% 120%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+    linear-gradient(180deg, #0f131a, #07090d);
+}
+.product-cover--art {
+  /* The frame matches the banner's own ratio; black only shows if the image is still loading. */
+  background: #000;
+}
+.product-cover--art .product-cover__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.product-cover--shot {
+  display: grid;
+  place-items: center;
+  padding: 7% 8% 0;
+}
+.product-cover--mark {
+  display: grid;
+  place-items: center;
+}
+.product-cover--mark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("/brand/circuit.svg") repeat;
+  background-size: 200px 200px;
+  opacity: 0.35;
+  -webkit-mask-image: radial-gradient(60% 70% at 50% 50%, #000, transparent 80%);
+  mask-image: radial-gradient(60% 70% at 50% 50%, #000, transparent 80%);
+}
+.product-cover .art-label {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+}
+/* Consistent frame for real screenshots. */
+.screen-frame {
+  width: 100%;
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  border: 1px solid rgba(206, 220, 236, 0.18);
+  border-bottom: 0;
+  background: #000;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 -10px 40px -24px color-mix(in srgb, var(--accent, var(--cyan)) 70%, transparent);
+}
+.screen-frame .media-image {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.gallery-strip__item .screen-frame,
+.product-gallery > .gallery-strip__item .media-image {
+  border-radius: 10px;
+  border-bottom: 1px solid rgba(206, 220, 236, 0.18);
+}
+
+/* ---------- Product cards ---------- */
+.product-card {
+  background: linear-gradient(180deg, rgba(22, 27, 37, 0.78), rgba(11, 14, 20, 0.9));
+}
+.product-card::before {
+  opacity: 0.25;
+}
+.product-card:hover,
+.product-card:focus-within {
+  transform: translateY(-2px);
+  border-color: rgba(206, 220, 236, 0.16);
+  box-shadow: var(--shadow-panel), 0 0 0 1px var(--edge-cyan);
+}
+.product-card__art {
+  aspect-ratio: auto;
+  background: transparent;
+}
+.product-card__body {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px 18px;
+}
+.product-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.product-card__category {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.product-card__title {
+  font-size: 18px;
+}
+.product-card__summary {
+  color: var(--text-muted);
+  font-size: 14.5px;
+  /* Keep the 3-line clamp exact: a stretched grid item would reveal part of a 4th line. */
+  align-self: start;
+}
+.product-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 2px;
+}
+.product-card__platforms {
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* Editorial layout for curated selections: one large feature beside smaller cards. */
+.featured {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 18px;
+}
+/* Lead product across the full row (3:1 banner beside its text), the rest in equal-height pairs. */
+.featured > .product-card--feature {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+}
+.featured > .product-card--feature .product-card__art {
+  flex: 0 0 58%;
+  align-self: stretch;
+  display: grid;
+  align-items: center;
+  background: #000;
+}
+.featured > .product-card--feature .product-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.featured > .product-card--card {
+  grid-column: span 6;
+}
+
+
+.product-card--feature .product-card__title {
+  font-size: 24px;
+}
+.product-card--feature .product-card__summary {
+  font-size: 16px;
+}
+@media (max-width: 900px) {
+  .featured > .product-card--feature {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .featured > .product-card--feature .product-card__art {
+    flex: none;
+  }
+}
+@media (max-width: 700px) {
+  .featured > .product-card--card {
+    grid-column: 1 / -1;
+  }
+}
+/* Browse grid: cards with art. */
+.product-grid .product-card--card .product-card__art {
+  display: block;
+}
+
+/* ---------- Product rows (full catalogue, scan-friendly) ---------- */
+.product-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(11, 14, 20, 0.7);
+  overflow: hidden;
+}
+.product-rows > li + li {
+  border-top: 1px solid var(--line);
+}
+.product-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 200px) auto;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 14px 18px;
+  transition: background-color var(--t-fast) var(--ease);
+}
+.product-row:hover,
+.product-row:focus-within {
+  background: rgba(206, 220, 236, 0.035);
+}
+.product-row .product-card__title {
+  font-size: 16px;
+}
+.product-row .product-card__link {
+  color: var(--text);
+  text-decoration: none;
+}
+.product-row .product-card__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.product-row__summary {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.product-row__platforms {
+  font-size: 13px;
+  color: var(--text-faint);
+}
+@media (max-width: 760px) {
+  .product-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 12px 14px;
+  }
+  .product-row__platforms,
+  .product-row .status-pill {
+    grid-column: 2;
+  }
+  .product-row__platforms {
+    margin-top: -4px;
+  }
+  .product-row .status-pill {
+    justify-self: start;
+  }
+}
+
+/* ---------- Status pill (one consistent status per product) ---------- */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  background: rgba(18, 22, 30, 0.6);
+}
+.status-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.status-pill--released .status-pill__dot {
+  background: var(--mint);
+}
+.status-pill--testing .status-pill__dot {
+  background: var(--amber);
+}
+.status-pill--active .status-pill__dot {
+  background: var(--cyan);
+}
+.status-pill--planned .status-pill__dot {
+  background: transparent;
+  border: 1px solid var(--text-faint);
+}
+
+/* ---------- Jailbreak & Unleashed collection ---------- */
+.jailbreak {
+  margin-top: clamp(40px, 6vw, 72px);
+  padding-block: clamp(28px, 4vw, 48px);
+  border-block: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(169, 150, 255, 0.035), rgba(69, 225, 245, 0.025));
+}
+.jailbreak__intro {
+  max-width: 46em;
+  margin-bottom: 20px;
+}
+.jailbreak__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.jailbreak-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 18px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(10, 12, 17, 0.82);
+}
+.jailbreak-item__title {
+  font-size: 18px;
+}
+.jailbreak-item__summary {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 14.5px;
+}
+.jailbreak-item__meta {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+.jailbreak-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 760px) {
+  .jailbreak-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .jailbreak-item__actions {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Guidance ---------- */
+.guidance-band {
+  padding-block: clamp(40px, 6vw, 64px) clamp(32px, 5vw, 56px);
+}
+.guidance-steps {
+  list-style: none;
+  margin: 14px 0 18px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  counter-reset: step;
+}
+.guidance-steps > li {
+  counter-increment: step;
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(13, 16, 22, 0.7);
+}
+.guidance-steps > li::before {
+  content: "0" counter(step);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--cyan);
+  margin-bottom: 6px;
+}
+.guidance-steps h3 {
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+.guidance-steps p {
+  color: var(--text-muted);
+  font-size: 14.5px;
+}
+@media (max-width: 860px) {
+  .guidance-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Product detail ---------- */
+.product-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: clamp(16px, 3vw, 28px);
+  align-items: start;
+  margin-bottom: clamp(22px, 3vw, 32px);
+}
+.product-hero h1 {
+  font-size: clamp(30px, 4.4vw, 48px);
+}
+.product-hero__former {
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+.product-hero__summary {
+  margin-top: 10px;
+  font-size: 17px;
+  color: var(--text-muted);
+  max-width: 42em;
+}
+.product-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 14px;
+}
+.product-hero__platforms {
+  font-size: 14px;
+  color: var(--text-faint);
+}
+.product-hero__repo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 12px;
+}
+.product-hero__repo .text-link {
+  /* long edition names wrap instead of widening the page on narrow phones */
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .product-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .product-hero .product-mark--lg {
+    width: 72px;
+    height: 72px;
+  }
+}
+.product-gallery {
+  display: grid;
+  gap: 12px;
+}
+/* Product page banner: the full 3:1 artwork, never cropped or stretched. */
+.product-banner {
+  position: relative;
+  width: 100%;
+  margin-bottom: clamp(18px, 3vw, 28px);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: #000;
+}
+.product-banner__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.product-banner .art-label {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+}
+.gallery-lead {
+  margin: 0;
+}
+.gallery-lead > figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.gallery-lead > .product-cover,
+.product-gallery > .product-cover {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+}
+.gallery-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+.gallery-strip__item {
+  margin: 0;
+}
+.gallery-strip__item figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.feature-heading {
+  margin: 14px 0 8px;
+  font-size: 15px;
+  color: var(--text);
+}
+.feature-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.feature-list > li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--text-muted);
+}
+.feature-list__icon {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--mint);
+}
+.feature-list--planned > li::before {
+  content: "";
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin: 6px 3px 0;
+  border-radius: 50%;
+  border: 1px dashed var(--text-faint);
+}
+.feature-list--plain > li::before {
+  content: "—";
+  color: var(--text-faint);
+}
+.requirement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.callout--merged {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 16px 18px;
+  margin-bottom: 22px;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge-cyan);
+  background: rgba(69, 225, 245, 0.05);
+}
+.status-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line-strong);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* Labels such as "Illustration" / "Screenshot" on artwork. */
+.art-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: rgba(5, 7, 10, 0.72);
+  border: 1px solid var(--line-strong);
+}

@@ -75,6 +75,7 @@ export function AccessPanel({ catalogue, product }: { catalogue: Catalogue; prod
               selected={!!e && e.id === selected}
               returnTo={returnTo}
               signInAvailable={account.status !== "no-server" && account.status !== "not-configured"}
+              released={released}
             />
           );
         })}
@@ -95,6 +96,7 @@ function EditionCard({
   selected,
   returnTo,
   signInAvailable,
+  released,
 }: {
   product: Product;
   edition: Edition | null;
@@ -103,6 +105,7 @@ function EditionCard({
   selected: boolean;
   returnTo: string;
   signInAvailable: boolean;
+  released: boolean;
 }) {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -186,8 +189,10 @@ function EditionCard({
                 <IconLock /> Sign in to check access
               </a>
             )
-          ) : (
+          ) : access && access.offers.length > 0 ? (
             <BuyButton access={access} offerId={offer?.id ?? null} />
+          ) : (
+            <span className="status-note">{released ? "Not for sale yet" : "In development: not for sale"}</span>
           )}
           {repo && state !== "owned" && (
             <a className="button button--ghost" href={hcgRepoProductUrl(repo.key)}>

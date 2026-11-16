@@ -106,8 +106,21 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
       if (e.channel === "jailbreak-package" && !e.identifiers.some((i) => i.kind === "debian-package"))
         errors.push(`Product "${product.id}" edition "${e.id}" is a jailbreak package but declares no package identifier.`);
     }
+    if (product.supersededBy) {
+      const successor = byId.get(product.supersededBy);
+      if (!successor) errors.push(`Product "${product.id}" is superseded by unknown product "${product.supersededBy}".`);
+      else if (successor.supersededBy) errors.push(`Product "${product.id}" is superseded by "${successor.id}", which is itself superseded.`);
+      if (product.collections.length) errors.push(`Superseded product "${product.id}" must not be in storefront collections.`);
+    }
     if (product.registry.status === "central" && !product.registry.centralId) {
       errors.push(`Product "${product.id}" is marked central but has no centralId.`);
+    }
+    const editionKeys = product.editions.flatMap((e) => (e.centralEditionKey ? [e.centralEditionKey] : []));
+    if (editionKeys.length && !product.registry.centralId) {
+      errors.push(`Product "${product.id}" maps editions to central keys but has no central product ID.`);
+    }
+    if (new Set(editionKeys).size !== editionKeys.length) {
+      errors.push(`Product "${product.id}" maps two editions to the same central edition key.`);
     }
   }
 

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { runtimeConfig } from "../config/runtime";
 import { StoreServerUnavailable, storeApi, type SessionInfo } from "./api";
 
 /**
@@ -27,10 +28,21 @@ export interface AccountApi {
   logout: typeof storeApi.logout;
 }
 
-export function AccountProvider({ children, api = storeApi }: { children: ReactNode; api?: AccountApi }) {
-  const [state, setState] = useState<AccountState>({ status: "loading" });
+export function AccountProvider({
+  children,
+  api = storeApi,
+  accountService = runtimeConfig.accountService,
+}: {
+  children: ReactNode;
+  api?: AccountApi;
+  /** "none" on static hosts: no account requests are made at all. */
+  accountService?: "same-origin-server" | "none";
+}) {
+  const staticSite = accountService === "none";
+  const [state, setState] = useState<AccountState>(staticSite ? { status: "no-server" } : { status: "loading" });
 
   const refresh = useCallback(async () => {
+    if (staticSite) return;
     try {
       const s = await api.session();
       if (!s.configured) setState({ status: "not-configured" });
@@ -39,7 +51,7 @@ export function AccountProvider({ children, api = storeApi }: { children: ReactN
     } catch (e) {
       setState(e instanceof StoreServerUnavailable ? { status: "no-server" } : { status: "error", message: "Your account status could not be loaded." });
     }
-  }, [api]);
+  }, [api, staticSite]);
 
   const signOut = useCallback(async () => {
     try {

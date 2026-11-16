@@ -74,6 +74,43 @@ export const EditionSchema = z.strictObject({
   /** Package layouts (e.g. iphoneos-arm64 rootless) that the build tooling declares. Not a compatibility promise. */
   layouts: z.array(z.strictObject({ architecture: text, label: text, note: text.nullable().default(null) })).default([]),
   note: text.nullable().default(null),
+  /**
+   * The key HCG's central licensing uses for this edition: a module-scope licence with scope_key
+   * "edition:<key>" (decision D2). Null = not mapped centrally. An unmapped edition is never checked
+   * against a product-wide grant or another edition: its central check reports "access unknown".
+   */
+  centralEditionKey: kebab.nullable().default(null),
+});
+
+/** Product artwork: an icon and/or a cover image from an approved source, with provenance. */
+export const ArtworkImageSchema = z.strictObject({
+  src: relativeAsset,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  /** Empty alt only for purely decorative art next to the product name. */
+  alt: z.string(),
+  provenance: text,
+  /** "official" = supplied by HCG / the product repository; "concept" = illustration, labelled as such. */
+  kind: z.enum(["official", "concept"]).default("official"),
+  /** Smaller renditions for responsive loading. */
+  variants: z.array(z.strictObject({ src: relativeAsset, width: z.number().int().positive() })).default([]),
+  /**
+   * An AVIF copy exists next to `src` and every variant (same name, `.avif`). Browsers that support
+   * AVIF load it; the WebP files remain the fallback.
+   */
+  avif: z.boolean().default(false),
+});
+
+export const ProductArtworkSchema = z.strictObject({
+  icon: ArtworkImageSchema.nullable().default(null),
+  cover: ArtworkImageSchema.nullable().default(null),
+  /** Accent used for the product's branded fallback and highlights (restrained). */
+  accent: z.enum(["cyan", "violet", "silver", "mint", "amber"]).default("cyan"),
+  /**
+   * "app": a full-bleed app icon, shown with the platform's rounded mask.
+   * "framed": the artwork draws its own frame, so it is shown whole (no mask, no extra ring).
+   */
+  iconStyle: z.enum(["app", "framed"]).default("app"),
 });
 
 /** Link from a Store product (or one of its editions) to its product page in HCG Repo. */
@@ -110,6 +147,22 @@ export const ProductSchema = z.strictObject({
   catalogueNotes: z.array(text).default([]),
   editions: z.array(EditionSchema).default([]),
   hcgRepo: z.array(HcgRepoLinkSchema).default([]),
+  /** Features the development repository states are implemented today. */
+  currentFeatures: z.array(text).default([]),
+  /** Capabilities the repository marks as planned / not yet working. Never shown as available. */
+  plannedFeatures: z.array(text).default([]),
+  /** Requirements as declared by the build configuration (OS versions, jailbreak layout, …). */
+  requirements: z.array(text).default([]),
+  artwork: ProductArtworkSchema.default({ icon: null, cover: null, accent: "cyan", iconStyle: "app" }),
+  /** Curated storefront collections. Content decision, kept here rather than in components. */
+  collections: z.array(z.enum(["featured", "jailbreak", "developer-tools"])).default([]),
+  /**
+   * The product was merged into another one. It stays in the catalogue so its ID, links and any
+   * entitlements keep working, but it is not listed; its page points to the successor.
+   */
+  supersededBy: kebab.nullable().default(null),
+  /** Earlier names, shown on the successor's page so people can find it. */
+  formerNames: z.array(text).default([]),
 });
 
 export const ArtifactSchema = z
@@ -190,4 +243,5 @@ export type Product = z.infer<typeof ProductSchema>;
 export type Artifact = z.infer<typeof ArtifactSchema>;
 export type Edition = z.infer<typeof EditionSchema>;
 export type HcgRepoLink = z.infer<typeof HcgRepoLinkSchema>;
+export type ArtworkImage = z.infer<typeof ArtworkImageSchema>;
 export type Release = z.infer<typeof ReleaseSchema>;

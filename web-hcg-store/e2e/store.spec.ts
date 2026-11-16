@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { collectErrors, FIXTURE, horizontalOverflow, REAL, ROUTES } from "./helpers";
 
 test.describe("routes and direct navigation", () => {
@@ -14,7 +14,7 @@ test.describe("routes and direct navigation", () => {
 
   test("client-side navigation moves focus to main content", async ({ page }) => {
     await page.goto(REAL + "/");
-    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Browse apps" }).click();
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Browse", exact: true }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
     await expect(page.locator("#main")).toBeFocused();
     await page.goBack();
@@ -71,11 +71,60 @@ test.describe("responsive layouts", () => {
     await ctx.close();
   });
 
-  test("below-the-fold screenshots are lazy-loaded", async ({ page }) => {
+  test("product banner is the priority image; screenshots below it are lazy-loaded", async ({ page }) => {
     await page.goto(REAL + "/apps/hcg-executable-maker");
-    const imgs = page.locator(".gallery img");
-    await expect(imgs).toHaveCount(2);
-    for (const i of [0, 1]) await expect(imgs.nth(i)).toHaveAttribute("loading", "lazy");
+    const banner = page.locator(".product-banner img");
+    await expect(banner).toHaveAttribute("loading", "eager");
+    await expect(banner).toHaveAttribute("fetchpriority", "high");
+    // Chromium supports AVIF, so it picks the AVIF rendition; the WebP files stay as the fallback.
+    await expect.poll(() => banner.evaluate((i: HTMLImageElement) => i.currentSrc)).toMatch(/banner-\d+\.avif$/);
+    const shots = page.locator(".product-gallery img");
+    await expect(shots).toHaveCount(2);
+    for (const s of await shots.all()) await expect(s).toHaveAttribute("loading", "lazy");
+  });
+
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    test(`banners and icons are shown whole at ${width}px: no cropping or distortion`, async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+      const page = await ctx.newPage();
+      for (const path of ["/", "/apps", "/apps/hcg-lifeos", "/apps/hcg-one-unleashed"]) {
+        await page.goto(REAL + path);
+        // Scroll through the page like a visitor so lazy-loaded artwork loads.
+        await page.evaluate(async () => {
+          for (let y = 0; y < document.body.scrollHeight; y += 500) {
+            window.scrollTo(0, y);
+            await new Promise((r) => setTimeout(r, 40));
+          }
+        });
+        // Wait until every artwork image has actually decoded (a broken one would never get there).
+        await expect
+          .poll(() => page.evaluate(() => Array.from(document.querySelectorAll<HTMLImageElement>(".product-cover--art img, .product-banner img, .product-mark--icon img")).every((i) => i.naturalWidth > 0)), {
+            message: `${path} at ${width}px: artwork loaded`,
+          })
+          .toBe(true);
+        const bad = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLImageElement>(".product-cover--art img, .product-banner img, .product-mark--icon img"))
+            .map((img) => {
+              const fit = getComputedStyle(img).objectFit;
+              const box = img.clientWidth / img.clientHeight;
+              const natural = img.naturalWidth / img.naturalHeight;
+              // "contain" never crops or stretches; any other fit is fine only if the box has the image's own ratio.
+              const ok = img.naturalWidth > 0 && (fit === "contain" || Math.abs(box - natural) < 0.03);
+              return ok ? null : `${img.currentSrc} box ${box.toFixed(2)} natural ${natural.toFixed(2)} fit ${fit}`;
+            })
+            .filter(Boolean),
+        );
+        expect(bad, `${path} at ${width}px`).toEqual([]);
+      }
+      await ctx.close();
+    });
+  }
+
+  test("listing cards lazy-load their art", async ({ page }) => {
+    await page.goto(REAL + "/apps");
+    const imgs = page.locator(".product-card img");
+    expect(await imgs.count()).toBeGreaterThan(0);
+    for (const img of await imgs.all()) await expect(img).toHaveAttribute("loading", "lazy");
   });
 });
 
@@ -116,7 +165,7 @@ test.describe("keyboard navigation", () => {
     await page.goto(REAL + "/apps");
     await page.getByRole("searchbox", { name: "Search", exact: true }).focus();
     await page.keyboard.type("imap");
-    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 11 products match");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
     await expect(page).toHaveURL(/\?q=imap/);
     await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
     await page.getByRole("checkbox", { name: "iOS" }).focus();
@@ -131,7 +180,42 @@ test.describe("keyboard navigation", () => {
     await page.getByRole("searchbox", { name: "Search apps" }).first().fill("terminal");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/apps\?q=terminal/);
-    await expect(page.getByRole("link", { name: "HCG Terminal" })).toBeVisible();
+    // Don't rely on the URL alone: with React Router's default transitions the URL changed before
+    // the browse page rendered, and the home page (which links "HCG Terminal" twice) was still on
+    // screen. The app now renders route changes urgently (App.tsx); this test still waits for the
+    // browse page itself and looks for the result only in its results region.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
+    const results = page.getByRole("region", { name: "Results" });
+    await expect(results.getByRole("status")).toHaveText("1 of 10 products match");
+    await expect(results.getByRole("link", { name: "HCG Terminal", exact: true })).toBeVisible();
+  });
+});
+
+test.describe("navigation on a busy device", () => {
+  // Chromium CPU throttling makes renders slow enough to expose URL/render races deterministically.
+  const throttle = async (page: Page, rate: number) => (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate });
+
+  test("a filter ticked right after clearing the search keeps the search cleared", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(REAL + "/apps?q=imap");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
+    await throttle(page, 20);
+    await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
+    await page.getByRole("checkbox", { name: "iOS" }).focus();
+    await page.keyboard.press("Space");
+    await expect.poll(() => new URL(page.url()).search).toBe("?platform=ios");
+    await expect(page.getByRole("region", { name: "Results" }).getByRole("link", { name: "HCG CardX" })).toBeVisible();
+  });
+
+  test("the browse page is on screen once the URL shows the search", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(REAL + "/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await throttle(page, 20);
+    await page.getByRole("searchbox", { name: "Search apps" }).first().fill("terminal");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/apps\?q=terminal/);
+    expect(await page.getByRole("heading", { level: 1 }).textContent()).toBe("Browse apps");
   });
 });
 
@@ -154,22 +238,27 @@ test.describe("reduced motion", () => {
     expect(reduced.running).toBe(0);
   });
 
-  test("home hero shows the banner, labelled as an illustration, loaded eagerly", async ({ page }) => {
+  test("home hero shows the full banner, uncropped, labelled as an illustration, loaded eagerly", async ({ page }) => {
     await page.goto(REAL + "/");
     const banner = page.locator(".hero-banner img");
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute("loading", "eager");
-    await expect(banner).toHaveAttribute("alt", /illustration/i);
+    await expect(banner).toHaveAttribute("alt", /HCG Store wordmark/);
+    await expect(banner).toHaveAttribute("srcset", /hcg-store-hero-2000\.webp 2000w/);
+    // The whole 3:1 artwork is shown: the rendered box keeps the image's aspect ratio (no crop).
+    const box = await banner.evaluate((img: HTMLImageElement) => ({ w: img.clientWidth, h: img.clientHeight, fit: getComputedStyle(img).objectFit }));
+    expect(Math.abs(box.w / box.h - 2000 / 667)).toBeLessThan(0.03);
+    expect(["contain", "fill"]).toContain(box.fit);
     await expect(page.locator(".hero-banner").getByText("Illustration")).toBeVisible();
     expect(await banner.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   });
 
   test("home hero text remains when the banner cannot load", async ({ page }) => {
-    await page.route(/hcg-store-banner-\d+\.webp$/, (r) => r.abort());
+    await page.route(/hcg-store-hero-\d+\.webp$/, (r) => r.abort());
     await page.goto(REAL + "/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/HCG\s*Store/);
     await expect(page.locator(".hero-banner")).toHaveCount(0);
-    await expect(page.getByRole("link", { name: /Browse apps/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Browse Products/ }).first()).toBeVisible();
   });
 
   test("text stays visible when images are blocked", async ({ page }) => {
