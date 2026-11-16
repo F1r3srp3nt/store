@@ -19,6 +19,35 @@ provider**.
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities (`jose` pinned to 6.2.14, a release more than two weeks old) |
 | Mutation check of the acceptance suite | manual | ✔ The suite catches all 5 deliberately introduced faults: an entitlement bypass, a signature bypass, idempotency removed, central re-check removed, and the amount check removed |
 
+## HCG Connect development client (16 November 2026)
+
+**Configuration checks against the real HCG Connect: passed** (`npm run hcg:dev:verify -- --auto-only`, run from HCG Store's build environment once it was allowed to reach HCG):
+- discovery matches the handoff (no revocation or end-session endpoint);
+- 1 ES256 signing key;
+- the client is registered with its exact callback (control: a random client ID gets `oauth_client_not_found`);
+- an unregistered callback is refused;
+- `/me` without a token answers 401.
+
+**Local server with the real configuration: passed:**
+- PKCE S256, state and nonce, fresh per attempt;
+- forged, stateless and replayed callbacks refused (HCG's token endpoint refused an invalid code with `invalid_grant`);
+- unauthenticated requests 401;
+- cross-origin logout 403.
+
+**Sign-in with a real HCG account: not run.** It needs a person and a browser on the machine running the server; see [HCG-CONNECT-DEV.md](HCG-CONNECT-DEV.md).
+
+Store code against the mock identity provider (`server/test/connect-evidence.test.ts`, 6 tests) covers:
+- `/me` confirmation, and refusal on mismatch;
+- the evidence trail holds no tokens;
+- replay;
+- refresh rotation;
+- logout deletes tokens;
+- the development client is refused in production.
+
+Full suites:
+- `npm run check`: 192 passed.
+- `npm run test:e2e`: 44 passed in three consecutive runs. One earlier run, right after the full build, had a single failure that was not captured.
+
 ## Central integration, Store side (16 November 2026)
 
 Against mocks of the contracts in [MAIN-SITE-INTEGRATION.md](MAIN-SITE-INTEGRATION.md); nothing was run against live HCG (the build environment cannot reach it).

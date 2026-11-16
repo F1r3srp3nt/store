@@ -23,8 +23,8 @@ import { extname, join, resolve, sep } from "node:path";
 import { DOWNLOADS_NOT_AVAILABLE, decideAccess, deliverableArtifacts, editionIdsOf, validEdition, type AccessDeps } from "./access";
 import type { StoreConfig } from "./config";
 import { pkceChallenge, randomToken } from "./crypto";
-import type { Db } from "./db";
-import type { EntitlementAuthority } from "./entitlements";
+import { recordAuthEvent, type Db } from "./db";
+import { fetchMe, type EntitlementAuthority } from "./entitlements";
 import type { CentralGrantOutbox } from "./grants";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
@@ -43,6 +43,8 @@ export interface AppDeps {
   now: () => number;
   /** Reports verified purchases to HCG (decision D5). Inert unless configured. */
   outbox?: CentralGrantOutbox;
+  /** fetch used for HCG's Ecosystem API at sign-in (tests inject a mock). */
+  ecosystemFetch?: typeof fetch;
   /** Used by the test checkout page to deliver its signed webhook. Defaults to an in-process call. */
   deliverTestWebhook?: (rawBody: string, signature: string) => Promise<void>;
 }
@@ -100,6 +102,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       purposeData,
       now(),
     );
+    recordAuthEvent(db, now(), "login_started", { detail: { purpose, pkce: "S256", redirectUri: cfg.hcgConnect!.redirectUri } });
     redirect(res, c.authorizationUrl({ state, nonce, codeChallenge: pkceChallenge(verifier) }));
   }
 
@@ -110,25 +113,49 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       | { state: string; verifier: string; nonce: string; return_to: string; purpose: string; purpose_data: string | null; created_at: number }
       | undefined;
     if (attempt) db.prepare(`DELETE FROM login_attempts WHERE state = ?`).run(state);
+    const reject = (reason: string, extra: Record<string, unknown> = {}) => recordAuthEvent(db, now(), "login_rejected", { detail: { reason, ...extra } });
     if (!attempt || now() - attempt.created_at > LOGIN_ATTEMPT_TTL_MS) {
+      reject(attempt ? "state_expired" : "state_unknown_or_already_used");
       return authErrorPage(res, "This sign-in link has expired or was already used. Start again from HCG Store.");
     }
     const err = url.searchParams.get("error");
     if (err) {
+      reject("provider_error", { error: err.replace(/[^a-z0-9_]/gi, "").slice(0, 60) });
       return authErrorPage(res, err === "access_denied" ? "Sign-in was cancelled. Nothing was changed." : "HCG Connect did not complete the sign-in.");
     }
     const code = url.searchParams.get("code");
-    if (!code) return authErrorPage(res, "HCG Connect did not return a sign-in code.");
+    if (!code) {
+      reject("missing_code");
+      return authErrorPage(res, "HCG Connect did not return a sign-in code.");
+    }
     let result;
     try {
       result = await c.exchangeCode(code, attempt.verifier, attempt.nonce);
-    } catch {
+    } catch (e) {
+      // Our own error messages name the failing check (never a token or code).
+      reject("exchange_or_verification_failed", { check: e instanceof Error ? e.message.slice(0, 120) : "unknown" });
       return authErrorPage(res, "The sign-in could not be verified. Nothing was changed; please try again.");
+    }
+    // Confirm the account with HCG's Ecosystem API (/me). A different account is refused outright;
+    // an unreachable /me leaves the sign-in valid but unconfirmed.
+    let account: "matched" | "unavailable" | "not-configured" = "not-configured";
+    if (cfg.ecosystem) {
+      const me = await fetchMe(cfg.ecosystem.baseUrl, result.tokens.accessToken, deps.ecosystemFetch);
+      if (me.status === "ok" && me.userId !== result.identity.sub) {
+        reject("account_mismatch_with_me");
+        return authErrorPage(res, "HCG reported a different account for this sign-in. Nothing was changed.");
+      }
+      account = me.status === "ok" ? "matched" : "unavailable";
     }
     // Replace any existing session in this browser.
     const existing = currentSession(req);
     if (existing) sessions.end(existing.idHash, "replaced");
-    const { id, session } = sessions.create(result.identity, result.tokens);
+    const { id, session } = sessions.create(result.identity, result.tokens, account === "matched" ? now() : null);
+    recordAuthEvent(db, now(), "login_succeeded", {
+      sessionHash: session.idHash,
+      sub: session.sub,
+      detail: { purpose: attempt.purpose, callback: cfg.hcgConnect!.redirectUri, idTokenVerified: true, accessTokenVerified: true, accountWithMe: account },
+    });
     const setCookie = sessions.cookie(id, cfg.sessionAbsoluteSeconds);
     if (attempt.purpose === "sileo") {
       // The Sileo flow finishes on its own page; the browser session is not kept for it.
@@ -154,6 +181,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       configured: !!connect,
       signedIn: !!s,
       user: s ? { sub: s.sub, email: s.email, name: s.name } : null,
+      /** Sign-in confirmed this account with HCG's /me. */
+      hcgAccountConfirmed: !!s?.accountConfirmedAt,
     };
   }
 

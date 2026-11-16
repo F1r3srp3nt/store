@@ -85,6 +85,13 @@ export interface PublishingSettings {
   chunkBytes: number;
 }
 
+/**
+ * HCG Connect clients issued for local development only (not secrets). Production refuses them, so
+ * a development configuration can never be deployed by mistake.
+ * - af487795-…: "hcg-store-web-development", redirect http://127.0.0.1:8787/auth/callback (16 Nov 2026).
+ */
+export const DEVELOPMENT_CLIENT_IDS = ["af487795-ead1-4671-8b09-76301762ee2c"];
+
 export class ConfigError extends Error {
   constructor(public readonly problems: string[]) {
     super(`HCG Store server configuration refused:\n- ${problems.join("\n- ")}`);
@@ -167,6 +174,9 @@ export function parseStoreConfig(env: Env): StoreConfig {
     const tokenEndpoint = httpsUrl(connectFields.tokenEndpoint, "HCG_CONNECT_TOKEN_ENDPOINT", problems, test);
     const jwksUri = httpsUrl(connectFields.jwksUri, "HCG_CONNECT_JWKS_URI", problems, test);
     const redirectUri = httpsUrl(connectFields.redirectUri, "HCG_CONNECT_REDIRECT_URI", problems, test);
+    if (!test && DEVELOPMENT_CLIENT_IDS.includes(connectFields.clientId ?? "")) {
+      problems.push("HCG_CONNECT_CLIENT_ID is HCG Store's development client. Production needs its own client, issued for the production callback.");
+    }
     if (redirectUri && publicOrigin && new URL(redirectUri).origin !== publicOrigin) {
       problems.push("HCG_CONNECT_REDIRECT_URI must be on HCG_STORE_PUBLIC_ORIGIN.");
     }

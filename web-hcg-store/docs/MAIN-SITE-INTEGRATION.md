@@ -64,6 +64,24 @@ What can be issued now: the development client with `http://127.0.0.1:8787/auth/
 | Access token | `aud` = `authenticated`; `sub` = central account ID |
 | Revocation, end-session | Not offered. Store logout deletes its session and stored tokens; refresh tokens rotate. |
 
+### Development client (16 Nov 2026)
+
+HCG issued `af487795-ead1-4671-8b09-76301762ee2c` (`hcg-store-web-development`, product `hcg.store`):
+a public client with callback `http://127.0.0.1:8787/auth/callback`, status `configured_untested`.
+The local setup, the guided verifier and what each check proves are in [HCG-CONNECT-DEV.md](HCG-CONNECT-DEV.md).
+
+| Kind | Check | Result |
+| --- | --- | --- |
+| Configuration (real HCG, from HCG Store's build environment) | Discovery matches the handoff; no revocation or end-session endpoint advertised | Passed |
+| Configuration | Signing keys | Passed: 1 ES256 key |
+| Configuration | Client registered: authorize with the exact callback | Passed: 302 to HCG's consent page. A random client ID gets `400 oauth_client_not_found` (control). |
+| Configuration | Unregistered callback refused | Passed: 400 |
+| Configuration | `/me` without a token | Passed: 401 |
+| Local server with the real configuration | 1: PKCE S256, state and nonce; 6: forged, stateless and replayed callbacks refused (HCG's token endpoint refused an invalid code with `invalid_grant`); unauthenticated `/api/v1/library` 401; cross-origin logout 403 | Passed |
+| Sign-in with a real HCG account | 2: exact callback; 3: code exchange, account matches `/me`; 4: restore after restart and refresh with rotation; 5: logout | **Not run yet.** This needs a person to sign in, in a browser on the same machine as the callback. Run `npm run hcg:dev:verify` on your Mac. |
+
+Do not ask HCG to mark the client verified until the sign-in rows pass.
+
 ## Ecosystem API
 
 Base `https://beta.hakmicapitalgroup.com/api/public/ecosystem/v1`. Every call carries the user's HCG

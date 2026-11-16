@@ -158,6 +158,32 @@ interface CheckResponse {
 
 export const DOWNLOAD_FEATURE = "download";
 
+/**
+ * `GET /me` (DEPLOYED): the account HCG's Ecosystem API sees for an access token. Used once at sign-in
+ * to confirm that the account the Store verified from the tokens is the one HCG's API recognises.
+ */
+export async function fetchMe(
+  baseUrl: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ status: "ok"; userId: string } | { status: "unauthorized" } | { status: "unavailable"; reason: string }> {
+  try {
+    const res = await fetchImpl(`${baseUrl}/me`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+      redirect: "error",
+    });
+    if (res.status === 401) return { status: "unauthorized" };
+    const type = res.headers.get("content-type") ?? "";
+    if (res.status !== 200 || !type.includes("application/json")) return { status: "unavailable", reason: `HTTP ${res.status}` };
+    const body = (await res.json()) as { api_version?: unknown; user?: { id?: unknown } };
+    if (body.api_version !== "v1" || typeof body.user?.id !== "string") return { status: "unavailable", reason: "unrecognised answer" };
+    return { status: "ok", userId: body.user.id };
+  } catch (e) {
+    return { status: "unavailable", reason: e instanceof Error ? e.name : "error" };
+  }
+}
+
 export class HcgEcosystemAuthority implements EntitlementAuthority {
   readonly kind = "hcg-ecosystem" as const;
   readonly canGrant = false;
