@@ -87,6 +87,29 @@ const MIGRATIONS: string[] = [
      created_at INTEGER NOT NULL,
      revoked_at INTEGER
    );`,
+  // 2: out-of-order payment events and the outbox of purchase grants for HCG (decision D5).
+  `CREATE TABLE checkout_reversals (
+     checkout_id TEXT PRIMARY KEY,
+     type TEXT NOT NULL,
+     received_at INTEGER NOT NULL
+   );
+   CREATE TABLE central_grants (
+     purchase_key TEXT PRIMARY KEY,
+     sub TEXT NOT NULL,
+     product_id TEXT NOT NULL,
+     edition TEXT,
+     state TEXT NOT NULL CHECK (state IN ('active', 'revoked')),
+     reason TEXT,
+     starts_at INTEGER NOT NULL,
+     ends_at INTEGER,
+     revision INTEGER NOT NULL,
+     delivered_revision INTEGER NOT NULL DEFAULT 0,
+     attempts INTEGER NOT NULL DEFAULT 0,
+     next_attempt_at INTEGER NOT NULL DEFAULT 0,
+     last_error TEXT,
+     updated_at INTEGER NOT NULL
+   );
+   CREATE INDEX central_grants_pending ON central_grants(next_attempt_at) WHERE delivered_revision < revision;`,
 ];
 
 export type Db = DatabaseSync;

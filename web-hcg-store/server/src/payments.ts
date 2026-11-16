@@ -9,7 +9,12 @@
  *   a client-side flag never grants anything.
  * - Every provider event is processed at most once (provider + event ID is a primary key), and a
  *   checkout can produce at most one purchase.
- * - Refunds, chargebacks and subscription expiry revoke the grants that purchase created.
+ * - Refunds, chargebacks and subscription expiry revoke the grants that purchase created, and only
+ *   those: access from another valid purchase is untouched.
+ * - Events may arrive out of order. A refund or dispute that arrives before the completed payment is
+ *   remembered, so the late completion records the purchase as refunded and grants nothing. A stale
+ *   renewal never shortens access, and a stale expiry never ends a renewed subscription.
+ * - Verified purchases reach HCG through the central grant outbox (grants.ts) when it is configured.
  *
  * Only a TEST provider exists. HCG has no approved payment integration yet (see docs/PAYMENTS.md);
  * a live provider must be added and approved before live payments can be enabled.
@@ -18,7 +23,8 @@ import { createHmac } from "node:crypto";
 import { randomToken, safeEqual } from "./crypto";
 import { transaction, type Db } from "./db";
 import type { EntitlementAuthority } from "./entitlements";
-import type { Offer, Registry } from "./registry";
+import type { CentralGrantOutbox, GrantReason } from "./grants";
+import { findProduct, type Offer, type Registry } from "./registry";
 
 export type PaymentEventType =
   | "checkout.completed"
@@ -58,7 +64,13 @@ export class PaymentLedger {
     private readonly registry: Registry,
     private readonly authority: EntitlementAuthority,
     private readonly now: () => number,
+    private readonly outbox: CentralGrantOutbox | null = null,
   ) {}
+
+  /** Whether a verified purchase can be fulfilled: locally (test ledger) or centrally (grant outbox). */
+  get canFulfil(): boolean {
+    return this.authority.canGrant || !!this.outbox?.enabled;
+  }
 
   createCheckout(sub: string, offer: Offer, provider: string): CheckoutSession {
     const id = `chk_${randomToken(18)}`;
@@ -102,7 +114,27 @@ export class PaymentLedger {
   }
 
   private grantsFor(offer: Offer) {
-    return offer.grants.map((g) => ({ centralProductId: offer.centralProductId, edition: g.edition }));
+    const product = findProduct(this.registry, offer.productId);
+    return offer.grants.map((g) => ({
+      centralProductId: offer.centralProductId,
+      edition: g.edition,
+      // The central key for this edition (D2): "*" is the explicit all-editions licence, null a product without editions.
+      centralEdition: g.edition === "*" ? "*" : g.edition === "default" ? null : (product?.editions.find((e) => e.id === g.edition)?.centralEditionKey ?? null),
+    }));
+  }
+
+  private grant(provider: string, sub: string, offer: Offer, purchaseId: string, startsAt: number, periodEnd: number | null) {
+    for (const g of this.grantsFor(offer)) {
+      if (this.authority.canGrant) this.authority.grant(sub, g.centralProductId, g.edition, purchaseId, periodEnd);
+      if (this.outbox?.enabled) this.outbox.setActive(this.outbox.key(provider, purchaseId, g.centralEdition), sub, g.centralProductId, g.centralEdition, startsAt, periodEnd);
+    }
+  }
+
+  private revoke(provider: string, sub: string, offer: Offer, purchaseId: string, reason: GrantReason) {
+    for (const g of this.grantsFor(offer)) {
+      if (this.authority.canGrant) this.authority.revoke(sub, g.centralProductId, g.edition, purchaseId);
+      if (this.outbox?.enabled) this.outbox.setRevoked(this.outbox.key(provider, purchaseId, g.centralEdition), reason);
+    }
   }
 
   /** Apply one verified provider event. Must only be called after the signature has been verified. */
@@ -129,7 +161,9 @@ export class PaymentLedger {
 
     const setCheckout = (status: CheckoutSession["status"]) =>
       this.db.prepare(`UPDATE checkout_sessions SET status = ?, updated_at = ? WHERE id = ?`).run(status, t, chk.id);
-    const purchase = this.db.prepare(`SELECT id, status FROM purchases WHERE checkout_id = ?`).get(chk.id) as { id: string; status: string } | undefined;
+    const purchase = this.db.prepare(`SELECT id, status, current_period_end FROM purchases WHERE checkout_id = ?`).get(chk.id) as
+      | { id: string; status: string; current_period_end: number | null }
+      | undefined;
 
     switch (e.type) {
       case "checkout.pending":
@@ -145,28 +179,37 @@ export class PaymentLedger {
         const id = `pur_${randomToken(18)}`;
         const periodEnd = offer.kind === "subscription" ? (e.periodEnd ?? null) : null;
         if (offer.kind === "subscription" && !periodEnd) return "rejected";
+        // A refund or dispute already arrived for this checkout: record the purchase, grant nothing.
+        const reversal = this.db.prepare(`SELECT type FROM checkout_reversals WHERE checkout_id = ?`).get(chk.id) as { type: string } | undefined;
+        const status = reversal ? (reversal.type === "payment.refunded" ? "refunded" : "disputed") : offer.kind === "subscription" ? "active" : "paid";
         this.db
           .prepare(
             `INSERT INTO purchases (id, sub, offer_id, checkout_id, provider, provider_payment_id, amount, currency, kind, status, current_period_end, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(id, chk.sub, offer.id, chk.id, provider, e.paymentId, e.amount, e.currency, offer.kind, offer.kind === "subscription" ? "active" : "paid", periodEnd, t, t);
+          .run(id, chk.sub, offer.id, chk.id, provider, e.paymentId, e.amount, e.currency, offer.kind, status, periodEnd, t, t);
         setCheckout("completed");
-        for (const g of this.grantsFor(offer)) this.authority.grant(chk.sub, g.centralProductId, g.edition, id, periodEnd);
+        if (!reversal) this.grant(provider, chk.sub, offer, id, t, periodEnd);
         return "processed";
       }
       case "payment.refunded":
       case "payment.disputed": {
-        if (!purchase) return "ignored";
+        if (!purchase) {
+          // Out of order: remember it, so a late "checkout.completed" cannot grant access.
+          this.db.prepare(`INSERT OR IGNORE INTO checkout_reversals (checkout_id, type, received_at) VALUES (?, ?, ?)`).run(chk.id, e.type, t);
+          return "processed";
+        }
         this.db.prepare(`UPDATE purchases SET status = ?, updated_at = ? WHERE id = ?`).run(e.type === "payment.refunded" ? "refunded" : "disputed", t, purchase.id);
-        for (const g of this.grantsFor(offer)) this.authority.revoke(chk.sub, g.centralProductId, g.edition, purchase.id);
+        this.revoke(provider, chk.sub, offer, purchase.id, e.type === "payment.refunded" ? "refund" : "chargeback");
         return "processed";
       }
       case "subscription.renewed": {
         if (!purchase || offer.kind !== "subscription" || !e.periodEnd) return "ignored";
         if (purchase.status === "refunded" || purchase.status === "disputed") return "ignored";
+        // A stale renewal (delivered late) never shortens or re-extends to an older period.
+        if (purchase.current_period_end !== null && e.periodEnd <= purchase.current_period_end) return "ignored";
         this.db.prepare(`UPDATE purchases SET status = 'active', current_period_end = ?, updated_at = ? WHERE id = ?`).run(e.periodEnd, t, purchase.id);
-        for (const g of this.grantsFor(offer)) this.authority.grant(chk.sub, g.centralProductId, g.edition, purchase.id, e.periodEnd);
+        this.grant(provider, chk.sub, offer, purchase.id, t, e.periodEnd);
         return "processed";
       }
       case "subscription.canceled": {
@@ -177,8 +220,11 @@ export class PaymentLedger {
       }
       case "subscription.expired": {
         if (!purchase || offer.kind !== "subscription") return "ignored";
+        // A stale expiry (for a period that has since been renewed) must not end access.
+        const end = purchase.current_period_end;
+        if (end !== null && (e.periodEnd !== undefined ? e.periodEnd < end : t < end)) return "ignored";
         this.db.prepare(`UPDATE purchases SET status = 'expired', updated_at = ? WHERE id = ?`).run(t, purchase.id);
-        for (const g of this.grantsFor(offer)) this.authority.revoke(chk.sub, g.centralProductId, g.edition, purchase.id);
+        this.revoke(provider, chk.sub, offer, purchase.id, "subscription_ended");
         return "processed";
       }
     }

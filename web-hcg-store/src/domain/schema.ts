@@ -74,6 +74,12 @@ export const EditionSchema = z.strictObject({
   /** Package layouts (e.g. iphoneos-arm64 rootless) that the build tooling declares. Not a compatibility promise. */
   layouts: z.array(z.strictObject({ architecture: text, label: text, note: text.nullable().default(null) })).default([]),
   note: text.nullable().default(null),
+  /**
+   * The key HCG's central licensing uses for this edition: a module-scope licence with scope_key
+   * "edition:<key>" (decision D2). Null = not mapped centrally. An unmapped edition is never checked
+   * against a product-wide grant or another edition: its central check reports "access unknown".
+   */
+  centralEditionKey: kebab.nullable().default(null),
 });
 
 /** Product artwork: an icon and/or a cover image from an approved source, with provenance. */
