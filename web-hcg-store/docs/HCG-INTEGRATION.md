@@ -59,6 +59,8 @@ variables were removed.
 
 ## 4. NEEDS HCG: ready-to-paste request for the main HCG site
 
+The full, current request (16 November 2026) is [MAIN-SITE-HANDOFF-REQUEST.md](MAIN-SITE-HANDOFF-REQUEST.md): login client, Ecosystem API contracts, central product IDs, a grant/revoke endpoint, release approval, test setup and the acceptance checklist. The summary below is kept for reference.
+
 > Register **HCG Store (web)** as an HCG Connect client, using the ERP App integrations workflow
 > ("Inspect registrations" → "Issue or reuse login client"). Do not reuse another app's client.
 >
