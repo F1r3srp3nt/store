@@ -36,18 +36,25 @@ change adds; nothing that worked was replaced.
 1. Maker (signed in with HCG Connect) lists products the person may publish, or creates a **draft product** (Store-only;
    private/internal releases only until HCG adds it to the catalogue with a central ID).
 2. **Private draft release**: product, edition, SemVer version, build number (unique per product/edition — releases are
-   immutable), channel, notes, compatibility, distribution (free/paid/subscription/entitlement — prices stay with HCG's
-   offers), requested eligibility (private/internal-testing/public), destinations (HCG Store, HCG Repo).
+   immutable; also for products without editions), channel, notes, compatibility, distribution (free/paid/subscription/
+   entitlement — prices stay with HCG's offers), requested eligibility (private/internal-testing/public), destinations
+   (HCG Store, HCG Repo). **Idempotent:** the same person asking again for the same version and build with the same
+   details gets the existing draft back (`200`, `reused: true`); different details → `409 draft_exists` naming the draft;
+   a submitted/approved/withdrawn release → `409 version_exists`.
 3. **Each file**: declared (name, platform, format, size, SHA-256, architectures, minimum OS, the uploader's signature
    and notarisation result, Debian control fields) → **scoped upload URL** (HMAC, one file, one person, 15 min) →
    chunks with `Content-Range`, resumable at the last confirmed byte (`GET` the URL for the offset; expired URLs are
    renewed without losing bytes) → **complete**: the Store recomputes SHA-256, checks the format and archive safety,
    then moves the file to `releases/<product>/<release>/<sha-prefix>/<file>` (mode 0444). Rejected files are deleted
    from staging and recorded with the reasons.
-4. **Submit** locks the draft. **Approval is manual**: only in a browser session in HCG Store, by someone with the
+4. **Draft review**: the review page (`/publishing/releases/<id>`) shows each file's kind, signature facts and install
+   label, with **Download to review** for people HCG allows to publish or approve the product (short-lived grant,
+   re-checked at use, audited as `approver-review`). Customers get 404, anonymous visitors 401. Uploading never makes
+   a file public.
+5. **Submit** locks the draft. **Approval is manual**: only in a browser session in HCG Store, by someone with the
    approver permission, typing the version; **public** additionally needs a different person than the creator and a
    catalogue product with a central ID. Desktop tokens cannot approve.
-5. **Withdraw** (rollback): delivery stops on the next request, including links already issued; files and audit stay.
+6. **Withdraw** (rollback): delivery stops on the next request, including links already issued; files and audit stay.
 
 Supported files: Windows EXE/MSI/MSIX/ZIP, macOS app ZIP/DMG/PKG, iOS/iPadOS IPA (and jailbreak DEB), Linux
 DEB/RPM/AppImage. Checks: allow-listed extension per platform; magic bytes (MZ/PE, OLE, UDIF `koly`, `xar!`, RPM lead,
@@ -57,6 +64,16 @@ only (plus Apple's Symbols/SwiftSupport); MSIX needs `AppxManifest.xml`; macOS Z
 `Contents/Info.plist`; DEB control fields (gzip control archives) must match the declaration and, for HCG Repo, the
 catalogue's package mapping. **Signatures**: the Store reports only whether a signature structure is present; the
 uploader's verification result is stored as *reported*, never as Store-verified.
+
+**Kinds and install labels** (`artifact-validation.ts`: `inspectContent`, `installReadiness`). The Store decides each
+file's kind from its content: installer (EXE/MSI/MSIX/DMG/PKG/RPM, Linux DEB), portable app (ZIP, AppImage), iOS device
+build (IPA), iOS Simulator build (an IPA whose Info.plist names the Simulator platform — **refused**: it cannot be
+installed on an iPhone or iPad; a declaration of `simulator-build` is refused before upload), jailbreak package (DEB with
+an `iphoneos-*` architecture; declaring it for Linux, or a non-iOS architecture for iOS, is refused). The uploader may
+declare a `kind`; a contradiction is refused. For IPAs the Store reads `embedded.mobileprovision` (development, ad hoc,
+in-house, App Store, none; the CMS signature is not verified by the Store). The label is never "installable" for an
+unsigned, Simulator-only or jailbreak-only file. **Public approval is refused** while a release contains an unsigned
+iOS device build or one signed without a profile.
 
 ## 4. API
 
@@ -97,10 +114,16 @@ No storage administrator key exists anywhere: files are written by the Store pro
 
 ## 8. Tests
 
-- `server/test/publishing.test.ts` (9): client allow-list, forged tokens, roles ≠ permissions; private draft, chunked
+- `server/test/publishing.test.ts` (12): kinds from content (Simulator refused declared and hidden, declaration
+  contradictions, unsigned / no profile / development / ad hoc / in-house / App Store IPAs, jailbreak vs Linux DEB),
+  labels on the review page, public approval refused for an unsigned device build; approver draft review download with
+  identical bytes, customers refused, nothing public, unauthorised file additions and forged upload URLs refused;
+  idempotent draft creation and one release per version/build without editions; client allow-list, forged tokens, roles ≠ permissions; private draft, chunked
   upload, SHA-256, immutable storage; hash mismatch, wrong format, unsafe archive paths, refused names/types, recovery;
   resume after a broken chunk and an expired URL; manual approval rules (desktop refused, self-approval refused, CSRF,
   typed confirmation), review page metadata, entitlement-gated delivery, revocation and expired links; withdraw/rollback;
   DB-level immutability and append-only audit; draft products stay private; HCG Repo `.deb` mapping and Sileo metadata.
-- End to end with HCG Executable Maker (its real sign-in code, CLI, upload and verification):
-  `tools/ci/ship-to-store-e2e.sh` in the Maker repository against `server/test/ship-e2e-server.ts` (TEST only).
+- End to end with HCG Executable Maker (its real sign-in code, CLI, upload and verification, and a real build shipped
+  from the app's New Build result): `tools/ci/ship-to-store-e2e.sh` in the Maker repository (26 checks) against
+  `server/test/ship-e2e-server.ts` (TEST only; its `/review` control signs a person in through the browser flow and
+  presses *Download to review*).

@@ -31,7 +31,7 @@ import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, resolve, sep } from "node:path";
 import { z } from "zod";
-import { ALLOWED, checkDeclaration, CONTENT_TYPES, FORMATS, inspectContent, PLATFORMS, type PublishFormat, type PublishPlatform } from "./artifact-validation";
+import { ALLOWED, checkDeclaration, CONTENT_TYPES, FORMATS, inspectContent, installReadiness, kindFromFormat, KINDS, PLATFORMS, type ArtifactKind, type ContentReport, type PublishFormat, type PublishPlatform } from "./artifact-validation";
 import type { StoreConfig } from "./config";
 import { seal, sha256Hex, signPayload, unseal, verifyPayload, randomToken } from "./crypto";
 import { transaction, type Db } from "./db";
@@ -100,6 +100,8 @@ const ArtifactInput = z.strictObject({
       tool: z.string().trim().max(200).nullable().default(null),
     })
     .default({ status: "not-checked", evidence: null, tool: null }),
+  /** What the uploader says the file is. The Store decides the kind from the content and refuses a mismatch. */
+  kind: z.enum(KINDS).nullable().default(null),
   /** Debian control fields read by the uploading tool (HCG Repo destination). */
   package: z.strictObject({ id: z.string().regex(/^[a-z0-9][a-z0-9.+-]+$/), version: z.string().max(100), architecture: z.string().max(40) }).nullable().default(null),
 });
@@ -114,6 +116,7 @@ type ArtifactRow = {
   id: string; release_id: string; file_name: string; platform: string; format: string; architectures: string; minimum_os: string | null;
   size_bytes: number; declared_sha256: string; sha256: string | null; status: string; storage_key: string | null; content_type: string;
   validation: string | null; signing_reported: string; package: string | null; created_at: number; completed_at: number | null;
+  declared_kind: string | null;
 };
 
 const ELIGIBILITY_RANK = { private: 0, "internal-testing": 1, public: 2 } as const;
@@ -213,7 +216,13 @@ export function createPublishing(deps: PublishingDeps) {
 
   function artifactView(a: ArtifactRow) {
     const up = db.prepare("SELECT received_bytes FROM pub_uploads WHERE artifact_id = ?").get(a.id) as { received_bytes: number } | undefined;
+    const validation = a.validation ? (JSON.parse(a.validation) as { content: ContentReport | null; signatureStructure: ContentReport["signature"] }) : null;
+    const reported = (JSON.parse(a.signing_reported) as { status: string }).status;
+    // The Store's own finding wins; before the upload is complete only the declaration (or the format) is known.
+    const kind = (validation?.content?.kind ?? a.declared_kind ?? kindFromFormat(a.platform, a.format) ?? undefined) as ArtifactKind | undefined;
+    const readiness = installReadiness(a.platform, kind, validation?.signatureStructure ?? "not-checked", reported, validation?.content?.ios);
     return {
+      kind, declaredKind: a.declared_kind, kindCheckedByStore: Boolean(validation?.content?.kind), readiness,
       id: a.id, fileName: a.file_name, platform: a.platform, format: a.format, architectures: JSON.parse(a.architectures), minimumOs: a.minimum_os,
       sizeBytes: a.size_bytes, declaredSha256: a.declared_sha256, sha256: a.sha256, status: a.status, receivedBytes: up?.received_bytes ?? (a.status === "verified" ? a.size_bytes : 0),
       validation: a.validation ? JSON.parse(a.validation) : null, signingReported: JSON.parse(a.signing_reported), package: a.package ? JSON.parse(a.package) : null,
@@ -298,6 +307,9 @@ export function createPublishing(deps: PublishingDeps) {
     if (sha256 !== a.declared_sha256) problems.push(`SHA-256 mismatch: received ${sha256}, declared ${a.declared_sha256}. The file changed or was corrupted in transit.`);
     const content = problems.length ? null : inspectContent(staged, a.platform as PublishPlatform, a.format as PublishFormat);
     if (content) problems.push(...content.problems);
+    if (content?.kind && a.declared_kind && content.kind !== a.declared_kind && content.kind !== "simulator-build") {
+      problems.push(`Declared as a ${a.declared_kind}, but the file is a ${content.kind}.`);
+    }
     const pkgDeclared = a.package ? (JSON.parse(a.package) as { id: string; version: string; architecture: string }) : null;
     const destinations = JSON.parse(r.destinations) as string[];
     if (content?.debian?.controlReadable && pkgDeclared) {
@@ -337,7 +349,7 @@ export function createPublishing(deps: PublishingDeps) {
       db.prepare("UPDATE pub_artifacts SET status = 'verified', sha256 = ?, storage_key = ?, validation = ?, completed_at = ? WHERE id = ?")
         .run(sha256, storageKey, JSON.stringify(validation), now(), a.id);
       db.prepare("DELETE FROM pub_uploads WHERE artifact_id = ?").run(a.id);
-      audit(actor.sub, "artifact.verified", r.id, a.id, { sha256, sizeBytes: statSync(final).size, signatureStructure: validation.signatureStructure });
+      audit(actor.sub, "artifact.verified", r.id, a.id, { sha256, sizeBytes: statSync(final).size, kind: content?.kind, signatureStructure: validation.signatureStructure, ios: content?.ios });
     });
     return json(res, 200, { artifact: artifactView(artifact(a.id)!) });
   }
@@ -352,6 +364,8 @@ export function createPublishing(deps: PublishingDeps) {
     if (r.status === "withdrawn") return { ok: false, status: 410, code: "withdrawn", message: "This release was withdrawn." };
     const actor: Actor = { sub: subject.sub, accessToken: subject.accessToken, via: subject.via ?? "web" };
     if (await permitted(actor, "publish", r.product_id)) return { ok: true, basis: "publisher" };
+    // Draft review: the people HCG allows to approve this product may download it to check it before approving.
+    if (await permitted(actor, "approve", r.product_id)) return { ok: true, basis: "approver-review" };
     if (r.status !== "approved" || !r.approved_eligibility || r.approved_eligibility === "private") {
       return { ok: false, status: 403, code: "not_released", message: "This release is not approved for you to download." };
     }
@@ -470,8 +484,18 @@ export function createPublishing(deps: PublishingDeps) {
           audit(actor.sub, "release.draft-created", id, null, { productId: input.productId, editionId: input.editionId, version: input.version, build: input.build, eligibility: input.eligibility, distribution: input.distribution, via: actor.via });
         });
       } catch (e) {
-        if (String((e as Error).message).includes("UNIQUE")) throw new HttpError(409, "version_exists", `Version ${input.version} build ${input.build} already exists for this product. Releases are immutable: use a new build number.`);
-        throw e;
+        if (!String((e as Error).message).includes("UNIQUE")) throw e;
+        // Idempotent retry: the same person asking again for the same draft (e.g. the response was lost) gets the
+        // existing draft back instead of a duplicate or an error. Anything else is a real conflict.
+        const existing = db.prepare("SELECT * FROM pub_releases WHERE product_id = ? AND COALESCE(edition_id, '') = ? AND version = ? AND build = ?")
+          .get(input.productId, input.editionId ?? "", input.version, input.build) as ReleaseRow | undefined;
+        if (existing && existing.status === "draft" && existing.created_by === actor.sub) {
+          const same = existing.channel === input.channel && existing.distribution === input.distribution && existing.requested_eligibility === input.eligibility
+            && existing.destinations === JSON.stringify(input.destinations) && existing.release_notes === JSON.stringify(input.releaseNotes);
+          if (same) return send(json(res, 200, { ...releaseView(existing), reused: true }));
+          throw new HttpError(409, "draft_exists", `Your draft ${existing.id} already uses version ${input.version} build ${input.build} with different details. Continue that draft, or use a new build number.`);
+        }
+        throw new HttpError(409, "version_exists", `Version ${input.version} build ${input.build} already exists for this product${existing ? ` (${existing.status})` : ""}. Releases are immutable: use a new build number.`);
       }
       return send(json(res, 201, releaseView(release(id)!)));
     }
@@ -490,16 +514,22 @@ export function createPublishing(deps: PublishingDeps) {
         const problems = checkDeclaration({ fileName: input.fileName, platform: input.platform, format: input.format, sizeBytes: input.sizeBytes, maxBytes: P.maxUploadBytes });
         const destinations = JSON.parse(r.destinations) as string[];
         if (destinations.includes("hcg-repo") && input.format === "deb" && !input.package) problems.push("For HCG Repo, send the package identifier, version and architecture from the control file.");
+        if (input.kind === "simulator-build") {
+          problems.push("HCG Store does not accept iOS Simulator builds: they run only in the Simulator on a Mac and cannot be installed on an iPhone or iPad. Ship a device build (IPA) or a jailbreak package.");
+        } else if (input.kind) {
+          const expected = kindFromFormat(input.platform, input.format);
+          if (expected && input.kind !== expected) problems.push(`A ${input.platform} ${input.format} is a ${expected}, not a ${input.kind}.`);
+        }
         if (problems.length) throw new HttpError(400, "artifact_refused", problems.join(" "));
         const id = `art-${randomBytes(8).toString("hex")}`;
         try {
           transaction(db, () => {
             db.prepare(`INSERT INTO pub_artifacts (id, release_id, file_name, platform, format, architectures, minimum_os, size_bytes, declared_sha256, status,
-                        content_type, signing_reported, package, created_at) VALUES (?,?,?,?,?,?,?,?,?, 'awaiting-upload', ?, ?, ?, ?)`)
+                        content_type, signing_reported, package, created_at, declared_kind) VALUES (?,?,?,?,?,?,?,?,?, 'awaiting-upload', ?, ?, ?, ?, ?)`)
               .run(id, r.id, input.fileName, input.platform, input.format, JSON.stringify(input.architectures), input.minimumOs, input.sizeBytes, input.sha256,
-                   CONTENT_TYPES[input.format], JSON.stringify({ ...input.signing, reportedBy: actor.via }), input.package ? JSON.stringify(input.package) : null, now());
+                   CONTENT_TYPES[input.format], JSON.stringify({ ...input.signing, reportedBy: actor.via }), input.package ? JSON.stringify(input.package) : null, now(), input.kind);
             db.prepare("INSERT INTO pub_uploads (artifact_id, received_bytes, staging_key, attempts, updated_at) VALUES (?, 0, ?, 0, ?)").run(id, `.uploads/${id}.part`, now());
-            audit(actor.sub, "artifact.declared", r.id, id, { fileName: input.fileName, platform: input.platform, format: input.format, sizeBytes: input.sizeBytes, declaredSha256: input.sha256, signing: input.signing });
+            audit(actor.sub, "artifact.declared", r.id, id, { fileName: input.fileName, platform: input.platform, format: input.format, kind: input.kind, sizeBytes: input.sizeBytes, declaredSha256: input.sha256, signing: input.signing });
           });
         } catch (e) {
           if (String((e as Error).message).includes("UNIQUE")) throw new HttpError(409, "file_exists", `${input.fileName} is already part of this release.`);
@@ -531,6 +561,11 @@ export function createPublishing(deps: PublishingDeps) {
           if (r.created_by === actor.sub) throw new HttpError(403, "separation_of_duties", "Public release needs an approver other than the person who created it.");
           if (productInfo(r.product_id)?.source !== "catalogue" || !productInfo(r.product_id)?.centralId) {
             throw new HttpError(409, "not_in_catalogue", "Public release needs the product in HCG's catalogue with a confirmed central product ID.");
+          }
+          const notInstallable = artifactsOf(r.id).filter((a) => a.status === "verified").map(artifactView)
+            .filter((a) => a.kind === "device-build" && ["unsigned", "not-installable"].includes(a.readiness.status));
+          if (notInstallable.length) {
+            throw new HttpError(409, "not_installable", `Public release refused: ${notInstallable.map((a) => a.fileName).join(", ")} cannot be installed on an iPhone or iPad (${notInstallable[0]!.readiness.label}) Approve it for private or internal testing, or ship a signed build.`);
           }
         }
         transaction(db, () => {
@@ -614,21 +649,23 @@ export function createPublishing(deps: PublishingDeps) {
 
   function reviewPage(res: ServerResponse, r: ReturnType<typeof releaseView>, canApprove: boolean) {
     const e = escapeHtml;
-    const rows = r.artifacts.map((a) => `<tr><td>${e(a.fileName)}</td><td>${e(a.platform)} · ${e(a.format)}</td><td>${a.sizeBytes}</td><td><code>${e(a.sha256 ?? a.declaredSha256)}</code></td><td>${e(a.status)}</td><td>${e(a.validation?.signatureStructure ?? "—")} / reported: ${e(a.signingReported.status)}</td></tr>`).join("");
+    const kindName: Record<string, string> = { installer: "Installer", "portable-app": "Portable app", "device-build": "iOS device build", "simulator-build": "iOS Simulator build", "jailbreak-package": "Jailbreak package" };
+    const rows = r.artifacts.map((a) => `<tr><td>${e(a.fileName)}</td><td>${e(a.platform)} · ${e(a.format)}</td><td>${e(kindName[a.kind ?? ""] ?? "—")}${a.kindCheckedByStore ? "" : " (declared)"}</td><td>${a.sizeBytes}</td><td><code>${e(a.sha256 ?? a.declaredSha256)}</code></td><td>${e(a.status)}</td><td>${e(a.validation?.signatureStructure ?? "—")} / reported: ${e(a.signingReported.status)}</td><td class="${a.readiness.ordinaryInstall ? "ok" : "warn"}">${e(a.readiness.label)}</td><td>${a.status === "verified" && r.status !== "withdrawn" ? `<button class="dl" data-id="${e(a.id)}">Download to review</button>` : ""}</td></tr>`).join("");
+    const download = `<script>document.querySelectorAll('button.dl').forEach(b=>b.onclick=async()=>{const r=await fetch('/api/v1/publishing/artifacts/'+b.dataset.id+'/download-url',{method:'POST'});const j=await r.json();if(r.ok)location.href=j.url;else alert(j.message);});</script>`;
     const approve = canApprove && ["submitted", "approved"].includes(r.status)
       ? `<form id="approve"><p>Manual approval. Requested: <b>${e(r.requestedEligibility)}</b>.</p><select name="eligibility"><option>private</option><option>internal-testing</option><option>public</option></select>
          <label>Type the version to confirm <input name="confirm" autocomplete="off"></label><button>Approve</button></form>
          <script>document.getElementById('approve').onsubmit=async(ev)=>{ev.preventDefault();const f=new FormData(ev.target);const r=await fetch(location.pathname.replace('/publishing/','/api/v1/publishing/')+'/approve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({eligibility:f.get('eligibility'),confirm:f.get('confirm')})});const j=await r.json();alert(r.ok?'Approved: '+j.approvedEligibility:j.message);location.reload();};</script>`
       : "";
     return html(res, 200, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Release review · HCG Store</title>
-      <style>body{font:15px system-ui;margin:2rem;max-width:72rem}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:.4rem;text-align:left;font-size:13px}code{font-size:12px}</style></head><body>
+      <style>body{font:15px system-ui;margin:2rem;max-width:72rem}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:.4rem;text-align:left;font-size:13px}code{font-size:12px}.ok{color:#176b2c}.warn{color:#8a4b00}</style></head><body>
       <h1>${e(r.productTitle)} ${e(r.version)} (build ${e(r.build)})</h1>
       <p>Status: <b>${e(r.status)}</b>${r.approvedEligibility ? ` · approved for <b>${e(r.approvedEligibility)}</b>` : ""} · requested: ${e(r.requestedEligibility)} · distribution: ${e(r.distribution)} · channel: ${e(r.channel)} · destinations: ${e(r.destinations.join(", "))}${r.productSource === "draft" ? " · <b>draft product</b> (not in the catalogue)" : ""}</p>
       ${r.withdrawnReason ? `<p>Withdrawn: ${e(r.withdrawnReason)}</p>` : ""}
       <h2>Release notes</h2><ul>${r.releaseNotes.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>
       <h2>Compatibility</h2><pre>${e(JSON.stringify(r.compatibility, null, 2))}</pre>
-      <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th></tr>${rows}</table>
-      <p>Signature and notarisation results are reported by the uploading tool; HCG Store checks hashes, formats and archive safety only.</p>
+      <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Kind</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th><th>Installation</th><th></th></tr>${rows}</table>
+      <p>Signature and notarisation results are reported by the uploading tool; HCG Store checks hashes, formats and archive safety only. A draft is visible only to the people HCG allows to publish or approve this product; uploading never makes a file public.</p>${download}
       ${approve}
       <h2>Audit</h2><ol>${(r.audit ?? []).map((a) => `<li>${new Date(a.at).toISOString()} · ${e(a.action)} · ${e(a.actor)}</li>`).join("")}</ol>
       </body></html>`);

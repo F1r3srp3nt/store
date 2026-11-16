@@ -174,6 +174,11 @@ const MIGRATIONS: string[] = [
      BEGIN SELECT RAISE(ABORT, 'verified artifacts are immutable'); END;
    CREATE TRIGGER pub_artifact_no_delete BEFORE DELETE ON pub_artifacts WHEN OLD.status IN ('verified', 'removed')
      BEGIN SELECT RAISE(ABORT, 'verified artifacts are never deleted'); END;`,
+  // Ship to Shop: what the uploader said the file is (device build, simulator build, installer…), checked against
+  // what the Store finds; and one release per product/edition/version/build also when the product has no editions
+  // (SQLite treats NULL edition IDs as distinct in the table's UNIQUE constraint).
+  `ALTER TABLE pub_artifacts ADD COLUMN declared_kind TEXT;
+   CREATE UNIQUE INDEX pub_releases_one_per_build ON pub_releases (product_id, COALESCE(edition_id, ''), version, build);`,
 ];
 
 export type Db = DatabaseSync;

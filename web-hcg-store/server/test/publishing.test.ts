@@ -40,9 +40,19 @@ afterEach(async () => {
 
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
-/** A minimal, valid IPA (ZIP with Payload/App.app/Info.plist and a code signature file). */
-function ipa(extra: { name: string; data?: Buffer }[] = []): Buffer {
-  const files = [{ name: "Payload/Sample.app/Info.plist", data: Buffer.from("<plist><dict/></plist>") }, { name: "Payload/Sample.app/_CodeSignature/CodeResources", data: Buffer.from("x") }, ...extra];
+/** A provisioning profile as Apple ships it: a CMS envelope around an XML plist (the envelope is not checked here). */
+function profile(kind: "ad-hoc" | "development" | "enterprise" | "app-store"): Buffer {
+  const keys = kind === "enterprise" ? "<key>ProvisionsAllDevices</key><true/>"
+    : kind === "app-store" ? "" : `<key>ProvisionedDevices</key><array><string>00008110-000000000000001E</string></array><key>Entitlements</key><dict><key>get-task-allow</key>${kind === "development" ? "<true/>" : "<false/>"}</dict>`;
+  return Buffer.concat([randomBytes(64), Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Name</key><string>Sample ${kind}</string><key>ExpirationDate</key><date>2027-11-16T00:00:00Z</date>${keys}</dict></plist>`), randomBytes(64)]);
+}
+
+/** A minimal, valid IPA (ZIP with Payload/App.app/Info.plist, a code signature file and an ad hoc profile). */
+function ipa(extra: { name: string; data?: Buffer }[] = [], opts: { signed?: boolean; profile?: Parameters<typeof profile>[0] | null; simulator?: boolean } = {}): Buffer {
+  const info = opts.simulator ? "<plist><dict><key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array><key>DTPlatformName</key><string>iphonesimulator</string></dict></plist>" : "<plist><dict><key>DTPlatformName</key><string>iphoneos</string></dict></plist>";
+  const files = [{ name: "Payload/Sample.app/Info.plist", data: Buffer.from(info) },
+    ...(opts.signed === false ? [] : [{ name: "Payload/Sample.app/_CodeSignature/CodeResources", data: Buffer.from("x") }]),
+    ...(opts.profile === null || opts.signed === false ? [] : [{ name: "Payload/Sample.app/embedded.mobileprovision", data: profile(opts.profile ?? "ad-hoc") }]), ...extra];
   const locals: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
@@ -160,8 +170,13 @@ describe("Ship to Store", () => {
     const dl = await fetchDownload(d, up.id);
     expect(dl.status).toBe(200);
     expect(sha((dl as { bytes: Buffer }).bytes)).toBe(sha(file));
-    // Same version and build again: refused (releases are immutable).
-    expect((await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "private" })).status).toBe(409);
+    // Same request again (a lost response, a retry): the same draft comes back, no duplicate.
+    const again = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "private" });
+    expect([again.status, again.body.id, again.body.reused]).toEqual([200, rel.body.id, true]);
+    // Same version and build with different details: refused, naming the draft to continue.
+    const changed = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "public" });
+    expect([changed.status, changed.body.error.code]).toEqual([409, "draft_exists"]);
+    expect(changed.body.error.message).toContain(rel.body.id);
     // The audit chain is intact and records each step.
     const view = await d.call("GET", `/api/v1/publishing/releases/${rel.body.id}`);
     expect(view.body.auditIntact).toBe(true);
@@ -340,5 +355,96 @@ describe("Ship to Store", () => {
     // …and only then, as a normal entitlement-gated Store artifact with its version and layout for Sileo.
     expect(h.app.publishing.publishedFor("fixture-quasar-shell", "unleashed").map((a) => a.id)).toEqual([ok.body.artifact.id]);
     expect(h.app.publishing.publishedMeta(ok.body.artifact.id)).toEqual({ version: "1.0.1", architectures: ["iphoneos-arm64"] });
+  });
+  // ───────────── Ship to Shop: what each file is, and who may see a draft ─────────────
+
+  async function send(d: Desktop, releaseId: string, file: Buffer, decl: Record<string, unknown>) {
+    const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { sizeBytes: file.length, sha256: sha(file), signing: { status: "not-checked", evidence: null, tool: null }, ...decl });
+    if (a.status !== 201) return a;
+    expect((await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file })).status).toBe(200);
+    return d.call("POST", `/api/v1/publishing/artifacts/${a.body.artifact.id}/complete`);
+  }
+
+  it("decides each file's kind from its content and never calls an unsigned, Simulator or jailbreak file ready for ordinary installation", async () => {
+    const d = await desktop();
+    const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version: "2.0.0", build: "1" });
+    expect(rel.status).toBe(201);
+    const ios = (name: string) => ({ fileName: name, platform: "ios", format: "ipa" });
+    // Simulator builds: refused when declared as such, and found in the content when not.
+    const declaredSim = await send(d, rel.body.id, ipa([], { simulator: true }), { ...ios("Sim.ipa"), kind: "simulator-build" });
+    expect([declaredSim.status, declaredSim.body.error.message]).toEqual([400, expect.stringContaining("Simulator builds")]);
+    const hiddenSim = await send(d, rel.body.id, ipa([], { simulator: true }), ios("Sim2.ipa"));
+    expect(hiddenSim.status).toBe(422);
+    expect(hiddenSim.body.message).toContain("iOS Simulator build");
+    expect(hiddenSim.body.artifact.kind).toBe("simulator-build");
+    // A declaration that contradicts the format is refused.
+    expect((await send(d, rel.body.id, ipa(), { ...ios("Wrong.ipa"), kind: "installer" })).status).toBe(400);
+    // Device builds: signing decides what the label says.
+    const cases: [string, Buffer, string][] = [
+      ["Unsigned.ipa", ipa([], { signed: false }), "unsigned"],
+      ["NoProfile.ipa", ipa([], { profile: null }), "not-installable"],
+      ["Dev.ipa", ipa([], { profile: "development" }), "registered-devices-only"],
+      ["AdHoc.ipa", ipa([], { profile: "ad-hoc" }), "registered-devices-only"],
+      ["Enterprise.ipa", ipa([], { profile: "enterprise" }), "enterprise-devices-only"],
+      ["AppStore.ipa", ipa([], { profile: "app-store" }), "app-store-profile"],
+    ];
+    for (const [name, file, status] of cases) {
+      const r = await send(d, rel.body.id, file, { ...ios(name), kind: "device-build", signing: { status: "signed", evidence: "uploader says signed", tool: "x" } });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      expect([name, r.body.artifact.kind, r.body.artifact.kindCheckedByStore, r.body.artifact.readiness.status, r.body.artifact.readiness.ordinaryInstall]).toEqual([name, "device-build", true, status, false]);
+    }
+    // Jailbreak packages are iOS packages, never Linux ones; a Linux .deb is an installer that needs no platform signature.
+    const jbOnLinux = await send(d, rel.body.id, deb("com.example.tweak", "2.0.0", "iphoneos-arm64"), { fileName: "tweak.deb", platform: "linux", format: "deb" });
+    expect([jbOnLinux.status, jbOnLinux.body.message]).toEqual([422, expect.stringContaining("jailbreak package for iOS")]);
+    const jb = await send(d, rel.body.id, deb("com.example.tweak", "2.0.0", "iphoneos-arm64"), { fileName: "tweak2.deb", platform: "ios", format: "deb", kind: "jailbreak-package", architectures: ["iphoneos-arm64"] });
+    expect([jb.body.artifact.kind, jb.body.artifact.readiness.status, jb.body.artifact.readiness.ordinaryInstall]).toEqual(["jailbreak-package", "jailbroken-devices-only", false]);
+    const linux = await send(d, rel.body.id, deb("com.example.tool", "2.0.0", "amd64"), { fileName: "tool.deb", platform: "linux", format: "deb", kind: "installer", architectures: ["amd64"] });
+    expect([linux.body.artifact.kind, linux.body.artifact.readiness.status, linux.body.artifact.readiness.ordinaryInstall]).toEqual(["installer", "ready", true]);
+    // The review page says what each file is and how it installs, and offers the authorised review download.
+    const approverWeb = await h.signIn(APPROVER);
+    const page = await (await approverWeb.get(`/publishing/releases/${rel.body.id}`)).text();
+    for (const text of ["iOS device build", "Unsigned iOS device build", "Jailbreak package: installs only on jailbroken", "Linux package", "Download to review"]) expect(page).toContain(text);
+    // Public approval is refused while an unsigned device build is part of the release; internal testing is allowed.
+    await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`);
+    const pub = await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "2.0.0" });
+    expect([pub.status, ((await pub.json()) as { error: { code: string } }).error.code]).toEqual([409, "not_installable"]);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "internal-testing", confirm: "2.0.0" })).status).toBe(200);
+  });
+
+  it("lets HCG's approvers download a draft to review it, refuses everyone else, and never makes an upload public", async () => {
+    const d = await desktop();
+    const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version: "2.1.0", build: "1", eligibility: "public" });
+    const file = ipa([{ name: "Payload/Sample.app/Sample", data: randomBytes(300_000) }]);
+    const a = await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Review.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file), kind: "device-build" });
+    // Unauthorised uploads: another HCG account cannot add files, a forged upload URL is refused.
+    const buyer = await desktop(BUYER);
+    expect((await buyer.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Evil.ipa", platform: "ios", format: "ipa", sizeBytes: 10, sha256: sha(Buffer.from("x")) })).status).toBe(403);
+    const forged = a.body.uploadUrl.replace(/.$/, (c: string) => (c === "A" ? "B" : "A"));
+    expect((await fetch(forged, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file })).status).toBe(403);
+    expect((await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file })).status).toBe(200);
+    expect((await d.call("POST", `/api/v1/publishing/artifacts/${a.body.artifact.id}/complete`)).status).toBe(200);
+    // Draft review: the approver downloads exactly the uploaded bytes in the browser; buyers cannot; nothing is public.
+    const approverWeb = await h.signIn(APPROVER);
+    const review = await fetchDownload(approverWeb, a.body.artifact.id);
+    expect(review.status).toBe(200);
+    expect(sha((review as { bytes: Buffer }).bytes)).toBe(sha(file));
+    expect((await fetchDownload(buyer, a.body.artifact.id)).status).toBe(403);
+    expect((await fetchDownload(await h.signIn(BUYER), a.body.artifact.id)).status).toBe(403);
+    expect(h.app.publishing.publishedFor(PRODUCT, "standard").map((x) => x.id)).not.toContain(a.body.artifact.id);
+    const log = (await d.call("GET", `/api/v1/publishing/releases/${rel.body.id}`)).body.audit as { action: string; detail: { basis?: string } }[];
+    expect(log.filter((x) => x.action === "artifact.downloaded").map((x) => x.detail.basis)).toEqual(["approver-review"]);
+  });
+
+  it("keeps one release per version and build for products without editions, and a retry returns the same draft", async () => {
+    const d = await desktop();
+    expect((await d.call("POST", "/api/v1/publishing/products", { id: "editionless-tool", title: "Editionless Tool" })).status).toBe(201);
+    const body = { ...RELEASE, productId: "editionless-tool", editionId: null, version: "0.1.0", build: "1", eligibility: "private" };
+    const first = await d.call("POST", "/api/v1/publishing/releases", body);
+    const retry = await d.call("POST", "/api/v1/publishing/releases", body);
+    expect([first.status, retry.status, retry.body.id]).toEqual([201, 200, first.body.id]);
+    await send(d, first.body.id, ipa(), { fileName: "T.ipa", platform: "ios", format: "ipa" });
+    await d.call("POST", `/api/v1/publishing/releases/${first.body.id}/submit`);
+    const after = await d.call("POST", "/api/v1/publishing/releases", body);
+    expect([after.status, after.body.error.code]).toEqual([409, "version_exists"]);
   });
 });

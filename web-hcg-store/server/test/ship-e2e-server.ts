@@ -11,7 +11,10 @@
  *   POST /revoke-all {sub}                     HCG revokes everything for a person
  *   POST /token      {sub}                     an access token HCG Connect issued to the desktop client for <sub>
  *   POST /approve    {releaseId, eligibility, confirm, approver}   an approver signs in to the Store in a browser and approves
+ *   POST /review     {releaseId, reviewer}     a person signs in to the Store in a browser, opens the draft's review page
+ *                                              and presses "Download to review" for each verified file (SHA-256 of the bytes)
  */
+import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -95,13 +98,24 @@ const control = createServer(async (req, res) => {
     if (req.url === "/grant") { authority.grant(b.sub!, b.central!, b.edition ?? "*", "e2e", null); return out(200, { ok: true }); }
     if (req.url === "/revoke-all") { authority.revokeAll(b.sub!); return out(200, { ok: true }); }
     if (req.url === "/token") return out(200, { token: await idp.accessToken({ sub: b.sub!, email: `${b.sub}@example.test` }, MAKER_CLIENT) });
+    if (req.url === "/review") {
+      const c = await browserSignIn(b.reviewer!);
+      const page = await c.get(`/publishing/releases/${b.releaseId}`);
+      const html = await page.text();
+      const downloads = [];
+      for (const id of [...html.matchAll(/class="dl" data-id="(art-[a-f0-9]{16})"/g)].map((m) => m[1]!)) {
+        const link = await c.post(`/api/v1/publishing/artifacts/${id}/download-url`, {});
+        const body = (await link.json()) as { url?: string; basis?: string; error?: { code: string } };
+        if (!link.ok || !body.url) { downloads.push({ id, status: link.status, error: body.error?.code }); continue; }
+        const file = await fetch(body.url);
+        const bytes = Buffer.from(await file.arrayBuffer());
+        downloads.push({ id, status: file.status, basis: body.basis, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+      }
+      return out(200, { reviewPageStatus: page.status, reviewPage: html, downloads });
+    }
     if (req.url === "/approve") {
       // A person signs in to HCG Store in a browser (full redirect flow), then approves on the review page.
-      const c = new Client(origin);
-      idp.nextUser = { sub: b.approver!, email: `${b.approver}@example.test`, name: b.approver! };
-      const start = await c.get("/auth/login?return_to=/");
-      const authz = await fetch(start.headers.get("location")!, { redirect: "manual" });
-      await c.get(authz.headers.get("location")!.replace(origin, ""));
+      const c = await browserSignIn(b.approver!);
       const page = await c.get(`/publishing/releases/${b.releaseId}`);
       const r = await c.post(`/api/v1/publishing/releases/${b.releaseId}/approve`, { eligibility: b.eligibility, confirm: b.confirm });
       return out(r.status, { reviewPageStatus: page.status, reviewPage: await page.text(), result: await r.json() });
@@ -112,6 +126,16 @@ const control = createServer(async (req, res) => {
   }
 });
 await new Promise<void>((ok) => control.listen(0, "127.0.0.1", ok));
+
+/** A person signs in to HCG Store in a browser: the full redirect flow through the mock HCG Connect. */
+async function browserSignIn(sub: string): Promise<Client> {
+  const c = new Client(origin);
+  idp.nextUser = { sub, email: `${sub}@example.test`, name: sub };
+  const start = await c.get("/auth/login?return_to=/");
+  const authz = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  await c.get(authz.headers.get("location")!.replace(origin, ""));
+  return c;
+}
 
 writeFileSync(infoFile, JSON.stringify({
   storeOrigin: origin, issuer: idp.issuer, makerClientId: MAKER_CLIENT,

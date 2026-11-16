@@ -10,6 +10,10 @@
  * - Debian packages: ar members are checked; the control file is read when control.tar is gzip.
  * - Signatures are reported as PRESENT or ABSENT only. HCG Store never claims to have verified a signature;
  *   verification results come from the uploading tool and are recorded as "reported".
+ * - Every file gets a KIND decided here from its content (installer, portable app, iOS device build, iOS Simulator
+ *   build, jailbreak package). Simulator builds are refused: they cannot be installed on an iPhone or iPad.
+ *   installReadiness() turns kind + signature facts into the label people see; it never calls an unsigned, Simulator
+ *   or jailbreak file ready for ordinary installation.
  */
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { gunzipSync, inflateRawSync, inflateSync } from "node:zlib";
@@ -28,6 +32,12 @@ export const ALLOWED: Record<PublishPlatform, Partial<Record<PublishFormat, stri
   ipados: { ipa: ".ipa", deb: ".deb" },
   linux: { deb: ".deb", rpm: ".rpm", appimage: ".appimage" },
 };
+
+/** What a file is, decided by the Store from its content (the uploader's declaration is only compared with it). */
+export const KINDS = ["installer", "portable-app", "device-build", "simulator-build", "jailbreak-package"] as const;
+export type ArtifactKind = (typeof KINDS)[number];
+/** iOS provisioning, read from Payload/<app>.app/embedded.mobileprovision (the signed profile is not verified here). */
+export type Provisioning = "development" | "ad-hoc" | "enterprise" | "app-store" | "none" | "unreadable";
 
 export const CONTENT_TYPES: Record<PublishFormat, string> = {
   exe: "application/vnd.microsoft.portable-executable",
@@ -70,6 +80,64 @@ export interface ContentReport {
   /** Debian control fields, when readable. */
   debian?: { package?: string; version?: string; architecture?: string; controlReadable: boolean };
   zipEntries?: number;
+  kind?: ArtifactKind;
+  /** iOS IPA facts read from the bundle. */
+  ios?: { simulator: boolean; provisioning: Provisioning; profileName?: string; profileExpires?: string };
+}
+
+/** Kind implied by format alone (IPAs and .debs need their content: see inspectContent). */
+export function kindFromFormat(platform: string, format: string): ArtifactKind | null {
+  if (format === "ipa") return "device-build";
+  if (format === "deb") return platform === "ios" || platform === "ipados" ? "jailbreak-package" : "installer";
+  if (format === "zip" || format === "appimage") return "portable-app";
+  return ["exe", "msi", "msix", "dmg", "pkg", "rpm"].includes(format) ? "installer" : null;
+}
+
+export interface Readiness {
+  /** ready · not-notarized · signature-not-verified · unsigned · registered-devices-only · enterprise-devices-only ·
+   *  app-store-profile · not-installable · simulator-only · jailbroken-devices-only */
+  status: string;
+  /** Plain-language label for publishers, approvers and customers. */
+  label: string;
+  /** True only when the file can be installed on an ordinary device of its platform as it is. */
+  ordinaryInstall: boolean;
+}
+
+/**
+ * Install readiness from what the Store found (kind, signature structure, iOS profile) and what the uploader reported
+ * (its own signature/notarisation check). Conservative: anything unsigned, Simulator-only or jailbreak-only is never
+ * "ready", and a signature the Store could only see is "present, not verified" unless the uploader verified it.
+ */
+export function installReadiness(platform: string, kind: ArtifactKind | undefined, signature: ContentReport["signature"], reported: string, ios?: ContentReport["ios"]): Readiness {
+  const r = (status: string, label: string, ordinaryInstall = false): Readiness => ({ status, label, ordinaryInstall });
+  if (kind === "simulator-build") return r("simulator-only", "iOS Simulator build: runs only in the Simulator on a Mac. Cannot be installed on an iPhone or iPad.");
+  if (kind === "jailbreak-package") return r("jailbroken-devices-only", "Jailbreak package: installs only on jailbroken iPhones/iPads through a package manager (Sileo). Not for ordinary devices.");
+  if (kind === "device-build") {
+    if (signature === "absent" || reported === "unsigned") return r("unsigned", "Unsigned iOS device build: cannot be installed on an iPhone or iPad until it is signed with a provisioning profile.");
+    if (reported === "invalid") return r("unsigned", "The uploader's check found the signature INVALID: not installable.");
+    switch (ios?.provisioning) {
+      case "development": return r("registered-devices-only", "Development-signed: installs only on the devices registered in its provisioning profile.");
+      case "ad-hoc": return r("registered-devices-only", "Ad hoc-signed: installs only on the devices listed in its provisioning profile.");
+      case "enterprise": return r("enterprise-devices-only", "In-house (enterprise) signed: installs on devices that trust the organisation's certificate.");
+      case "app-store": return r("app-store-profile", "Signed for App Store distribution: iPhones and iPads install it only through the App Store or TestFlight, which HCG never submits to.");
+      case "none": return r("not-installable", "Signed without a provisioning profile: not installable on ordinary iPhones or iPads.");
+      default: return r("signature-not-verified", "A signature is present but its provisioning profile could not be read: installability unknown.");
+    }
+  }
+  if (platform === "linux") return r("ready", "Linux package: no platform signature is required to install it.", true);
+  if (signature === "absent" || reported === "unsigned") {
+    return r("unsigned", platform === "macos"
+      ? "Unsigned: macOS Gatekeeper blocks it on other Macs."
+      : "Unsigned: Windows SmartScreen warns before it runs; some organisations block unsigned software.");
+  }
+  if (reported === "invalid") return r("unsigned", "The uploader's check found the signature INVALID.");
+  if (platform === "macos") {
+    if (reported === "notarized") return r("ready", "Developer ID signed and notarized (reported by the uploader's macOS check).", true);
+    if (reported === "signed") return r("not-notarized", "Signed but not notarized: Gatekeeper warns or blocks it on other Macs.");
+    return r("signature-not-verified", "A signature structure is present; signature and notarisation were not verified.");
+  }
+  if (reported === "signed") return r("ready", "Signed (verified by the uploader's Windows check).", true);
+  return r("signature-not-verified", signature === "present" ? "A signature is present but was not verified." : "Signature not checked.");
 }
 
 class Reader {
@@ -282,6 +350,10 @@ export function inspectContent(file: string, platform: PublishPlatform, format: 
           if (text) {
             const field = (k: string) => new RegExp(`^${k}:\\s*(.+)$`, "mi").exec(text)?.[1]?.trim();
             report.debian = { package: field("Package"), version: field("Version"), architecture: field("Architecture"), controlReadable: true };
+            const jailbreak = report.debian.architecture?.startsWith("iphoneos-") === true;
+            const iosPlatform = platform === "ios" || platform === "ipados";
+            if (jailbreak && !iosPlatform) problems.push(`Architecture ${report.debian.architecture} is a jailbreak package for iOS, not a Linux package: declare it for iOS.`);
+            if (!jailbreak && iosPlatform && report.debian.architecture) problems.push(`Architecture ${report.debian.architecture} is not an iOS jailbreak architecture (iphoneos-arm, iphoneos-arm64, iphoneos-arm64e).`);
           }
         } else {
           notes.push(`The control file is in ${control.name}; HCG Store reads only gzip control archives, so Package/Version/Architecture were not verified here.`);
@@ -302,6 +374,28 @@ export function inspectContent(file: string, platform: PublishPlatform, format: 
             problems.push("An IPA may contain only Payload/ (and Apple's Symbols, SwiftSupport, BCSymbolMaps, META-INF).");
           }
           signature = entries.some((e) => /^Payload\/[^/]+\.app\/_CodeSignature\/CodeResources$/.test(e.name)) ? "present" : "absent";
+          report.kind = "device-build";
+          if (app) {
+            // XML and binary plists both store ASCII strings as-is, so the platform names can be found in either.
+            const info = readZipEntry(r, app)?.toString("latin1");
+            const simulator = info !== undefined && /iPhoneSimulator|iphonesimulator|XRSimulator|xrsimulator/.test(info);
+            const profileEntry = entries.find((e) => e.name === app.name.replace(/Info\.plist$/, "embedded.mobileprovision"));
+            report.ios = { simulator, provisioning: profileEntry ? "unreadable" : "none" };
+            if (profileEntry) {
+              const xml = /<\?xml[\s\S]*?<\/plist>/.exec(readZipEntry(r, profileEntry, 1024 * 1024)?.toString("latin1") ?? "")?.[0];
+              if (xml) {
+                const flag = (k: string) => new RegExp(`<key>${k}</key>\\s*<true\\s*/>`).test(xml);
+                const str = (k: string) => new RegExp(`<key>${k}</key>\\s*<(?:string|date)>([^<]*)<`).exec(xml)?.[1];
+                report.ios.provisioning = flag("ProvisionsAllDevices") ? "enterprise" : xml.includes("<key>ProvisionedDevices</key>") ? (flag("get-task-allow") ? "development" : "ad-hoc") : "app-store";
+                report.ios.profileName = str("Name");
+                report.ios.profileExpires = str("ExpirationDate");
+              }
+            }
+            if (simulator) {
+              report.kind = "simulator-build";
+              problems.push("This is an iOS Simulator build (its Info.plist names the Simulator platform). It runs only in the iOS Simulator on a Mac and cannot be installed on an iPhone or iPad, so HCG Store does not accept it. Build for a device (archive → IPA) instead.");
+            }
+          }
         } else if (format === "msix") {
           if (!entries.some((e) => e.name === "AppxManifest.xml")) problems.push("An MSIX package must contain AppxManifest.xml.");
           signature = entries.some((e) => e.name === "AppxSignature.p7x") ? "present" : "absent";
@@ -322,6 +416,7 @@ export function inspectContent(file: string, platform: PublishPlatform, format: 
     r.close();
   }
   report.signature = signature;
+  report.kind ??= kindFromFormat(platform, format) ?? undefined;
   report.ok = problems.length === 0;
   return report;
 }
