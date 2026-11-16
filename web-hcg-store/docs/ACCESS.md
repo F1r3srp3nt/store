@@ -85,6 +85,12 @@ Sileo ── Store-issued repo token in POST bodies ──▶ /repo-api/v1/sileo
 - **Package metadata:** HCG Repo pages and `Packages` contain no credentials. The Sileo token is
   Store-issued, revocable, and sent only in POST bodies. It is never put in the APT source URL.
 
+## Release publishing (Ship to Store)
+
+Releases can be uploaded from HCG Executable Maker as private drafts and approved manually in the Store; see
+[PUBLISHING.md](PUBLISHING.md). It is off by default and does not change the launch conditions below: approved public
+files are still delivered only through the gates above.
+
 ## Launch conditions (all must hold before downloads are enabled)
 
 1. HCG issues HCG Store's own HCG Connect client (web, redirect `https://store.hakmicapitalgroup.com/auth/callback`).

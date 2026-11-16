@@ -110,6 +110,98 @@ const MIGRATIONS: string[] = [
      updated_at INTEGER NOT NULL
    );
    CREATE INDEX central_grants_pending ON central_grants(next_attempt_at) WHERE delivered_revision < revision;`,
+  // 3: Ship to Store (publishing). Draft products/releases live here, never in the public catalogue.
+  `CREATE TABLE pub_products (
+     id TEXT PRIMARY KEY,
+     title TEXT NOT NULL,
+     created_by TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   );
+   CREATE TABLE pub_releases (
+     id TEXT PRIMARY KEY,
+     product_id TEXT NOT NULL,
+     product_source TEXT NOT NULL,
+     edition_id TEXT,
+     version TEXT NOT NULL,
+     build TEXT NOT NULL,
+     channel TEXT NOT NULL,
+     release_notes TEXT NOT NULL,
+     compatibility TEXT NOT NULL,
+     distribution TEXT NOT NULL,
+     requested_eligibility TEXT NOT NULL,
+     destinations TEXT NOT NULL,
+     status TEXT NOT NULL,
+     approved_eligibility TEXT,
+     created_by TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL,
+     submitted_at INTEGER,
+     approved_by TEXT,
+     approved_at INTEGER,
+     withdrawn_reason TEXT,
+     UNIQUE (product_id, edition_id, version, build)
+   );
+   CREATE TABLE pub_artifacts (
+     id TEXT PRIMARY KEY,
+     release_id TEXT NOT NULL REFERENCES pub_releases(id),
+     file_name TEXT NOT NULL,
+     platform TEXT NOT NULL,
+     format TEXT NOT NULL,
+     architectures TEXT NOT NULL,
+     minimum_os TEXT,
+     size_bytes INTEGER NOT NULL,
+     declared_sha256 TEXT NOT NULL,
+     sha256 TEXT,
+     status TEXT NOT NULL,
+     storage_key TEXT,
+     content_type TEXT NOT NULL,
+     validation TEXT,
+     signing_reported TEXT NOT NULL,
+     package TEXT,
+     created_at INTEGER NOT NULL,
+     completed_at INTEGER,
+     UNIQUE (release_id, file_name)
+   );
+   CREATE TABLE pub_uploads (
+     artifact_id TEXT PRIMARY KEY REFERENCES pub_artifacts(id),
+     received_bytes INTEGER NOT NULL,
+     staging_key TEXT NOT NULL,
+     attempts INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   );
+   CREATE TABLE pub_download_grants (
+     id_hash TEXT PRIMARY KEY,
+     sub TEXT NOT NULL,
+     artifact_id TEXT NOT NULL,
+     access_token TEXT,
+     expires_at INTEGER NOT NULL
+   );
+   CREATE TABLE pub_audit (
+     seq INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     actor TEXT NOT NULL,
+     action TEXT NOT NULL,
+     release_id TEXT,
+     artifact_id TEXT,
+     detail TEXT NOT NULL,
+     prev_hash TEXT NOT NULL,
+     hash TEXT NOT NULL
+   );
+   -- The audit log is append-only.
+   CREATE TRIGGER pub_audit_no_update BEFORE UPDATE ON pub_audit BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+   CREATE TRIGGER pub_audit_no_delete BEFORE DELETE ON pub_audit BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+   -- A verified artifact is immutable: its hash, size, name and storage location never change, and it is never deleted.
+   CREATE TRIGGER pub_artifact_immutable BEFORE UPDATE ON pub_artifacts
+     WHEN OLD.status = 'verified' AND (NEW.sha256 IS NOT OLD.sha256 OR NEW.storage_key IS NOT OLD.storage_key OR NEW.size_bytes IS NOT OLD.size_bytes
+          OR NEW.file_name IS NOT OLD.file_name OR NEW.release_id IS NOT OLD.release_id OR NEW.status NOT IN ('verified', 'removed'))
+     BEGIN SELECT RAISE(ABORT, 'verified artifacts are immutable'); END;
+   CREATE TRIGGER pub_artifact_no_delete BEFORE DELETE ON pub_artifacts WHEN OLD.status IN ('verified', 'removed')
+     BEGIN SELECT RAISE(ABORT, 'verified artifacts are never deleted'); END;`,
+  // 4: Ship to Shop: what the uploader said the file is (device build, simulator build, installer…), checked against
+  // what the Store finds; and one release per product/edition/version/build also when the product has no editions
+  // (SQLite treats NULL edition IDs as distinct in the table's UNIQUE constraint).
+  `ALTER TABLE pub_artifacts ADD COLUMN declared_kind TEXT;
+   CREATE UNIQUE INDEX pub_releases_one_per_build ON pub_releases (product_id, COALESCE(edition_id, ''), version, build);`,
 ];
 
 export type Db = DatabaseSync;

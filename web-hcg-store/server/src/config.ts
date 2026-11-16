@@ -65,6 +65,24 @@ export interface StoreConfig {
   downloadUrlTtlSeconds: number;
   /** HCG Repo product pages; used for links only. */
   repoBaseUrl: string;
+  publishing: PublishingSettings;
+}
+
+/**
+ * Ship to Store (release publishing). Off unless HCG_STORE_PUBLISHING=enabled. Who may publish or approve is
+ * decided by HCG's entitlement authority (central permission IDs), never by the Store.
+ */
+export interface PublishingSettings {
+  enabled: boolean;
+  /** HCG Connect client IDs whose access tokens may call the publishing API (e.g. HCG Executable Maker). */
+  clientIds: string[];
+  /** Central permission checked for publishing (edition = Store product ID, or "*" for every product). */
+  publisherCentralId: string | null;
+  /** Central permission checked for approving releases (edition = Store product ID, or "*"). */
+  approverCentralId: string | null;
+  maxUploadBytes: number;
+  uploadUrlTtlSeconds: number;
+  chunkBytes: number;
 }
 
 export class ConfigError extends Error {
@@ -225,6 +243,21 @@ export function parseStoreConfig(env: Env): StoreConfig {
 
   const repoBaseUrl = httpsUrl(env.HCG_REPO_BASE_URL ?? "https://repo.hakmicapitalgroup.com/", "HCG_REPO_BASE_URL", problems, test) ?? "";
 
+  const publishingEnabled = env.HCG_STORE_PUBLISHING === "enabled";
+  if (env.HCG_STORE_PUBLISHING && !["enabled", "disabled"].includes(env.HCG_STORE_PUBLISHING)) problems.push(`HCG_STORE_PUBLISHING must be "enabled" or "disabled".`);
+  const centralPermission = /^[a-z0-9][a-z0-9._-]{1,79}$/;
+  const publisherCentralId = env.HCG_STORE_PUBLISHER_CENTRAL_ID?.trim() || null;
+  const approverCentralId = env.HCG_STORE_RELEASE_APPROVER_CENTRAL_ID?.trim() || null;
+  const publishingClientIds = (env.HCG_STORE_PUBLISHING_CLIENT_IDS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (publishingEnabled) {
+    if (!hcgConnect) problems.push("Publishing needs HCG Connect to be configured.");
+    if (authority === "none") problems.push("Publishing needs an entitlement authority (HCG decides who may publish).");
+    if (!artifactStorageDir) problems.push("Publishing needs HCG_STORE_ARTIFACT_STORAGE_DIR (a private directory).");
+    if (!publisherCentralId || !centralPermission.test(publisherCentralId)) problems.push("Publishing needs HCG_STORE_PUBLISHER_CENTRAL_ID: the central permission HCG grants to publishers.");
+    if (!approverCentralId || !centralPermission.test(approverCentralId)) problems.push("Publishing needs HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: the central permission HCG grants to release approvers.");
+    if (publisherCentralId && publisherCentralId === approverCentralId) problems.push("Publisher and approver permissions must be different central IDs.");
+  }
+
   if (problems.length) throw new ConfigError(problems);
 
   return {
@@ -252,5 +285,14 @@ export function parseStoreConfig(env: Env): StoreConfig {
     sessionAbsoluteSeconds: int("HCG_STORE_SESSION_ABSOLUTE_SECONDS", 30 * 24 * 3600, 3600, 90 * 24 * 3600),
     downloadUrlTtlSeconds: int("HCG_STORE_DOWNLOAD_URL_TTL_SECONDS", 120, 10, 900),
     repoBaseUrl,
+    publishing: {
+      enabled: publishingEnabled,
+      clientIds: publishingClientIds,
+      publisherCentralId,
+      approverCentralId,
+      maxUploadBytes: int("HCG_STORE_UPLOAD_MAX_MB", 4096, 1, 16384) * 1024 * 1024,
+      uploadUrlTtlSeconds: int("HCG_STORE_UPLOAD_URL_TTL_SECONDS", 900, 60, 3600),
+      chunkBytes: int("HCG_STORE_UPLOAD_CHUNK_MB", 8, 1, 64) * 1024 * 1024,
+    },
   };
 }

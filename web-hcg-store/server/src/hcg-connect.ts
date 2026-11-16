@@ -113,6 +113,25 @@ export class HcgConnectClient {
     return payload;
   }
 
+  /**
+   * Verifies a bearer access token presented to the publishing API: signature (JWKS), issuer, subject, and that it
+   * was issued to one of the allow-listed HCG Connect clients (e.g. HCG Executable Maker). Never the Store's own
+   * session token: those stay server-side.
+   */
+  async verifyAccessTokenFrom(token: string, allowedClientIds: string[]): Promise<JWTPayload> {
+    const { payload } = await jwtVerify(token, this.jwks, {
+      issuer: this.s.issuer,
+      algorithms: ["ES256", "RS256"],
+      clockTolerance: 30,
+      currentDate: new Date(this.now()),
+    });
+    if (!payload.sub) throw new Error("Access token has no subject.");
+    if (typeof payload.client_id !== "string" || !allowedClientIds.includes(payload.client_id)) {
+      throw new Error("This application is not allowed to publish to HCG Store.");
+    }
+    return payload;
+  }
+
   async exchangeCode(code: string, verifier: string, nonce: string): Promise<{ tokens: TokenSet; identity: Identity }> {
     const r = await this.tokenRequest({ grant_type: "authorization_code", code, redirect_uri: this.s.redirectUri, code_verifier: verifier });
     if (!r.ok) throw new Error(`Code exchange failed (${r.code}).`);
