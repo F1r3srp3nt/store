@@ -196,7 +196,8 @@
             }
           ],
           "layouts": [],
-          "note": null
+          "note": null,
+          "centralEditionKey": "standard"
         },
         {
           "id": "unleashed",
@@ -220,7 +221,8 @@
               "note": null
             }
           ],
-          "note": null
+          "note": null,
+          "centralEditionKey": "unleashed"
         }
       ],
       "hcgRepo": [

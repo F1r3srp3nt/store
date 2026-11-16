@@ -31,14 +31,43 @@ describe("shipped catalogue", () => {
     expect(names).not.toMatch(/development tools|hcg store|appstore|unimatch/);
   });
 
-  it("claims no releases, downloads or central registry IDs that were never supplied", () => {
+  it("claims no releases or downloads, and only the central registry IDs HCG confirmed", () => {
     expect(c.releases).toHaveLength(0);
+    // Confirmed by the main-site handoff (16 Nov 2026, VERIFIED against app_applications.product_id).
+    const confirmed: Record<string, string> = {
+      "hcg-terminal": "hcg.terminal",
+      "hcg-executable-maker": "hcg.executable.maker",
+      "hcg-mail": "hcg.mail",
+      "hcg-news": "hcg.news",
+      "hcg-cardx": "hcg-cardx",
+      "hcg-lifeos": "hcg.lifeos",
+      "hcg-one-unleashed": "hcg.one.unleashed",
+      "hcg-reprompter": "hcg.reprompter",
+    };
     for (const p of c.products) {
       expect(p.currentReleaseId).toBeNull();
-      expect(p.registry.status).toBe("provisional");
-      expect(p.registry.centralId).toBeNull();
+      expect(p.registry.centralId, p.id).toBe(confirmed[p.id] ?? null);
+      expect(p.registry.status, p.id).toBe(confirmed[p.id] ? "central" : "provisional");
+      // Not registered centrally yet (decision D3): no edition may be mapped either.
+      if (!confirmed[p.id]) for (const e of p.editions) expect(e.centralEditionKey, `${p.id}/${e.id}`).toBeNull();
       for (const pl of p.platforms) expect(pl.support).not.toBe("confirmed");
     }
+  });
+
+  it("rejects duplicate central edition keys and edition keys without a central product ID", () => {
+    const products = clone(raw.realProducts) as { products: { id: string; registry: { status: string; centralId: string | null }; editions: { centralEditionKey: string | null }[] }[] };
+    const terminal = products.products.find((p) => p.id === "hcg-terminal")!;
+    terminal.editions[1]!.centralEditionKey = terminal.editions[0]!.centralEditionKey;
+    const dup = validateCatalogue(products, raw.realReleases);
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.errors.join("\n")).toMatch(/same central edition key/);
+
+    const unregistered = clone(raw.realProducts) as typeof products;
+    const nexus = unregistered.products.find((p) => p.id === "hcg-nexus")!;
+    nexus.editions[0]!.centralEditionKey = "app";
+    const res = validateCatalogue(unregistered, raw.realReleases);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.errors.join("\n")).toMatch(/no central product ID/);
   });
 
   it("contains no Dropbox or other download URLs", () => {

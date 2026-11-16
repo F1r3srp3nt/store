@@ -115,6 +115,13 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
     if (product.registry.status === "central" && !product.registry.centralId) {
       errors.push(`Product "${product.id}" is marked central but has no centralId.`);
     }
+    const editionKeys = product.editions.flatMap((e) => (e.centralEditionKey ? [e.centralEditionKey] : []));
+    if (editionKeys.length && !product.registry.centralId) {
+      errors.push(`Product "${product.id}" maps editions to central keys but has no central product ID.`);
+    }
+    if (new Set(editionKeys).size !== editionKeys.length) {
+      errors.push(`Product "${product.id}" maps two editions to the same central edition key.`);
+    }
   }
 
   return errors.length ? { ok: false, errors, warnings } : { ok: true, catalogue: { products, releases }, warnings };

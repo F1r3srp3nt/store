@@ -2,6 +2,8 @@
 
 16 November 2026 · HCG Store development, for founder review
 
+> **Answered.** The main site replied on 16 November 2026 and the founder decided D1–D6. The current contracts, decisions and status are in [MAIN-SITE-INTEGRATION.md](MAIN-SITE-INTEGRATION.md); this request is kept as the record of what was asked.
+
 HCG Store is ready to connect to the central HCG systems, but it cannot until the main site confirms five things: a login client, the Ecosystem API contracts, central product IDs, a grant/revoke endpoint for purchases, and how approved releases are recorded. This document asks for exactly those, nothing more.
 
 ## Why this request exists

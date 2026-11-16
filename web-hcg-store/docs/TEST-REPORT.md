@@ -19,6 +19,19 @@ provider**.
 | Dependency audit | `npm audit` | ✔ 0 vulnerabilities (`jose` pinned to 6.2.14, a release more than two weeks old) |
 | Mutation check of the acceptance suite | manual | ✔ The suite catches all 5 deliberately introduced faults: an entitlement bypass, a signature bypass, idempotency removed, central re-check removed, and the amount check removed |
 
+## Central integration, Store side (16 November 2026)
+
+Against mocks of the contracts in [MAIN-SITE-INTEGRATION.md](MAIN-SITE-INTEGRATION.md); nothing was run against live HCG (the build environment cannot reach it).
+
+| Check | Test | Result |
+| --- | --- | --- |
+| Ecosystem client: deployed `/me` + `/check` shape, organisations, D2 edition check with no fallback, all-editions licence, unexpected answers, `/library` | `server/test/ecosystem.test.ts` | 12 passed |
+| Grant outbox and ledger (D5): namespaced IDs, environment from mode, duplicates, refund revoke, revoke terminal, refund before completion, two purchases, stale renewal and expiry, backoff, credential never stored; config refusals; unmapped editions not sellable | `server/test/grants.test.ts` | 10 passed |
+| Catalogue: only the central IDs HCG confirmed; edition keys unique and only on mapped products | `src/domain/catalogue.test.ts` | passed |
+| Full suites | `npm run check`, `npm run test:e2e` | 174 and 44 passed |
+
+**Bug fixed:** a refund or dispute arriving before its `checkout.completed` event was ignored, so the late completion granted access to a refunded purchase. The refund is now remembered and the completion grants nothing.
+
 ## Flaky e2e tests fixed (15 November 2026)
 
 - **"header search submits to the browse page"**: a race in the test, not an app bug.
