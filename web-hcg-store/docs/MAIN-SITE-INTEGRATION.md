@@ -24,7 +24,7 @@ credential activation and publication stay under the founder's manual control.
 
 | Area | Main site | HCG Store | Still blocked by |
 | --- | --- | --- | --- |
-| Sign-in (HCG Connect) | Issuer and endpoints LIVE-VERIFIED; Store client NOT ISSUED | Relying party implemented earlier | D1 hosting (production callback) |
+| Sign-in (HCG Connect) | Issuer and endpoints LIVE-VERIFIED; development client issued; production client NOT ISSUED | Relying party implemented; production packaging for Fly.io in this repository | founder deploys to Fly.io and moves DNS (D1), then the production client |
 | `/me`, `/check` | DEPLOYED | STORE: IMPLEMENTED to the deployed contract | nothing for products without editions |
 | Edition check (D2) | PROPOSED below | STORE: IMPLEMENTED; refuses to grant without it | main-site D2 build |
 | `/library` | PREVIEW | STORE: IMPLEMENTED, display only | publication |
@@ -33,7 +33,12 @@ credential activation and publication stay under the founder's manual control.
 | Purchase grants (D5) | PROPOSED below | STORE: IMPLEMENTED (outbox, inert until configured) | main-site D5, credential |
 | Releases (D6) | none | Store catalogue and protected storage stay authoritative | not a blocker |
 
-## D1: hosting and the production callback (DECISION, not resolved)
+## D1: hosting and the production callback (DECISION; target chosen, not deployed)
+
+**Target: Fly.io**, one always-on machine in Stockholm with a volume, about $4/month. GitHub Pages, the
+main site's hosting and Supabase cannot run the Store server. Steps, cost, DNS cutover, rollback and the
+production client request: [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md). Until the founder deploys and
+moves DNS, the facts below still hold.
 
 The public address stays `store.hakmicapitalgroup.com`.
 
@@ -239,8 +244,8 @@ Only the purchase items of the checklist need D4 and D5.
 
 ## Manual steps that stay with the founder
 
-- Choose the Store server's hosting and move `store.hakmicapitalgroup.com` (D1); then register the
-  production callback.
+- Deploy the Store server to Fly.io and move `store.hakmicapitalgroup.com` (D1,
+  [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md)); then request the production client.
 - Apply the D2–D5 main-site migrations to production after their non-production tests pass.
 - Issue and activate the grant credentials (test first) and set them in the Store server's secret store.
 - Publish `/library` and the new routes; enable the `download` feature per product; launch.

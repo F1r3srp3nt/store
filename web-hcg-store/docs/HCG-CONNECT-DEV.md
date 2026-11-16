@@ -17,7 +17,7 @@ disabled throughout.
 
 The configuration is in `server/dev/hcg-connect.development.env`. It is development-only: the server
 refuses this client ID in production mode, and production needs its own client for the production
-callback (see [MAIN-SITE-INTEGRATION.md](MAIN-SITE-INTEGRATION.md#d1-hosting-and-the-production-callback-decision-not-resolved)).
+callback (see [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md)).
 
 ## On your Mac
 

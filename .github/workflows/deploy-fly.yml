@@ -1,0 +1,45 @@
+# Deploys the HCG Store server (storefront + sign-in) to Fly.io. Manual only: Actions → "Deploy Store
+# server to Fly.io" → Run workflow. Needs the repository secret FLY_API_TOKEN (`fly tokens create deploy`).
+# Payments, purchase grants and protected downloads stay off: fly.toml sets them, and the server refuses
+# unsafe production settings at start.
+name: Deploy Store server to Fly.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_url:
+        description: "Address to smoke-test after deploying (the Fly address before DNS cutover, the domain after)"
+        required: true
+        default: "https://hcg-store.fly.dev/"
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: web-hcg-store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-hcg-store/package-lock.json
+      - run: npm ci
+      - name: Unit, component and server tests
+        run: npm test
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy (built by Fly's remote builder from web-hcg-store/Dockerfile)
+        run: flyctl deploy --remote-only --build-arg GITHUB_SHA=${{ github.sha }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Smoke-test the deployed server (commit, routes, HTTPS, redirect, no private files)
+        run: node scripts/smoke-deployment.mjs "${{ inputs.check_url }}" --expect-commit "${{ github.sha }}" --wait 300

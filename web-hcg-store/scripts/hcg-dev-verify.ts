@@ -1,9 +1,13 @@
 /**
- * Guided verification of HCG Store's sign-in against the REAL HCG Connect, with the development
- * client. Run on the machine where `npm run hcg:dev` is running: `npm run hcg:dev:verify`
- * (`-- --auto-only` runs only the automatic checks).
+ * Guided verification of HCG Store's sign-in against the REAL HCG Connect.
  *
- * Evidence comes only from HCG's public endpoints, from the local server's HTTP answers, and from the
+ * - Development (default): the local server from `npm run hcg:dev`, development client.
+ *   `npm run hcg:dev:verify` (`-- --auto-only` runs only the automatic checks).
+ * - Production: `npm run hcg:dev:verify -- --production` checks https://store.hakmicapitalgroup.com
+ *   with the production client configured in fly.toml, and reads the deployed server's evidence through
+ *   `fly ssh console` (you must be logged in to Fly with access to the app).
+ *
+ * Evidence comes only from HCG's public endpoints, from the Store server's HTTP answers, and from the
  * server's database: the `auth_events` trail and token-free session columns (whether a token column is
  * empty, never its value). Nothing here reads, prints or stores a token, code or cookie.
  *
@@ -11,7 +15,8 @@
  * never as passed.
  */
 import { randomBytes, createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { DatabaseSync } from "node:sqlite";
@@ -26,14 +31,71 @@ interface Check {
 }
 
 const root = resolve(import.meta.dirname, "..");
-const env = loadEnvFile(join(root, "server/dev/hcg-connect.development.env"));
+const production = process.argv.includes("--production");
+
+/** The uncommented `KEY = "value"` lines of fly.toml's [env] section, and the app name. */
+function flyConfig(): { app: string; env: Record<string, string> } {
+  const toml = readFileSync(join(root, "fly.toml"), "utf8");
+  const app = /^app\s*=\s*"([^"]+)"/m.exec(toml)?.[1] ?? "";
+  const section = toml.split(/^\[env\]\s*$/m)[1]?.split(/^\[/m)[0] ?? "";
+  const env: Record<string, string> = {};
+  for (const m of section.matchAll(/^\s*([A-Z0-9_]+)\s*=\s*"([^"]*)"\s*$/gm)) env[m[1]!] = m[2]!;
+  return { app, env };
+}
+const fly = production ? flyConfig() : null;
+const env = production ? fly!.env : loadEnvFile(join(root, "server/dev/hcg-connect.development.env"));
+if (production && (!env.HCG_CONNECT_CLIENT_ID || env.HCG_CONNECT_CLIENT_ID.startsWith("<"))) {
+  console.error("fly.toml has no production HCG Connect client configured (phase 2). Nothing to verify yet.");
+  process.exit(2);
+}
 const ORIGIN = env.HCG_STORE_PUBLIC_ORIGIN!;
 const ISSUER = env.HCG_CONNECT_ISSUER!;
 const CLIENT = env.HCG_CONNECT_CLIENT_ID!;
 const REDIRECT = env.HCG_CONNECT_REDIRECT_URI!;
 const ECOSYSTEM = env.HCG_ECOSYSTEM_API_URL!;
-const DB_FILE = join(root, env.HCG_STORE_DATA_DIR!, "hcg-store.sqlite");
+const DB_FILE = production ? "" : join(root, env.HCG_STORE_DATA_DIR!, "hcg-store.sqlite");
 const autoOnly = process.argv.includes("--auto-only");
+const MODE = production ? "production" : "development";
+
+interface SessionRow {
+  session_ref: string;
+  created_at: number;
+  last_seen_at: number;
+  ended_at: number | null;
+  ended_reason: string | null;
+  refresh_token_deleted: number;
+  access_token_deleted: number;
+}
+
+/**
+ * The server's evidence since `since`: the local database in development; in production, the deployed
+ * server's own read-only report (server-dist/auth-evidence.mjs) through `fly ssh console`.
+ */
+function readEvidence(since: number): { events: Ev[]; sessions: SessionRow[] } | null {
+  if (!production) {
+    if (!existsSync(DB_FILE)) return null;
+    const db = new DatabaseSync(DB_FILE);
+    const events = db.prepare("SELECT id, at, type, session_ref, sub, detail FROM auth_events WHERE at >= ? ORDER BY id").all(since) as unknown as Ev[];
+    const sessions = db
+      .prepare(
+        `SELECT substr(id_hash, 1, 12) AS session_ref, created_at, last_seen_at, ended_at, ended_reason,
+                refresh_token IS NULL AS refresh_token_deleted, access_token IS NULL AS access_token_deleted FROM sessions`,
+      )
+      .all() as unknown as SessionRow[];
+    db.close();
+    return { events, sessions };
+  }
+  const r = spawnSync("fly", ["ssh", "console", "--app", fly!.app, "--command", `node --no-warnings server-dist/auth-evidence.mjs --since ${since}`], {
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  const line = (r.stdout ?? "").split("\n").reverse().find((l) => l.trim().startsWith("{"));
+  if (!line) {
+    console.error(`Could not read the deployed server's evidence (fly ssh exit ${r.status}). Is flyctl installed and logged in?`);
+    return null;
+  }
+  return JSON.parse(line) as { events: Ev[]; sessions: SessionRow[] };
+}
 
 const checks: Check[] = [];
 const add = (group: Check["group"], item: string, outcome: Outcome, evidence: string) => {
@@ -126,7 +188,7 @@ async function localChecks() {
   console.log(`\nLocal server checks (${ORIGIN})`);
   const h = await get(`${ORIGIN}/api/v1/health`);
   if (h.status !== 200) {
-    add("Local server", "Server running", "fail", `HTTP ${h.status}: start it with npm run hcg:dev`);
+    add("Local server", "Server running", "fail", `HTTP ${h.status}${production ? "" : ": start it with npm run hcg:dev"}`);
     return false;
   }
   const health = (await h.json()) as Record<string, string>;
@@ -166,11 +228,10 @@ async function localChecks() {
     const cb = `${ORIGIN}/auth/callback?code=${b64url(randomBytes(16))}&state=${encodeURIComponent(state)}`;
     const first = await get(cb);
     const again = await get(cb);
-    const reasons = existsSync(DB_FILE)
-      ? (new DatabaseSync(DB_FILE).prepare("SELECT detail FROM auth_events WHERE type = 'login_rejected' ORDER BY id DESC LIMIT 2").all() as unknown as { detail: string }[])
-          .reverse()
-          .map((r) => JSON.parse(r.detail) as { reason: string; check?: string })
-      : [];
+    const reasons = (readEvidence(Date.now() - 120_000)?.events ?? [])
+      .filter((e) => e.type === "login_rejected")
+      .slice(-2)
+      .map((e) => JSON.parse(e.detail ?? "{}") as { reason: string; check?: string });
     const ok = first.status === 400 && again.status === 400 && reasons[0]?.reason === "exchange_or_verification_failed" && reasons[1]?.reason === "state_unknown_or_already_used";
     add("Local server", "6. Replayed callback rejected (state is single-use)", ok ? "pass" : "fail", `invalid code: HTTP ${first.status} (${reasons[0]?.check ?? "?"}); replay: HTTP ${again.status} (${reasons[1]?.reason ?? "?"})`);
   } else add("Local server", "6. Replayed callback rejected (state is single-use)", "fail", "could not start a sign-in attempt");
@@ -194,12 +255,12 @@ interface Ev {
 const detail = (e: Ev | undefined) => (e?.detail ? (JSON.parse(e.detail) as Record<string, unknown>) : {});
 
 async function guided(t0: number) {
-  if (!existsSync(DB_FILE)) {
-    add("Sign-in (you)", "Server database", "fail", `not found at ${DB_FILE}`);
+  if (!readEvidence(t0)) {
+    add("Sign-in (you)", "Server evidence", "fail", production ? "fly ssh could not read the deployed server" : `database not found at ${DB_FILE}`);
     return;
   }
-  const db = new DatabaseSync(DB_FILE);
-  const eventsSince = (at: number) => db.prepare("SELECT id, at, type, session_ref, sub, detail FROM auth_events WHERE at >= ? ORDER BY id").all(at) as unknown as Ev[];
+  const eventsSince = (at: number) => readEvidence(at)?.events ?? [];
+  const sessionRow = (ref: string) => readEvidence(0)?.sessions.find((r) => r.session_ref === ref);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const step = async (text: string) => (await rl.question(`\n${text}\nPress Enter when done (or type "skip"): `)).trim().toLowerCase() !== "skip";
 
@@ -230,9 +291,10 @@ async function guided(t0: number) {
   const loginAt = ok.at;
 
   // 4a: restore after restart
-  if (await step("STEP B. Restart: stop the server (Ctrl-C in its terminal), start it again with `npm run hcg:dev`, then reload the Account page. You should still be signed in.")) {
+  const restartHow = production ? `run \`fly apps restart ${fly!.app}\`, wait until it is running again,` : "stop the server (Ctrl-C in its terminal), start it again with `npm run hcg:dev`,";
+  if (await step(`STEP B. Restart: ${restartHow} then reload the Account page. You should still be signed in.`)) {
     const restart = [...eventsSince(loginAt)].reverse().find((e) => e.type === "server_started");
-    const row = db.prepare("SELECT last_seen_at, ended_at FROM sessions WHERE substr(id_hash, 1, 12) = ?").get(sessionRef) as { last_seen_at: number; ended_at: number | null } | undefined;
+    const row = sessionRow(sessionRef);
     const restored = !!restart && !!row && row.ended_at === null && row.last_seen_at > restart.at;
     add("Sign-in (you)", "4. Session restored after restart", restored ? "pass" : "fail", restart ? `server restarted ${new Date(restart.at).toISOString()}; session ${restored ? "used afterwards" : "not used afterwards"}` : "no restart recorded");
   } else add("Sign-in (you)", "4. Session restored after restart", "not run", "skipped");
@@ -247,11 +309,10 @@ async function guided(t0: number) {
 
   // 5: logout
   if (await step("STEP D. Logout: on the Account page choose \"Sign out\".")) {
-    const row = db.prepare("SELECT ended_reason, refresh_token IS NULL AS rt_gone, access_token IS NULL AS at_gone FROM sessions WHERE substr(id_hash, 1, 12) = ?").get(sessionRef) as
-      | { ended_reason: string | null; rt_gone: number; at_gone: number }
-      | undefined;
-    const done = !!row && row.ended_reason === "logout" && row.rt_gone === 1 && row.at_gone === 1;
-    add("Sign-in (you)", "5. Logout clears session and tokens", done ? "pass" : "fail", row ? `ended: ${row.ended_reason ?? "no"}; stored tokens deleted: ${row.rt_gone && row.at_gone ? "yes" : "no"}. HCG Connect itself is not signed out (no end-session endpoint).` : "session not found");
+    const row = sessionRow(sessionRef);
+    const gone = !!row && !!row.refresh_token_deleted && !!row.access_token_deleted;
+    const done = !!row && row.ended_reason === "logout" && gone;
+    add("Sign-in (you)", "5. Logout clears session and tokens", done ? "pass" : "fail", row ? `ended: ${row.ended_reason ?? "no"}; stored tokens deleted: ${gone ? "yes" : "no"}. HCG Connect itself is not signed out (no end-session endpoint).` : "session not found");
   } else add("Sign-in (you)", "5. Logout clears session and tokens", "not run", "skipped");
   rl.close();
 }
@@ -260,12 +321,12 @@ async function guided(t0: number) {
 function report(t0: number) {
   const outDir = join(root, ".hcg-dev");
   mkdirSync(outDir, { recursive: true });
-  const file = join(outDir, `evidence-${new Date(t0).toISOString().replace(/[:.]/g, "-")}.md`);
+  const file = join(outDir, `evidence-${MODE}-${new Date(t0).toISOString().replace(/[:.]/g, "-")}.md`);
   const rows = checks.map((c) => `| ${c.group} | ${c.item} | **${c.outcome}** | ${c.evidence.replace(/\|/g, "/")} |`).join("\n");
   const signInPassed = checks.filter((c) => c.group === "Sign-in (you)").every((c) => c.outcome === "pass") && checks.some((c) => c.group === "Sign-in (you)");
   writeFileSync(
     file,
-    `# HCG Store × HCG Connect development client: evidence\n\nRun ${new Date(t0).toISOString()} on ${ORIGIN}. Client ${CLIENT} (development), callback ${REDIRECT}.\nNo tokens, codes or cookies are included.\n\n| Group | Check | Result | Evidence |\n| --- | --- | --- | --- |\n${rows}\n\n${
+    `# HCG Store × HCG Connect ${MODE} client: evidence\n\nRun ${new Date(t0).toISOString()} on ${ORIGIN}. Client ${CLIENT} (${MODE}), callback ${REDIRECT}.\nNo tokens, codes or cookies are included.\n\n| Group | Check | Result | Evidence |\n| --- | --- | --- | --- |\n${rows}\n\n${
       signInPassed ? "All sign-in checks passed with a real HCG account." : "The real sign-in flow has NOT fully passed; do not mark the client verified."
     }\n`,
     { mode: 0o600 },

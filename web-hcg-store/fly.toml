@@ -1,0 +1,70 @@
+# HCG Store on Fly.io: one always-on Machine in Stockholm with a volume for its SQLite database.
+# Deploy from this folder (web-hcg-store/) with `fly deploy`. See docs/PRODUCTION-DEPLOY.md.
+# Secrets (never in this file): HCG_STORE_SECRET_KEY, set with `fly secrets set`.
+
+app = "hcg-store"
+primary_region = "arn"
+# Fly sends SIGINT by default; the server stops cleanly on either signal within 8 seconds.
+kill_signal = "SIGTERM"
+kill_timeout = 10
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HCG_STORE_MODE = "production"
+  HCG_STORE_PUBLIC_ORIGIN = "https://store.hakmicapitalgroup.com"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  HCG_STORE_DATA_DIR = "/data"
+  HCG_STORE_STATIC_DIR = "dist"
+  HCG_STORE_REPO_ORIGINS = "https://repo.hakmicapitalgroup.com"
+  HCG_REPO_BASE_URL = "https://repo.hakmicapitalgroup.com/"
+  HCG_ECOSYSTEM_API_URL = "https://beta.hakmicapitalgroup.com/api/public/ecosystem/v1"
+  HCG_STORE_ENTITLEMENT_AUTHORITY = "hcg-ecosystem"
+  # Off until their own end-to-end tests pass and the founder approves.
+  HCG_STORE_PAYMENT_PROVIDER = "none"
+  HCG_STORE_PROTECTED_DOWNLOADS = "disabled"
+
+  # Phase 2: HCG Connect sign-in. Enable only after store.hakmicapitalgroup.com serves this app and
+  # HCG has issued the PRODUCTION client for the callback below. Never the development client
+  # (the server refuses it in production).
+  # HCG_CONNECT_ISSUER = "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1"
+  # HCG_CONNECT_AUTHORIZATION_ENDPOINT = "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1/oauth/authorize"
+  # HCG_CONNECT_TOKEN_ENDPOINT = "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1/oauth/token"
+  # HCG_CONNECT_JWKS_URI = "https://qggdyzoydveafkmjgkpq.supabase.co/auth/v1/.well-known/jwks.json"
+  # HCG_CONNECT_CLIENT_ID = "<production client ID from HCG>"
+  # HCG_CONNECT_REDIRECT_URI = "https://store.hakmicapitalgroup.com/auth/callback"
+  # HCG_CONNECT_SCOPES = "openid email profile"
+
+[[mounts]]
+  source = "hcg_store_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # One Machine owns the SQLite volume, so it always runs and is never auto-stopped.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/v1/health"
+
+[[restart]]
+  policy = "always"
+  retries = 10
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
