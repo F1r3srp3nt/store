@@ -114,6 +114,38 @@ Before phase 3 (publishing: approved files and the audit) and phase 4 (payments)
 backups. The backup files hold account IDs, e-mail addresses, sealed tokens, purchases and the publishing audit: keep
 them private.
 
+## Fastest path to working sign-in (phases 0–2 only)
+
+Publishing, approvers, payments, downloads and HCG Repo are not needed for sign-in.
+
+| Step | Who | What |
+| --- | --- | --- |
+| 1 | founder | Fly.io account with a card; an org token in the repository secret `FLY_API_TOKEN` (commands below) |
+| 2 | Claude | Actions → *Deploy Store server to Fly.io*, `mode=deploy`: creates the app, volume and session key if missing, deploys one Machine, requests the certificate, smoke-tests `hcg-store.fly.dev`, and prints the DNS records Fly needs |
+| 3 | founder | DNS: the records from step 2 (`store` → `hcg-store.fly.dev`, and `_acme-challenge.store`); repository variable `STORE_HOSTING=fly` |
+| 4 | founder → HCG | the production client request (2.1); HCG sends back the client ID |
+| 5 | Claude | put the client ID into `fly.toml`, deploy, then verify with `mode=evidence` and `mode=restart` while the founder signs in from a phone |
+
+Step 1, on the Mac:
+
+```bash
+brew install flyctl
+```
+
+```bash
+fly auth signup
+```
+
+```bash
+fly tokens create org --name "hcg-store github actions" --expiry 8760h
+```
+
+Copy the whole output (it starts with `FlyV1 `) into GitHub → `F1r3srp3nt/store` → Settings → Secrets and variables →
+Actions → New repository secret, name `FLY_API_TOKEN`. The token never needs to be shown to anyone else. After the
+first deploy it can be replaced by an app-only token (`fly tokens create deploy --app hcg-store`).
+
+The phases below are the same steps done by hand from the Mac.
+
 ## Phase 0: once, on the Mac
 
 ```bash
