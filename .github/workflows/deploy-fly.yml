@@ -153,6 +153,8 @@ jobs:
             echo
             flyctl certs show "$DOMAIN" --app "$APP" 2>&1 || echo "No certificate requested for $DOMAIN yet."
             echo
+            flyctl certs setup "$DOMAIN" --app "$APP" 2>&1 || true
+            echo
             echo "DNS now: $(dig +short CNAME "$DOMAIN" | tr '\n' ' ') $(dig +short A "$DOMAIN" | tr '\n' ' ')"
             echo "Fly address health: $(curl -s -m 15 https://$APP.fly.dev/api/v1/health || echo unreachable)"
             echo "Domain health:      $(curl -s -m 15 https://$DOMAIN/api/v1/health | head -c 300 || echo unreachable)"
