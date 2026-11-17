@@ -166,6 +166,16 @@ jobs:
             flyctl certs setup "$DOMAIN" --app "$APP" 2>&1 || true
             echo
             echo "DNS now: $(dig +short CNAME "$DOMAIN" | tr '\n' ' ') $(dig +short A "$DOMAIN" | tr '\n' ' ')"
+            echo "DNS detail (public resolver 1.1.1.1):"
+            for n in "$DOMAIN" "_acme-challenge.$DOMAIN"; do
+              for t in CNAME A AAAA TXT; do
+                printf '  %-45s %-5s %s\n' "$n" "$t" "$(dig @1.1.1.1 +short "$t" "$n" | tr '\n' ' ')"
+              done
+            done
+            zone="${DOMAIN#*.}"
+            echo "  zone $zone NS:  $(dig @1.1.1.1 +short NS "$zone" | tr '\n' ' ')"
+            echo "  status for $DOMAIN: $(dig @1.1.1.1 "$DOMAIN" A | grep -o 'status: [A-Z]*')"
+            echo "  authoritative answer: $(dig +short NS "$zone" | head -1 | xargs -I{} dig @{} +noall +answer "$DOMAIN" ANY 2>/dev/null | tr '\n' ' ')"
             echo "Fly address health: $(curl -s -m 15 https://$APP.fly.dev/api/v1/health || echo unreachable)"
             echo "Domain health:      $(curl -s -m 15 https://$DOMAIN/api/v1/health | head -c 300 || echo unreachable)"
             echo '```'
