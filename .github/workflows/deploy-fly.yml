@@ -155,7 +155,9 @@ jobs:
             done
             echo
             echo "Recent server logs (no tokens are ever logged):"
-            flyctl logs --app "$APP" --no-tail 2>&1 | tail -60 || true
+            # Public log: drop SSH session lines and redact anything that looks like an e-mail address.
+            flyctl logs --app "$APP" --no-tail 2>&1 | grep -v -i "ssh session" \
+              | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<redacted>/g' | tail -60 || true
             echo
             flyctl ips list --app "$APP" 2>&1 || true
             echo
