@@ -93,13 +93,16 @@ files are still delivered only through the gates above.
 
 ## Launch conditions (all must hold before downloads are enabled)
 
-1. HCG issues HCG Store's own HCG Connect client (web, redirect `https://store.hakmicapitalgroup.com/auth/callback`).
-   See [HCG-INTEGRATION.md](HCG-INTEGRATION.md).
+1. HCG Store's server is deployed at `https://store.hakmicapitalgroup.com` and sign-in with its own **production**
+   HCG Connect client (redirect `https://store.hakmicapitalgroup.com/auth/callback`) is verified with a real account
+   (phases 1–2 of [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md)). The development client is refused in production.
 2. HCG confirms central product IDs and the entitlement API (check, and grant/revoke for purchases).
    The Store is configured with `HCG_STORE_ENTITLEMENT_AUTHORITY=hcg-ecosystem`.
 3. The acceptance list below passes against live HCG with real test accounts.
-4. Private artifact storage is provisioned, and each file is added to `server/data/artifacts.json`
-   with its SHA-256 and `deliveryApproved: true` by HCG.
+4. Private artifact storage is provisioned (`/data/artifacts` on the server's volume, with backups), and each file is
+   either added to `server/data/artifacts.json` with its SHA-256 and `deliveryApproved: true`, or approved for public
+   delivery in HCG Store through Ship to Store ([PUBLISHING.md](PUBLISHING.md)). Publishing being enabled does not
+   satisfy this condition by itself: customer delivery is a separate switch.
 5. The founder explicitly approves launch. Only then are `HCG_STORE_PROTECTED_DOWNLOADS=enabled` and
    `HCG_STORE_LAUNCH_APPROVED=founder-approved` set. The server refuses the first without the second.
 

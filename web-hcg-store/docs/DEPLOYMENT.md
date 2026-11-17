@@ -93,6 +93,8 @@ Serving from a sub-path: build with `HCG_BASE_PATH=/store/ npm run build` and ad
 
 ## 2a. HCG Store server (accounts, checkout, protected delivery)
 
+**Production target: Fly.io.** The exact steps, costs, DNS cutover and rollback are in [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md). The general requirements are below.
+
 A static host serves the catalogue only. Its pages say sign-in is not available on that site. The
 full Store runs the Node server, which serves `dist/` with the same security headers plus the account
 API:

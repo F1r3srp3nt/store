@@ -6,8 +6,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import { deflateRawSync, gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { TestLedgerAuthority } from "../src/entitlements";
-import { startHarness, type Client, type Harness } from "./harness";
+import { featureEdition, type TestLedgerAuthority } from "../src/entitlements";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { validateCatalogue } from "../../src/domain/catalogue";
+import { exportReleaseRecords } from "../src/release-records";
+import { syncReleases } from "../src/release-sync";
+import { FIXTURE_CATALOGUE, startHarness, type Client, type Harness } from "./harness";
 
 const MAKER_CLIENT = "99999999-8888-4777-8666-555555555555";
 const PUBLISHER = { sub: "user-publisher", email: "pub@example.test", name: "Publisher" };
@@ -23,16 +28,16 @@ beforeEach(async () => {
     env: {
       HCG_STORE_PUBLISHING: "enabled",
       HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER_CLIENT,
-      HCG_STORE_PUBLISHER_CENTRAL_ID: "hcg.store.publish",
-      HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "hcg.store.approve",
+      HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
+      HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
       HCG_STORE_UPLOAD_CHUNK_MB: "1",
     },
   });
   h.idp.otherClients.add(MAKER_CLIENT);
   ledger = h.authority as TestLedgerAuthority;
   // HCG's decisions (central permissions), stood in for by the TEST ledger.
-  ledger.grant(PUBLISHER.sub, "hcg.store.publish", "*", "test", null);
-  ledger.grant(APPROVER.sub, "hcg.store.approve", "*", "test", null);
+  ledger.grant(PUBLISHER.sub, "*", featureEdition("store.publish"), "test", null);
+  ledger.grant(APPROVER.sub, "*", featureEdition("store.release.approve"), "test", null);
 });
 afterEach(async () => {
   await h.stop();
@@ -150,6 +155,31 @@ describe("Ship to Store", () => {
     const admin = await desktop(STRANGER);
     expect((await admin.call("POST", "/api/v1/publishing/releases", RELEASE)).status).toBe(403);
     expect((await admin.call("GET", "/api/v1/publishing/products")).body.products).toEqual([]);
+  });
+
+  it("checks publishing per product: HCG's central feature on that product, never ownership or another product's grant", async () => {
+    const SCOPED = { sub: "user-scoped", email: "scoped@example.test", name: "Scoped" };
+    // store.publish for HCG's central product fixture.quasar.shell only, plus ownership of it (a purchase).
+    ledger.grant(SCOPED.sub, "fixture.quasar.shell", featureEdition("store.publish"), "test", null);
+    ledger.grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
+    const scoped = await desktop(SCOPED);
+    expect((await scoped.call("GET", "/api/v1/publishing/products")).body.products.map((p: { id: string }) => p.id)).toEqual([PRODUCT]);
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "private" })).status).toBe(201);
+    // A product HCG has not registered, and a new draft product, are scoped to HCG Store's own product (hcg.store).
+    const other = { ...RELEASE, productId: "fixture-orbit-notes", editionId: null, eligibility: "private" };
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", other)).body.error.code).toBe("not_publisher");
+    expect((await scoped.call("POST", "/api/v1/publishing/products", { id: "scoped-draft", title: "Scoped draft" })).status).toBe(403);
+    // Owning the product (the download licence) is not permission to publish it; neither is a role.
+    const buyer = await desktop(BUYER);
+    expect((await buyer.call("POST", "/api/v1/publishing/releases", { ...RELEASE, build: "77", eligibility: "private" })).body.error.code).toBe("not_publisher");
+    // store.publish on hcg.store covers unregistered products, which can never be approved for public delivery.
+    ledger.grant(SCOPED.sub, "hcg.store", featureEdition("store.publish"), "test", null);
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", other)).status).toBe(201);
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, build: "78" })).status).toBe(201);
+    // The approver permission is a different feature: publishing rights do not approve.
+    const web = await h.signIn(SCOPED);
+    const rel = (await scoped.call("GET", `/api/v1/publishing/releases?productId=${PRODUCT}`)).body.releases[0];
+    expect((await web.post(`/api/v1/publishing/releases/${rel.id}/approve`, { eligibility: "private", confirm: rel.version })).status).toBe(403);
   });
 
   it("creates a private draft, uploads in chunks, verifies the SHA-256 and stores the file immutably", async () => {
@@ -356,6 +386,103 @@ describe("Ship to Store", () => {
     expect(h.app.publishing.publishedFor("fixture-quasar-shell", "unleashed").map((a) => a.id)).toEqual([ok.body.artifact.id]);
     expect(h.app.publishing.publishedMeta(ok.body.artifact.id)).toEqual({ version: "1.0.1", architectures: ["iphoneos-arm64"] });
   });
+  it("HCG Repo companion changes: Debian version = release version, free public releases for any signed-in account, and a release listing", async () => {
+    const d = await desktop();
+    const make = async (version: string, distribution: string, build: string) => {
+      const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, editionId: "unleashed", version, build, distribution, compatibility: { minimumOs: {}, architectures: ["iphoneos-arm64"], notes: [] }, destinations: ["hcg-store", "hcg-repo"] });
+      expect(rel.status, JSON.stringify(rel.body)).toBe(201);
+      return rel.body.id as string;
+    };
+    const ship = async (releaseId: string, file: Buffer, pkg: { id: string; version: string; architecture: string }) => {
+      const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { fileName: `q_${pkg.version}.deb`, platform: "ios", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg });
+      if (a.status !== 201) return a;
+      expect((await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file })).status).toBe(200);
+      return d.call("POST", `/api/v1/publishing/artifacts/${a.body.artifact.id}/complete`);
+    };
+    const PKG = "com.example.fixture.quasar.unleashed";
+    // 1. A control file numbered 2.0.0 inside release 2.0.1 could never be matched by Sileo: refused, declared or hidden.
+    const r1 = await make("2.0.1", "free", "201");
+    expect((await ship(r1, deb(PKG, "2.0.0", "iphoneos-arm64"), { id: PKG, version: "2.0.0", architecture: "iphoneos-arm64" })).body.error.message).toContain("Debian version is 2.0.0");
+    const hidden = await ship(r1, deb(PKG, "2.0.0", "iphoneos-arm64"), { id: PKG, version: "2.0.1", architecture: "iphoneos-arm64" });
+    expect(hidden.status).toBe(422);
+    const ok = await ship(r1, deb(PKG, "2.0.1-1", "iphoneos-arm64"), { id: PKG, version: "2.0.1-1", architecture: "iphoneos-arm64" });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const fileId = ok.body.artifact.id as string;
+    await d.call("POST", `/api/v1/publishing/releases/${r1}/submit`);
+
+    // Before public approval nothing is listed for HCG Repo and nothing is free.
+    expect((await d.call("GET", "/api/v1/repo/releases?destination=hcg-repo")).body.releases).toEqual([]);
+    const stranger = await h.signIn(STRANGER);
+    expect((await stranger.get(`/api/v1/downloads/${fileId}`)).status).toBe(404); // not published: not revealed
+    const approverWeb = await h.signIn(APPROVER);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/approve`, { eligibility: "public", confirm: "2.0.1" })).status).toBe(200);
+
+    // 2. Public + free: any signed-in account, without owning it; signed out still 401.
+    const access = (await (await stranger.get("/api/v1/products/fixture-quasar-shell/access")).json()) as { editions: { editionId: string; state: string; owned: boolean; artifacts: { id: string }[] }[] };
+    const unleashed = access.editions.find((e) => e.editionId === "unleashed")!;
+    expect([unleashed.state, unleashed.owned, unleashed.artifacts.map((x) => x.id)]).toEqual(["free", false, [fileId]]);
+    const got = await stranger.get(`/api/v1/downloads/${fileId}`);
+    expect(got.status).toBe(200);
+    expect(sha(Buffer.from(await got.arrayBuffer()))).toBe(ok.body.artifact.sha256);
+    expect((await fetch(`${h.origin}/api/v1/downloads/${fileId}`)).status).toBe(401);
+    // The standard edition (paid, nothing free) stays not owned.
+    expect(access.editions.find((e) => e.editionId === "standard")!.state).not.toBe("free");
+
+    // 3. The listing: metadata of approved and withdrawn packages, for people HCG lets publish or approve the product.
+    const listed = (await d.call("GET", "/api/v1/repo/releases?destination=hcg-repo")).body;
+    expect(listed.releases).toHaveLength(1);
+    expect(listed.releases[0]).toMatchObject({ id: r1, version: "2.0.1", status: "approved", distribution: "free", withdrawnAt: null });
+    expect(listed.releases[0].artifacts).toEqual([{ id: fileId, fileName: "q_2.0.1-1.deb", sha256: ok.body.artifact.sha256, sizeBytes: expect.any(Number), architectures: ["iphoneos-arm64"], package: { id: PKG, version: "2.0.1-1", architecture: "iphoneos-arm64", source: "control-file" }, kind: "jailbreak-package" }]);
+    expect(JSON.stringify(listed)).not.toMatch(/url|storage/i);
+    expect((await (await desktop(STRANGER)).call("GET", "/api/v1/repo/releases?destination=hcg-repo")).body.releases).toEqual([]);
+    expect((await d.call("GET", "/api/v1/repo/releases")).status).toBe(400);
+    expect((await fetch(`${h.origin}/api/v1/repo/releases?destination=hcg-repo`)).status).toBe(401);
+
+    // Withdrawal reaches HCG Repo through the listing, and free access ends at once.
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/withdraw`, { reason: "Test withdrawal" })).status).toBe(200);
+    expect((await d.call("GET", "/api/v1/repo/releases?destination=hcg-repo")).body.releases[0]).toMatchObject({ status: "withdrawn", withdrawnReason: "Test withdrawal", withdrawnAt: expect.any(Number) });
+    expect((await stranger.get(`/api/v1/downloads/${fileId}`)).status).toBe(404);
+  });
+
+  it("generates catalogue/releases.json from manual approvals: no second review, explicit current release, withdrawal, tamper refusal", async () => {
+    const d = await desktop();
+    const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version: "3.0.0", build: "300", channel: "stable" });
+    const file = ipa([]);
+    const f = await upload(d, rel.body.id, file, "Sample-3.0.0.ipa");
+    expect((await f.complete()).status).toBe(200);
+    await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`);
+    const approverWeb = await h.signIn(APPROVER);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "internal-testing", confirm: "3.0.0", current: true })).status).toBe(400);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "3.0.0", current: true })).status).toBe(200);
+
+    const docs = JSON.parse(readFileSync(join(FIXTURE_CATALOGUE, "products.json"), "utf8"));
+    const products = docs.products.map((p: any) => ({ id: p.id, centralId: p.registry.centralId, editionIds: (p.editions ?? []).map((e: any) => e.id), currentReleaseId: p.currentReleaseId ?? null }));
+    const manual = JSON.parse(readFileSync(join(FIXTURE_CATALOGUE, "releases.json"), "utf8")).releases;
+    const exported = exportReleaseRecords(h.db, Date.now());
+    expect(exported.auditIntact).toBe(true);
+    expect(JSON.stringify(exported)).not.toMatch(/user-|storage|https?:/); // no account IDs, file locations or URLs
+    const out = syncReleases(manual, products, exported);
+    const generated = out.releases.filter((r) => r.source?.kind === "hcg-store-approval");
+    expect(generated).toHaveLength(1);
+    expect(generated[0]).toMatchObject({ id: rel.body.id, productId: PRODUCT, version: "3.0.0", build: "300", channel: "stable", status: "approved",
+      artifacts: [{ id: f.id, fileName: "Sample-3.0.0.ipa", format: "ipa", platform: "ios", sha256: sha(file), editionId: "standard", signing: { status: "signed", evidence: expect.stringContaining("not verified by HCG Store") } }] });
+    expect(out.releases.filter((r) => !r.source)).toEqual(manual); // hand-written entries untouched
+    expect(out.currentReleaseIds).toEqual({ [PRODUCT]: rel.body.id }); // the approver's explicit choice
+    const nextProducts = { ...docs, products: docs.products.map((p: any) => (p.id in out.currentReleaseIds ? { ...p, currentReleaseId: out.currentReleaseIds[p.id] } : p)) };
+    expect(validateCatalogue(nextProducts, { schemaVersion: 1, releases: out.releases }).ok).toBe(true);
+
+    // Withdrawal: the entry stays as history, is no longer offered, and stops being current.
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/withdraw`, { reason: "Crash on start." })).status).toBe(200);
+    const after = syncReleases(out.releases, products.map((p: any) => ({ ...p, currentReleaseId: out.currentReleaseIds[p.id] ?? p.currentReleaseId })), exportReleaseRecords(h.db, Date.now()));
+    expect(after.releases.find((r) => r.id === rel.body.id)).toMatchObject({ status: "withdrawn", withdrawnReason: "Crash on start.", artifacts: [] });
+    expect(after.currentReleaseIds).toEqual({ [PRODUCT]: null });
+
+    // A private or internal-testing approval is never exported; an altered audit refuses the whole export.
+    h.db.exec("DROP TRIGGER pub_audit_no_update");
+    h.db.prepare("UPDATE pub_audit SET detail = ? WHERE action = 'release.approved'").run(JSON.stringify({ eligibility: "public", current: false }));
+    expect(() => syncReleases(manual, products, exportReleaseRecords(h.db, Date.now()))).toThrow(/audit chain/);
+  });
+
   // ───────────── Ship to Shop: what each file is, and who may see a draft ─────────────
 
   async function send(d: Desktop, releaseId: string, file: Buffer, decl: Record<string, unknown>) {

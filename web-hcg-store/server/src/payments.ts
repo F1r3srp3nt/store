@@ -120,13 +120,14 @@ export class PaymentLedger {
       edition: g.edition,
       // The central key for this edition (D2): "*" is the explicit all-editions licence, null a product without editions.
       centralEdition: g.edition === "*" ? "*" : g.edition === "default" ? null : (product?.editions.find((e) => e.id === g.edition)?.centralEditionKey ?? null),
+      features: g.features ?? [],
     }));
   }
 
   private grant(provider: string, sub: string, offer: Offer, purchaseId: string, startsAt: number, periodEnd: number | null) {
     for (const g of this.grantsFor(offer)) {
       if (this.authority.canGrant) this.authority.grant(sub, g.centralProductId, g.edition, purchaseId, periodEnd);
-      if (this.outbox?.enabled) this.outbox.setActive(this.outbox.key(provider, purchaseId, g.centralEdition), sub, g.centralProductId, g.centralEdition, startsAt, periodEnd);
+      if (this.outbox?.enabled) this.outbox.setActive(this.outbox.key(provider, purchaseId, g.centralEdition), sub, g.centralProductId, g.centralEdition, startsAt, periodEnd, g.features);
     }
   }
 

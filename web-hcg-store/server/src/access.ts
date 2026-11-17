@@ -10,7 +10,7 @@ import type { Product } from "../../src/domain/schema";
 
 export const DOWNLOADS_NOT_AVAILABLE = "Downloads are not available yet.";
 
-export type AccessState = "signed-out" | "owned" | "not-owned" | "not-for-sale" | "unavailable";
+export type AccessState = "signed-out" | "owned" | "free" | "not-owned" | "not-for-sale" | "unavailable";
 
 export interface PublicOffer {
   id: string;
@@ -111,14 +111,29 @@ export async function decideAccess(
   if (!session) return { ...base, message: "Sign in with HCG Connect to check access." };
 
   const signedIn = { ...base, signedIn: true };
+  // A release a person approved in HCG Store as public AND free is available to every signed-in HCG account
+  // (HCG Repo's sign-in-only "connect" level). It is not ownership: owned stays false, and only those files count.
+  const freeFiles = registry.published?.freePublicFor(product.id, editionId) ?? [];
+  const freeAccess = (): EditionAccess => {
+    const available = cfg.protectedDownloads;
+    return {
+      ...signedIn,
+      state: "free",
+      downloadsAvailable: available,
+      downloadsMessage: available ? "Free with your HCG account." : DOWNLOADS_NOT_AVAILABLE,
+      artifacts: available ? freeFiles.map((a) => ({ id: a.id, fileName: a.fileName, releaseId: a.releaseId })) : [],
+    };
+  };
   if (!centralId) {
     // Without a confirmed central product ID no entitlement can exist for this product.
+    if (freeFiles.length) return freeAccess();
     return { ...signedIn, state: offers.length ? "not-owned" : "not-for-sale" };
   }
   const check = await authority.check(
     { sub: session.sub, accessToken: session.accessToken },
     { centralProductId: centralId, editionId, centralEditionKey: findEdition(product, editionId)?.centralEditionKey ?? null },
   );
+  if (check.status !== "granted" && freeFiles.length) return freeAccess();
   if (check.status === "unavailable") {
     return { ...signedIn, state: "unavailable", message: "Your access could not be checked right now. Nothing has changed; try again shortly." };
   }
@@ -134,6 +149,11 @@ export async function decideAccess(
     downloadsMessage: downloadsAvailable ? "Available to your HCG account." : DOWNLOADS_NOT_AVAILABLE,
     artifacts: downloadsAvailable ? files.map((a) => ({ id: a.id, fileName: a.fileName, releaseId: a.releaseId })) : [],
   };
+}
+
+/** Whether this access decision lets the person download this exact file now. */
+export function mayDownload(access: EditionAccess, artifactId: string): boolean {
+  return (access.owned || access.state === "free") && access.downloadsAvailable && access.artifacts.some((a) => a.id === artifactId);
 }
 
 export function editionIdsOf(product: Product): (string | null)[] {

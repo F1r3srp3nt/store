@@ -70,7 +70,9 @@ jobs:
           path: web-hcg-store/dist
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # After the cutover to the Fly.io server (repository variable STORE_HOSTING = "fly"), GitHub Pages
+    # no longer serves the domain: build and test still run here, but nothing is published to Pages.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.STORE_HOSTING != 'fly'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -85,7 +87,7 @@ jobs:
 
   live-smoke:
     # Independent check of what the real domain serves after this deployment (waits for the CDN).
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.STORE_HOSTING != 'fly'
     needs: deploy
     runs-on: ubuntu-latest
     steps:
@@ -98,7 +100,7 @@ jobs:
 
   live-state:
     # On pull requests: report what the live domain serves today (informational, never blocks).
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && vars.STORE_HOSTING != 'fly'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:

@@ -1,8 +1,10 @@
 # Ship to Store: release publishing (HCG Executable Maker → HCG Store)
 
-Status: **implemented and tested in TEST mode only.** Off by default (`HCG_STORE_PUBLISHING` unset). Nothing is
-deployed; no central HCG policy, OAuth client or production security rule was changed. Enabling it needs the founder
-decisions listed under *Launch prerequisites*.
+Status (16 Nov 2026): **merged on `main`; tested in TEST mode only; not deployed.** Off by default
+(`HCG_STORE_PUBLISHING=disabled` in `fly.toml`). The release-review question is decided: the manual approval in HCG
+Store is the review (§3a). Production activation is phase 3 in [PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md), after
+sign-in (phase 2), and separate from customer payments and downloads. No central HCG policy, OAuth client or production
+security rule was changed.
 
 ## 1. Compatibility and security report (inspection of the existing Store)
 
@@ -25,8 +27,19 @@ change adds; nothing that worked was replaced.
 
 - **Who**: HCG Connect. Bearer tokens must be issued to a client in `HCG_STORE_PUBLISHING_CLIENT_IDS`
   (HCG Executable Maker's own client); signature, issuer and subject are verified against HCG Connect's JWKS.
-- **May publish**: `authority.check(sub, HCG_STORE_PUBLISHER_CENTRAL_ID, <product id> | "*")`.
-- **May approve**: `authority.check(sub, HCG_STORE_RELEASE_APPROVER_CENTRAL_ID, <product id> | "*")`.
+  In production that is HCG Executable Maker's production client `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (issued by HCG,
+  `configured_untested`). The server refuses the Store's own sign-in client and, in production, development clients.
+- **May publish / may approve**: HCG's central features `store.publish` and `store.release.approve` (main-site plan,
+  16 Nov 2026), checked **per product** on every action with the caller's own HCG token:
+  `POST /check {org_id, product_id: <the product's central ID>, feature_key: "store.publish"}` for each organisation
+  from `/me`. Granted only on `allowed: true` echoing that organisation, product and feature; anything else is "not
+  permitted" (or 503 when HCG cannot answer). Never inferred from owning the product, from an HCG role, or from anything
+  the client sends. A product HCG has not registered (no central ID) and a Store draft product are scoped to HCG Store's
+  own central product, `hcg.store`; such releases can never be approved for public delivery.
+- **Not yet true centrally:** HCG has not created these features. The main-site plan also records that today any member
+  of a licensed organisation passes `/check`; per-person grants for these staff features are planned (its step 4).
+  Until both exist, `/check` answers `feature_unavailable` and nobody can publish; publishing must stay off in
+  production until a denied-upload test with an organisation member *without* the grant passes.
 - **May download a public paid/subscription/entitlement release**: the product's central entitlement, exactly as
   before. Free public releases: any signed-in HCG account. Internal testing: a central entitlement for the product.
   Private: publishers only. HCG roles are never read.
@@ -56,6 +69,33 @@ change adds; nothing that worked was replaced.
    catalogue product with a central ID. Desktop tokens cannot approve.
 6. **Withdraw** (rollback): delivery stops on the next request, including links already issued; files and audit stay.
 
+### 3a. Release review and catalogue records
+
+The manual approval in HCG Store **is** the release review. There is no second, independent review in git:
+- it needs `store.release.approve` for the product, a browser session, the typed version, and for `public` a person
+  other than the creator (`separation_of_duties`) and a product with a central ID;
+- each step is in the append-only, hash-chained publishing audit (database triggers forbid update and delete).
+
+Delivery follows the approval at once: approved public files are served through the gated download paths, and a
+withdrawal stops them, with or without a catalogue change.
+
+`catalogue/releases.json` is still needed for the public storefront's release pages (version, notes, files and
+checksums, never a URL). It is **generated** from the approval records:
+- `node server-dist/release-records.mjs` (on the server) prints the public approvals and whether the audit chain
+  verifies. `npm run releases:sync -- --production` reads them through `fly ssh console`, refuses a broken audit chain,
+  and rewrites only the generated entries (`source.kind: "hcg-store-approval"`, each with the approval's audit hash).
+  Hand-written entries are kept. `--check` only reports whether the catalogue is behind.
+- Releases of the same product and version (several editions or builds) become one catalogue release.
+- `currentReleaseId` changes only when the approver ticked **make current** at approval (recorded in the audit),
+  never because a version is newer, and is cleared when that release is withdrawn.
+- Signing facts are labelled as reported by the uploading tool, not verified by the Store.
+- Committing the regenerated files publishes what was already approved; the commit is not a review.
+
+**Eligible approvers.** Public approval needs two different HCG accounts: a publisher (`store.publish`) and an approver
+(`store.release.approve`) for the product. HCG Store cannot list who holds a central permission. Since HCG has not
+created either feature, **no eligible approver exists today**, so no release can be approved for public delivery in
+production. The founder must have HCG grant `store.release.approve` to at least one person other than the publisher.
+
 Supported files: Windows EXE/MSI/MSIX/ZIP, macOS app ZIP/DMG/PKG, iOS/iPadOS IPA (and jailbreak DEB), Linux
 DEB/RPM/AppImage. Checks: allow-listed extension per platform; magic bytes (MZ/PE, OLE, UDIF `koly`, `xar!`, RPM lead,
 ELF+AppImage type 2, ar+`debian-binary`); ZIP/IPA/MSIX entries (absolute paths, `..`, backslashes, drive letters,
@@ -83,44 +123,58 @@ approver). All responses are `private, no-store`.
 ## 5. HCG Repo destination
 
 Releases with destination `hcg-repo` accept `.deb` files whose package ID maps to the release's product and edition in
-`catalogue/products.json`. After public approval they are offered by the existing Sileo `authorize_download` (version
-and architecture from the release), behind the same launch switch and entitlement check. **Not yet done (needs HCG Repo
-changes, proposed here, not implemented there):** HCG Repo must list protected packages in `Packages` without hosting
-the `.deb` (`docs/HCG-REPO.md`, remaining work 1), and its importer needs a source kind that pins a Store artifact by
-SHA-256 (e.g. `kind = "hcg-store"`, `artifact`, `sha256`) so its review pipeline can record Store-held packages. No
-payment or licence logic moves to HCG Repo.
+`catalogue/products.json`. The Debian version must be the release version or `<version>-<revision>` (otherwise Sileo's
+`authorize_download` could never match it). After public approval they are offered by the Sileo provider
+(`authorize_download`), behind the launch switch and the entitlement check. HCG Repo never holds the `.deb`.
+
+The Store-held package contract with HCG Repo (HCG Repo `docs/STORE_RELEASES.md`):
+- HCG Repo pins each Store-held package by the Store artifact's SHA-256 (`import-store-release`), lists it as
+  `cydia::commercial` with a `Filename` it never serves, and points `payment_endpoint` at
+  `https://store.hakmicapitalgroup.com/repo-api/v1/sileo/` (https only; Sileo refuses http).
+- `GET /api/v1/repo/releases?destination=hcg-repo` (signed in, or a publishing client token): releases approved for
+  public delivery and those withdrawn after it, with each verified `.deb`'s id, SHA-256, size, architectures and
+  control fields. Metadata only. Shown per product to people HCG lets publish or approve that product (HCG has no
+  separate HCG Repo maintainer permission). HCG Repo uses it to see approvals and withdrawals.
+- A release approved as **public and free** is available to every signed-in HCG account (HCG Repo's `connect` level):
+  access state `free`, not ownership. Paid releases still need the edition entitlement.
+- Companion changes for HCG Repo, not made by HCG Store: its staging harness grants the old permission names and ships
+  the same `.deb` under a bumped release version (now refused by design), and expects an entitlement revocation to block
+  a free package (it no longer applies; withdrawal and sign-out do). Its page script should show the new `free` state.
 
 ## 6. Configuration
 
 | Variable | Meaning |
 |---|---|
 | `HCG_STORE_PUBLISHING` | `enabled` / `disabled` (default) |
-| `HCG_STORE_PUBLISHING_CLIENT_IDS` | Comma-separated HCG Connect client IDs allowed to call the publishing API |
-| `HCG_STORE_PUBLISHER_CENTRAL_ID` | Central permission for publishing (must be issued by HCG) |
-| `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central permission for approval (must differ from the publisher one) |
+| `HCG_STORE_PUBLISHING_CLIENT_IDS` | Comma-separated HCG Connect client IDs allowed to call the publishing API. Production: `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (Executable Maker). Must be issued UUIDs; never the Store's own client or, in production, a development client |
+| `HCG_STORE_PUBLISHER_CENTRAL_ID` | Central feature checked per product for publishing: `store.publish` |
+| `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central feature checked per product for approval: `store.release.approve` (must differ) |
+| `HCG_STORE_ARTIFACT_STORAGE_DIR` | Private directory on the data volume (`/data/artifacts`), outside the static root |
 | `HCG_STORE_UPLOAD_MAX_MB` (4096), `HCG_STORE_UPLOAD_CHUNK_MB` (8), `HCG_STORE_UPLOAD_URL_TTL_SECONDS` (900) | Limits |
 
 No storage administrator key exists anywhere: files are written by the Store process into its private directory.
 
-## 7. Launch prerequisites (founder decisions, not made)
+## 7. Production prerequisites (phase 3 in PRODUCTION-DEPLOY.md)
 
-0. **Decision D6** ([MAIN-SITE-INTEGRATION.md](MAIN-SITE-INTEGRATION.md)) keeps releases and files with HCG Store, with no
-   central release-approval authority, so Ship to Store needs nothing from the main site for releases. D6 names the
-   founder-reviewed `catalogue/releases.json` as the release record. **Open for the founder:** whether a release
-   approved here must also be added to `catalogue/releases.json` (reviewed in git) before public delivery, or whether
-   this approval (a different person, typed confirmation, audited) is that review. Until decided, keep publishing off.
-1. HCG issues/confirms the central permission IDs for publishing and approval, and the entitlement API serves them
-   (`hcg-ecosystem` authority). The deployed `/check` takes `feature_key: "download"` only, so the live authority
-   cannot confirm these permissions and publishing fails closed (503); until then it can only run in TEST mode.
-2. HCG Executable Maker's HCG Connect client is registered (its configuration still ships a placeholder) and added to
-   `HCG_STORE_PUBLISHING_CLIENT_IDS`.
-3. The Store is deployed with private storage and backups; the launch conditions in [ACCESS.md](ACCESS.md) still govern
-   any download by customers.
-4. Founder approval to set `HCG_STORE_PUBLISHING=enabled` in production.
+| # | Prerequisite | Status |
+|---|---|---|
+| 1 | Release review decided | **Done**: Store approval is the review; the catalogue is generated (§3a) |
+| 2 | HCG Store server deployed with HTTPS, persistent private storage and backups | **Prepared, not deployed** (phases 0–1) |
+| 3 | HCG Store sign-in verified in production with its own production client | **Not done**: client not issued (phase 2) |
+| 4 | Executable Maker's client issued | **Done by HCG** (`fb9b6edf-…`, `configured_untested`); configured in `fly.toml`, commented until phase 3 |
+| 5 | HCG creates `store.publish` and `store.release.approve` as per-product features with per-person grants (membership alone must not pass) | **Not done** (main-site plan steps 3–4, awaiting founder approval) |
+| 6 | Two different people hold the permissions (publisher, approver) | **Not done**: no eligible approver exists |
+| 7 | Publishing checks pass in production (PRODUCTION-DEPLOY.md, phase 3) | **Not run** |
+| 8 | Founder approval to set `HCG_STORE_PUBLISHING=enabled` | **Not given** |
+
+Customer delivery of approved files stays behind the separate launch conditions in [ACCESS.md](ACCESS.md).
 
 ## 8. Tests
 
-- `server/test/publishing.test.ts` (12): kinds from content (Simulator refused declared and hidden, declaration
+- `server/test/publishing.test.ts` (15). New on 16 Nov: permissions per product (a grant for one product, ownership, a
+  role or the publisher feature never permits another product or approval); the Debian version rule, free public
+  releases for any signed-in account, the HCG Repo listing and withdrawal; catalogue generation from approvals
+  (explicit current release, withdrawal, refusal on a broken audit chain). Earlier (12): kinds from content (Simulator refused declared and hidden, declaration
   contradictions, unsigned / no profile / development / ad hoc / in-house / App Store IPAs, jailbreak vs Linux DEB),
   labels on the review page, public approval refused for an unsigned device build; approver draft review download with
   identical bytes, customers refused, nothing public, unauthorised file additions and forged upload URLs refused;

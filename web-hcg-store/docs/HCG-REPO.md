@@ -1,6 +1,6 @@
 # HCG Store ⇄ HCG Repo
 
-HCG Repo (`F1r3srp3nt/HCG-repo`, future `https://repo.hakmicapitalgroup.com/`, not live) is the
+HCG Repo (`F1r3srp3nt/HCG-repo`, `https://repo.hakmicapitalgroup.com/`: public metadata only, no protected package listed) is the
 distribution entry point for jailbreak packages and terminal tools. HCG Store handles product
 discovery, checkout, purchase history and ownership. Both apply the same ownership rules, because
 HCG Repo asks the Store, and the Store asks HCG.
@@ -45,8 +45,8 @@ the pages fall back to the plain links.
 Inspected from Sileo's source (`Sileo/Backend/Payment Manager/*.swift`). The official documentation
 site was unreachable from the build environment.
 
-- **Discovery:** Sileo reads `<repo>/payment_endpoint`. It must be HTTPS. HCG Repo can emit it from
-  `[payments] endpoint`, which is **empty**, so it is disabled.
+- **Discovery:** Sileo reads `<repo>/payment_endpoint`. It must be HTTPS. HCG Repo emits it from
+  `[access] payment_endpoint`, which is **empty**, so it is disabled.
 - **Sign-in:** Sileo opens `<endpoint>authenticate` in the system web-authentication sheet. The Store
   runs the normal HCG Connect sign-in, then redirects to
   `sileo://authentication_success?token=…&payment_secret=…`. The token is a **Store-issued, revocable
@@ -65,13 +65,14 @@ site was unreachable from the build environment.
 
 ### Remaining work before installation can be offered
 
-1. **Protected index entries.** HCG Repo must list paid or login-gated packages in `Packages`
-   (control metadata with `Tag: cydia::commercial`) without putting the `.deb` in the public `debs/`
-   directory. Sileo then fetches the file only through `authorize_download`. Today the validator
-   refuses non-public packages entirely, which keeps them safe but uninstallable.
-2. Go live with the Store and enable launch (see [ACCESS.md](ACCESS.md#launch-conditions-all-must-hold-before-downloads-are-enabled)),
-   then set HCG Repo's `[payments] endpoint`.
-3. Migrate HCG Repo to its custom domain. Its own `docs/CUSTOM_DOMAIN.md` covers this.
+1. ~~Protected index entries.~~ **Done in HCG Repo** (16 Nov): a Store-held package is pinned by the Store artifact's
+   SHA-256 (`import-store-release`) and indexed as `cydia::commercial` with a `Filename` that is never deployed. The
+   Store-held package contract is in [PUBLISHING.md §5](PUBLISHING.md#5-hcg-repo-destination); HCG Repo's staging test
+   against this Store passes 38/38 for a paid package (HCG Repo `docs/STORE_RELEASES.md`).
+2. Deploy the Store on https ([PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md)), enable launch (see
+   [ACCESS.md](ACCESS.md#launch-conditions-all-must-hold-before-downloads-are-enabled)), then set HCG Repo's
+   `[access] payment_endpoint` to `https://store.hakmicapitalgroup.com/repo-api/v1/sileo/`.
+3. ~~Custom domain.~~ Done: `repo.hakmicapitalgroup.com` serves HCG Repo.
 4. Test on a device with Sileo: sign in, buy, install and sign out.
 
 ## Native apps

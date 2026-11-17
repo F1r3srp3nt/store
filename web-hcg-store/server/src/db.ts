@@ -202,7 +202,37 @@ const MIGRATIONS: string[] = [
   // (SQLite treats NULL edition IDs as distinct in the table's UNIQUE constraint).
   `ALTER TABLE pub_artifacts ADD COLUMN declared_kind TEXT;
    CREATE UNIQUE INDEX pub_releases_one_per_build ON pub_releases (product_id, COALESCE(edition_id, ''), version, build);`,
+  // 5: HCG Connect evidence. When sign-in confirmed the account with HCG's /me, and an audit trail of
+  // sign-in, refresh and logout events. Neither ever holds a token.
+  `ALTER TABLE sessions ADD COLUMN account_confirmed_at INTEGER;
+   CREATE TABLE auth_events (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     type TEXT NOT NULL,
+     session_ref TEXT,
+     sub TEXT,
+     detail TEXT
+   );
+   CREATE INDEX auth_events_at ON auth_events(at);`,
+  // 6: a purchase grant names the central features it includes (main-site plan: a grant covers only the purchased
+  // product, edition and features).
+  `ALTER TABLE central_grants ADD COLUMN features TEXT NOT NULL DEFAULT '[]';`,
 ];
+
+/**
+ * Audit trail for sign-in, refresh and logout. `session_ref` is the first 12 hex characters of the
+ * session's ID hash, enough to follow one session; `detail` is small JSON with outcomes and reasons.
+ * Never pass a token, code, verifier or cookie value here.
+ */
+export function recordAuthEvent(db: Db, at: number, type: string, opts: { sessionHash?: string; sub?: string; detail?: Record<string, unknown> } = {}): void {
+  db.prepare(`INSERT INTO auth_events (at, type, session_ref, sub, detail) VALUES (?, ?, ?, ?, ?)`).run(
+    at,
+    type,
+    opts.sessionHash ? opts.sessionHash.slice(0, 12) : null,
+    opts.sub ?? null,
+    opts.detail ? JSON.stringify(opts.detail) : null,
+  );
+}
 
 export type Db = DatabaseSync;
 

@@ -12,3 +12,6 @@ playwright-report/
 *.tsbuildinfo
 server-dist/
 dist-pages/
+
+# Local HCG Connect development: session key, database, evidence reports
+.hcg-dev/

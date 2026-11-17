@@ -44,11 +44,20 @@ export interface EntitlementAuthority {
   /** Whether verified purchases can be turned into entitlements. */
   readonly canGrant: boolean;
   check(subject: Subject, target: CheckTarget): Promise<CheckResult>;
+  /**
+   * A central feature of one product, e.g. the staff permissions `store.publish` and `store.release.approve`
+   * (main-site plan, 16 Nov 2026), checked for the product they are scoped to. Never inferred from owning the
+   * product, from a role, or from anything the client sends.
+   */
+  checkFeature(subject: Subject, centralProductId: string, featureKey: string): Promise<CheckResult>;
   list(subject: Subject): Promise<{ status: "ok"; items: OwnedItem[] } | { status: "unavailable"; reason: string }>;
   /** Synchronous, so it can run inside the payment-event transaction (test ledger only). */
   grant(sub: string, centralProductId: string, edition: string, source: string, expiresAt: number | null): void;
   revoke(sub: string, centralProductId: string, edition: string, source: string): void;
 }
+
+/** How the TEST ledger stores a central feature (permission) next to edition entitlements. */
+export const featureEdition = (featureKey: string) => `feature:${featureKey}`;
 
 const UNSUPPORTED = "HCG has not published an entitlement grant API. Purchases cannot be fulfilled.";
 
@@ -56,6 +65,9 @@ export class NoAuthority implements EntitlementAuthority {
   readonly kind = "none" as const;
   readonly canGrant = false;
   async check(): Promise<CheckResult> {
+    return { status: "unavailable", reason: "No entitlement authority is configured." };
+  }
+  async checkFeature(): Promise<CheckResult> {
     return { status: "unavailable", reason: "No entitlement authority is configured." };
   }
   async list() {
@@ -91,12 +103,23 @@ export class TestLedgerAuthority implements EntitlementAuthority {
     return { status: "granted", expiresAt };
   }
 
+  /** TEST stand-in for a central feature: a row with edition `feature:<key>` for the product (or "*", test only). */
+  async checkFeature(subject: Subject, centralProductId: string, featureKey: string): Promise<CheckResult> {
+    const rows = this.db
+      .prepare(
+        `SELECT expires_at FROM test_entitlements
+         WHERE sub = ? AND (product_id = ? OR product_id = '*') AND edition = ? AND status = 'active'`,
+      )
+      .all(subject.sub, centralProductId, featureEdition(featureKey)) as { expires_at: number | null }[];
+    return rows.some((r) => r.expires_at === null || r.expires_at > this.now()) ? { status: "granted", expiresAt: null } : { status: "not-granted" };
+  }
+
   async list(subject: Subject) {
     const rows = this.db
       .prepare(`SELECT product_id, edition, expires_at FROM test_entitlements WHERE sub = ? AND status = 'active'`)
       .all(subject.sub) as { product_id: string; edition: string; expires_at: number | null }[];
     const items = rows
-      .filter((r) => r.expires_at === null || r.expires_at > this.now())
+      .filter((r) => !r.edition.startsWith("feature:") && (r.expires_at === null || r.expires_at > this.now()))
       .map((r) => ({ centralProductId: r.product_id, edition: r.edition, expiresAt: r.expires_at }));
     return { status: "ok" as const, items };
   }
@@ -158,6 +181,32 @@ interface CheckResponse {
 
 export const DOWNLOAD_FEATURE = "download";
 
+/**
+ * `GET /me` (DEPLOYED): the account HCG's Ecosystem API sees for an access token. Used once at sign-in
+ * to confirm that the account the Store verified from the tokens is the one HCG's API recognises.
+ */
+export async function fetchMe(
+  baseUrl: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ status: "ok"; userId: string } | { status: "unauthorized" } | { status: "unavailable"; reason: string }> {
+  try {
+    const res = await fetchImpl(`${baseUrl}/me`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+      redirect: "error",
+    });
+    if (res.status === 401) return { status: "unauthorized" };
+    const type = res.headers.get("content-type") ?? "";
+    if (res.status !== 200 || !type.includes("application/json")) return { status: "unavailable", reason: `HTTP ${res.status}` };
+    const body = (await res.json()) as { api_version?: unknown; user?: { id?: unknown } };
+    if (body.api_version !== "v1" || typeof body.user?.id !== "string") return { status: "unavailable", reason: "unrecognised answer" };
+    return { status: "ok", userId: body.user.id };
+  } catch (e) {
+    return { status: "unavailable", reason: e instanceof Error ? e.name : "error" };
+  }
+}
+
 export class HcgEcosystemAuthority implements EntitlementAuthority {
   readonly kind = "hcg-ecosystem" as const;
   readonly canGrant = false;
@@ -200,12 +249,24 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
   }
 
   async check(subject: Subject, target: CheckTarget): Promise<CheckResult> {
-    if (!subject.accessToken) return { status: "unavailable", reason: "No HCG access token." };
-    const wantsEdition = target.editionId !== null;
-    if (wantsEdition && !target.centralEditionKey) {
+    if (target.editionId !== null && !target.centralEditionKey) {
       // D2: an edition HCG has no key for is never checked against a product-wide grant.
       return { status: "unavailable", reason: "This edition is not mapped to HCG's central licensing yet." };
     }
+    return this.decide(subject, target.centralProductId, DOWNLOAD_FEATURE, target.editionId !== null ? target.centralEditionKey : null);
+  }
+
+  /**
+   * A product-scoped central feature (no edition): `POST /check {org_id, product_id, feature_key}` exactly as
+   * deployed. Granted only on `allowed: true` echoing this organisation, product and feature.
+   */
+  async checkFeature(subject: Subject, centralProductId: string, featureKey: string): Promise<CheckResult> {
+    return this.decide(subject, centralProductId, featureKey, null);
+  }
+
+  private async decide(subject: Subject, centralProductId: string, featureKey: string, editionKey: string | null): Promise<CheckResult> {
+    if (!subject.accessToken) return { status: "unavailable", reason: "No HCG access token." };
+    const wantsEdition = editionKey !== null;
     const orgs = await this.organisations(subject.accessToken);
     if (orgs === null) return { status: "unavailable", reason: "HCG could not confirm the account's organisations." };
     // Licences belong to organisations. A person in none holds no licence (handoff: "Critical finding").
@@ -213,8 +274,8 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
 
     let unknown = false;
     for (const org of orgs) {
-      const body: Record<string, string> = { org_id: org, product_id: target.centralProductId, feature_key: DOWNLOAD_FEATURE };
-      if (wantsEdition) body.edition = target.centralEditionKey!;
+      const body: Record<string, string> = { org_id: org, product_id: centralProductId, feature_key: featureKey };
+      if (wantsEdition) body.edition = editionKey;
       const r = await this.call("/check", subject.accessToken, body);
       if (!r) {
         unknown = true;
@@ -226,7 +287,7 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
         continue;
       }
       const c = r.json as CheckResponse;
-      const echoes = c.api_version === "v1" && c.org_id === org && c.product_id === target.centralProductId && c.feature_key === DOWNLOAD_FEATURE;
+      const echoes = c.api_version === "v1" && c.org_id === org && c.product_id === centralProductId && c.feature_key === featureKey;
       if (!echoes || typeof c.allowed !== "boolean") {
         unknown = true;
         continue;
@@ -234,7 +295,7 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
       if (wantsEdition) {
         // The answer must say it evaluated exactly this edition. The deployed route does not, so
         // edition checks stay "unknown" until HCG ships the edition check (D2).
-        const editionConfirmed = c.edition === target.centralEditionKey && (c.edition_scope === "edition" || c.edition_scope === "all-editions");
+        const editionConfirmed = c.edition === editionKey && (c.edition_scope === "edition" || c.edition_scope === "all-editions");
         if (!editionConfirmed) {
           unknown = true;
           continue;
@@ -242,7 +303,7 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
       }
       if (c.allowed) return { status: "granted", expiresAt: null };
     }
-    return unknown ? { status: "unavailable", reason: "HCG did not confirm access for this edition." } : { status: "not-granted" };
+    return unknown ? { status: "unavailable", reason: wantsEdition ? "HCG did not confirm access for this edition." : "HCG did not confirm this access." } : { status: "not-granted" };
   }
 
   /** Display only (PREVIEW route). Never used to decide access. */

@@ -1,0 +1,149 @@
+# Deploys the HCG Store server (storefront + sign-in) to Fly.io. Manual only: Actions → "Deploy Store
+# server to Fly.io" → Run workflow. Needs the repository secret FLY_API_TOKEN: an org-scoped token
+# (`fly tokens create org`) for the first run, which also creates the app, its volume and its session
+# key; an app deploy token (`fly tokens create deploy -a hcg-store`) is enough afterwards.
+#
+# mode=deploy: create what is missing (idempotent), deploy, request the certificate for the domain, smoke-test.
+# mode=status: change nothing; report machines, certificate and DNS state, and both addresses' health.
+# mode=evidence: change nothing; print the sign-in audit trail since `since_ms` WITHOUT account IDs, tokens or
+#   cookies (this repository's Actions logs are public): event types, times, reasons, session references.
+# mode=restart: restart the Machine (session-restoration check); the database and sessions persist on the volume.
+#
+# The session key is generated inside the runner and piped straight to Fly; it is never printed or stored here.
+# Payments, purchase grants, publishing and protected downloads stay off: fly.toml sets them, and the server
+# refuses unsafe production settings at start.
+name: Deploy Store server to Fly.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "deploy, or status (read-only)"
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, status, evidence, restart]
+      org:
+        description: "Fly.io organisation for a new app (personal = your own)"
+        required: true
+        default: personal
+      check_url:
+        description: "Address to smoke-test after deploying"
+        required: true
+        default: "https://hcg-store.fly.dev/"
+      since_ms:
+        description: "evidence: only events at or after this time (ms since 1970)"
+        required: false
+        default: "0"
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOMAIN: store.hakmicapitalgroup.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: web-hcg-store
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: App name from fly.toml
+        run: echo "APP=$(sed -n 's/^app = "\(.*\)"$/\1/p' fly.toml)" >> "$GITHUB_ENV"
+      - name: Fly access
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::The repository secret FLY_API_TOKEN is not set."; exit 1; fi
+          flyctl auth whoami >/dev/null 2>&1 || flyctl orgs list >/dev/null || { echo "::error::FLY_API_TOKEN was refused by Fly.io."; exit 1; }
+          echo "Fly.io accepted the token."
+
+      - uses: actions/setup-node@v4
+        if: inputs.mode == 'deploy'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-hcg-store/package-lock.json
+      - if: inputs.mode == 'deploy'
+        run: npm ci
+      - name: Unit, component and server tests
+        if: inputs.mode == 'deploy'
+        run: npm test
+
+      - name: Create the app if missing
+        if: inputs.mode == 'deploy'
+        run: |
+          if flyctl status --app "$APP" >/dev/null 2>&1; then echo "App $APP exists."; else
+            flyctl apps create "$APP" --org "${{ inputs.org }}" --yes \
+              || { echo "::error::Could not create app $APP (the name may be taken by another Fly.io account; change app in fly.toml)."; exit 1; }
+          fi
+      - name: Create the data volume if missing
+        if: inputs.mode == 'deploy'
+        run: |
+          vols=$(flyctl volumes list --app "$APP" --json)
+          if echo "$vols" | grep -q '"hcg_store_data"'; then echo "Volume hcg_store_data exists."; else
+            flyctl volumes create hcg_store_data --app "$APP" --region arn --size 3 --snapshot-retention 14 --yes
+          fi
+      - name: Create the session key if missing (never printed)
+        if: inputs.mode == 'deploy'
+        run: |
+          names=$(flyctl secrets list --app "$APP" --json) || { echo "::error::Could not list secrets; not creating a new key."; exit 1; }
+          if echo "$names" | grep -q '"HCG_STORE_SECRET_KEY"'; then
+            echo "HCG_STORE_SECRET_KEY is set; not changed."
+          else
+            printf 'HCG_STORE_SECRET_KEY=%s\n' "$(openssl rand -base64 32)" | flyctl secrets import --app "$APP" --stage >/dev/null
+            echo "HCG_STORE_SECRET_KEY created."
+          fi
+      - name: Deploy (one Machine, built by Fly's remote builder from web-hcg-store/Dockerfile)
+        if: inputs.mode == 'deploy'
+        run: flyctl deploy --app "$APP" --remote-only --ha=false --yes --build-arg GITHUB_SHA=${{ github.sha }}
+      - name: Request the certificate for the domain
+        if: inputs.mode == 'deploy'
+        run: flyctl certs show "$DOMAIN" --app "$APP" >/dev/null 2>&1 || flyctl certs add "$DOMAIN" --app "$APP"
+      - name: Smoke-test the deployed server (commit, routes, HTTPS, redirect, no private files)
+        if: inputs.mode == 'deploy'
+        run: node scripts/smoke-deployment.mjs "${{ inputs.check_url }}" --expect-commit "${{ github.sha }}" --wait 300
+
+      - name: Restart the Machine
+        if: inputs.mode == 'restart'
+        run: flyctl apps restart "$APP"
+      - name: Sign-in evidence (no account IDs, tokens or cookies)
+        if: inputs.mode == 'evidence'
+        run: |
+          since='${{ inputs.since_ms }}'
+          case "$since" in ''|*[!0-9]*) echo "::error::since_ms must be a number"; exit 1;; esac
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/auth-evidence.mjs --since $since" | grep '^{' | tail -1)
+          {
+            echo "## Sign-in evidence since $since"
+            echo '```json'
+            echo "$out" | jq '{events: [.events[] | {at: (.at/1000 | floor | todate), type, session_ref, detail: (.detail | fromjson? // .)}],
+                               sessions: [.sessions[] | {session_ref, created_at: (.created_at/1000 | floor | todate), last_seen_at: (.last_seen_at/1000 | floor | todate),
+                                          ended_at: (if .ended_at then (.ended_at/1000 | floor | todate) else null end), ended_reason,
+                                          refresh_token_deleted, access_token_deleted}]}'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Report (machines, IPs, certificate, DNS, health)
+        if: always()
+        run: |
+          {
+            echo "## HCG Store on Fly.io ($APP)"
+            echo '```'
+            flyctl machines list --app "$APP" 2>&1 | head -20 || true
+            echo
+            flyctl ips list --app "$APP" 2>&1 || true
+            echo
+            flyctl certs show "$DOMAIN" --app "$APP" 2>&1 || echo "No certificate requested for $DOMAIN yet."
+            echo
+            echo "DNS now: $(dig +short CNAME "$DOMAIN" | tr '\n' ' ') $(dig +short A "$DOMAIN" | tr '\n' ' ')"
+            echo "Fly address health: $(curl -s -m 15 https://$APP.fly.dev/api/v1/health || echo unreachable)"
+            echo "Domain health:      $(curl -s -m 15 https://$DOMAIN/api/v1/health | head -c 300 || echo unreachable)"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

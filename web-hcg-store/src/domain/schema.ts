@@ -218,6 +218,28 @@ export const ReleaseSchema = z
     releaseNotes: z.array(text).default([]),
     knownLimitations: z.array(text).default([]),
     artifacts: z.array(ArtifactSchema).default([]),
+    /**
+     * Set only by `npm run releases:sync`: the release was approved in HCG Store (Ship to Store) by a person HCG allows
+     * to approve the product, other than its creator. That approval is the release review; this entry is generated
+     * from it and must not be edited by hand.
+     */
+    source: z
+      .strictObject({
+        kind: z.literal("hcg-store-approval"),
+        approvals: z
+          .array(
+            z.strictObject({
+              storeReleaseId: kebab,
+              editionId: kebab.nullable(),
+              build: text,
+              approvedAt: z.iso.datetime(),
+              /** Hash of the approval entry in HCG Store's hash-chained publishing audit. */
+              approvalAudit: z.string().regex(/^[a-f0-9]{64}$/),
+            }),
+          )
+          .min(1),
+      })
+      .optional(),
   })
   .superRefine((r, ctx) => {
     if (r.status === "withdrawn" && !r.withdrawnReason) {

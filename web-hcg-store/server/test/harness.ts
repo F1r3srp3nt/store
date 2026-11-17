@@ -144,7 +144,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
         ? new HcgEcosystemAuthority(cfg.ecosystem!.baseUrl, opts.ecosystemFetch)
         : new NoAuthority();
   const outbox = new CentralGrantOutbox(db, clock.now, cfg.grants, opts.grantFetch);
-  const app = createStoreApp({ cfg, db, registry, connect, authority, now: clock.now, outbox });
+  const app = createStoreApp({ cfg, db, registry, connect, authority, now: clock.now, outbox, ecosystemFetch: opts.ecosystemFetch });
   server.on("request", (req, res) => void app.handle(req, res));
 
   const anonymous = () => new Client(origin);

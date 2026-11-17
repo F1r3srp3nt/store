@@ -203,3 +203,55 @@ describe("HCG Ecosystem API client", () => {
     });
   });
 });
+
+describe("product-scoped central features (publishing permissions)", () => {
+  const feature = (grants: { org: string; product: string; feature: string }[]) =>
+    mockHcg({
+      orgs: [ORG_A, ORG_B],
+      checkOverride: (b) => {
+        const allowed = grants.some((g) => g.org === b.org_id && g.product === b.product_id && g.feature === b.feature_key);
+        return { api_version: "v1", org_id: b.org_id, product_id: b.product_id, feature_key: b.feature_key, allowed, layer: allowed ? null : "availability", reason: allowed ? null : "feature_unavailable", verified_at: "2026-11-16T12:00:00Z" };
+      },
+    });
+
+  it("asks /check for the feature on the product, with no edition, per organisation", async () => {
+    const m = feature([{ org: ORG_B, product: "hcg.executable.maker", feature: "store.publish" }]);
+    const a = new HcgEcosystemAuthority(BASE, m.fetchImpl);
+    expect(await a.checkFeature({ sub: "sub-alice", accessToken: TOKEN }, "hcg.executable.maker", "store.publish")).toEqual({ status: "granted", expiresAt: null });
+    const checks = m.calls.filter((c) => c.path === "/check").map((c) => c.body);
+    expect(checks).toEqual([
+      { org_id: ORG_A, product_id: "hcg.executable.maker", feature_key: "store.publish" },
+      { org_id: ORG_B, product_id: "hcg.executable.maker", feature_key: "store.publish" },
+    ]);
+  });
+
+  it("does not carry a permission from one product or feature to another", async () => {
+    const m = feature([{ org: ORG_A, product: "hcg.executable.maker", feature: "store.publish" }]);
+    const a = new HcgEcosystemAuthority(BASE, m.fetchImpl);
+    const s = { sub: "sub-alice", accessToken: TOKEN };
+    expect((await a.checkFeature(s, "hcg.mail", "store.publish")).status).toBe("not-granted");
+    expect((await a.checkFeature(s, "hcg.executable.maker", "store.release.approve")).status).toBe("not-granted");
+  });
+
+  it("a feature HCG has not created (feature_unavailable) is not permitted", async () => {
+    const a = new HcgEcosystemAuthority(BASE, feature([]).fetchImpl);
+    expect((await a.checkFeature({ sub: "sub-alice", accessToken: TOKEN }, "hcg.executable.maker", "store.publish")).status).toBe("not-granted");
+  });
+
+  it("an answer for another feature or product, or the download licence, is never a permission", async () => {
+    const owner = mockHcg({ orgs: [ORG_A], licences: [{ org: ORG_A, product: "hcg.executable.maker", scopeKey: null }] });
+    // The deployed mock grants any feature to an organisation holding a licence, but echoes the feature asked for.
+    const wrongEcho = mockHcg({ orgs: [ORG_A], checkOverride: (b) => ({ api_version: "v1", org_id: b.org_id, product_id: b.product_id, feature_key: "download", allowed: true, layer: null, reason: null }) });
+    const s = { sub: "sub-alice", accessToken: TOKEN };
+    expect((await new HcgEcosystemAuthority(BASE, wrongEcho.fetchImpl).checkFeature(s, "hcg.executable.maker", "store.publish")).status).toBe("unavailable");
+    // Owning the product answers the download feature; the publishing feature is asked separately.
+    await new HcgEcosystemAuthority(BASE, owner.fetchImpl).checkFeature(s, "hcg.executable.maker", "store.publish");
+    expect(owner.calls.filter((c) => c.path === "/check").every((c) => c.body!.feature_key === "store.publish")).toBe(true);
+  });
+
+  it("no token, or HCG unreachable, is unknown, not a permission", async () => {
+    const a = new HcgEcosystemAuthority(BASE, mockHcg({ meStatus: 503 }).fetchImpl);
+    expect((await a.checkFeature({ sub: "sub-alice", accessToken: TOKEN }, "hcg.executable.maker", "store.publish")).status).toBe("unavailable");
+    expect((await a.checkFeature({ sub: "sub-alice", accessToken: null }, "hcg.executable.maker", "store.publish")).status).toBe("unavailable");
+  });
+});

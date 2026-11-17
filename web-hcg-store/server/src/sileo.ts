@@ -18,7 +18,7 @@
  * protected package-index entries exist and launch is approved (see docs/HCG-REPO.md).
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { decideAccess, deliverableArtifacts, DOWNLOADS_NOT_AVAILABLE, type AccessDeps } from "./access";
+import { decideAccess, deliverableArtifacts, DOWNLOADS_NOT_AVAILABLE, mayDownload, type AccessDeps } from "./access";
 import type { StoreConfig } from "./config";
 import { randomToken, sha256Hex, signPayload, verifyPayload } from "./crypto";
 import type { Db } from "./db";
@@ -110,7 +110,7 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
         const pkg = edition.identifiers.find((i) => i.kind === "debian-package")?.value;
         if (!pkg) continue;
         const a = await decideAccess(ctx.accessDeps, product, edition.id, session);
-        if (a.owned) items.push(pkg);
+        if (a.owned || a.state === "free") items.push(pkg);
       }
     }
     return json(res, 200, { items, user: { name: session.name ?? session.email ?? "HCG account", email: session.email ?? "" } });
@@ -127,24 +127,24 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
     if (action === "info") {
       const offer = a.offers[0];
       return json(res, 200, {
-        price: a.owned ? "Owned" : offer ? priceText(offer.unitAmount, offer.currency) : "Not for sale",
-        purchased: a.owned ? 1 : 0,
+        price: a.owned ? "Owned" : a.state === "free" ? "Free" : offer ? priceText(offer.unitAmount, offer.currency) : "Not for sale",
+        purchased: a.owned || a.state === "free" ? 1 : 0,
         available: a.downloadsAvailable || (!a.owned && a.checkoutReady) ? 1 : 0,
       });
     }
     if (action === "purchase") {
       // A purchase request never grants access. Checkout happens on the Store; access appears only
       // after the payment provider's verified event.
-      if (a.owned) return json(res, 200, { status: 0 });
+      if (a.owned || a.state === "free") return json(res, 200, { status: 0 });
       if (!a.checkoutReady) return json(res, 200, { status: -1, error: a.checkoutUnavailableReason ?? "Not for sale." });
       return json(res, 200, { status: 1, url: `${ctx.cfg.publicOrigin}/apps/${product.slug}?edition=${encodeURIComponent(edition.id)}&buy=1` });
     }
     // authorize_download
-    if (!a.owned) return fail(res, 403, "Your HCG account does not include this package.");
+    if (!a.owned && a.state !== "free") return fail(res, 403, "Your HCG account does not include this package.");
     if (!ctx.cfg.protectedDownloads || !a.downloadsAvailable) return fail(res, 403, DOWNLOADS_NOT_AVAILABLE);
     const version = typeof body.version === "string" ? body.version : "";
     const arch = typeof body.architecture === "string" ? body.architecture : "iphoneos-arm";
-    const files = deliverableArtifacts(ctx.registry, product, edition.id).filter((f) => {
+    const files = deliverableArtifacts(ctx.registry, product, edition.id).filter((f) => mayDownload(a, f.id)).filter((f) => {
       const rel = ctx.registry.catalogue.releases.find((r) => r.id === f.releaseId);
       const cat = rel?.artifacts.find((x) => x.id === f.catalogueArtifactId);
       const meta = rel ? { version: rel.version, architectures: cat?.architectures ?? [] } : ctx.registry.published?.publishedMeta(f.id);
@@ -173,7 +173,7 @@ async function serveFile(ctx: SileoCtx, res: ServerResponse, token: string) {
   const product = file ? ctx.registry.catalogue.products.find((p) => p.id === file.productId) : undefined;
   if (!file || !product || !ctx.cfg.protectedDownloads) return errorJson(res, 403, "not_available", DOWNLOADS_NOT_AVAILABLE);
   const a = await decideAccess(ctx.accessDeps, product, file.editionId, s);
-  if (!a.owned || !deliverableArtifacts(ctx.registry, product, file.editionId).some((x) => x.id === file.id)) {
+  if (!mayDownload(a, file.id)) {
     return errorJson(res, 403, "not_entitled", "Your HCG account does not include this package.");
   }
   return ctx.streamArtifact(res, file.storageKey, file.fileName, "application/vnd.debian.binary-package");

@@ -14,7 +14,7 @@
  */
 import type { StoreConfig } from "./config";
 import { randomToken, seal, sha256Hex, unseal } from "./crypto";
-import type { Db } from "./db";
+import { recordAuthEvent, type Db } from "./db";
 import type { HcgConnectClient, Identity, TokenSet } from "./hcg-connect";
 
 export interface Session {
@@ -26,6 +26,8 @@ export interface Session {
   accessExpiresAt: number;
   refreshToken: string | null;
   centralCheckedAt: number;
+  /** When sign-in confirmed this account with HCG's /me, or null if it could not. */
+  accountConfirmedAt: number | null;
   createdAt: number;
   lastSeenAt: number;
 }
@@ -39,6 +41,7 @@ interface Row {
   access_token: string | null;
   access_expires_at: number;
   central_checked_at: number;
+  account_confirmed_at: number | null;
   created_at: number;
   last_seen_at: number;
   ended_at: number | null;
@@ -67,14 +70,14 @@ export class SessionStore {
     return this.cookie("", 0);
   }
 
-  create(identity: Identity, tokens: TokenSet): { id: string; session: Session } {
+  create(identity: Identity, tokens: TokenSet, accountConfirmedAt: number | null = null): { id: string; session: Session } {
     const id = randomToken(32);
     const idHash = sha256Hex(id);
     const t = this.now();
     this.db
       .prepare(
-        `INSERT INTO sessions (id_hash, sub, email, name, refresh_token, access_token, access_expires_at, central_checked_at, created_at, last_seen_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (id_hash, sub, email, name, refresh_token, access_token, access_expires_at, central_checked_at, account_confirmed_at, created_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         idHash,
@@ -85,6 +88,7 @@ export class SessionStore {
         seal(this.cfg.secretKey, tokens.accessToken, `at:${idHash}`),
         tokens.expiresAt,
         t,
+        accountConfirmedAt,
         t,
         t,
       );
@@ -101,6 +105,7 @@ export class SessionStore {
       accessExpiresAt: r.access_expires_at,
       refreshToken: r.refresh_token ? unseal(this.cfg.secretKey, r.refresh_token, `rt:${r.id_hash}`) : null,
       centralCheckedAt: r.central_checked_at,
+      accountConfirmedAt: r.account_confirmed_at,
       createdAt: r.created_at,
       lastSeenAt: r.last_seen_at,
     };
@@ -132,9 +137,10 @@ export class SessionStore {
 
   end(idHash: string, reason: string): void {
     const t = this.now();
-    this.db
+    const ended = this.db
       .prepare(`UPDATE sessions SET ended_at = ?, ended_reason = ?, refresh_token = NULL, access_token = NULL WHERE id_hash = ? AND ended_at IS NULL`)
       .run(t, reason, idHash);
+    if (ended.changes) recordAuthEvent(this.db, t, "session_ended", { sessionHash: idHash, detail: { reason, tokensDeleted: true } });
     this.db.prepare(`UPDATE repo_tokens SET revoked_at = ? WHERE session_id_hash = ? AND revoked_at IS NULL`).run(t, idHash);
   }
 
@@ -153,6 +159,7 @@ export class SessionStore {
       return { status: "ended", reason: "expired" };
     }
     const r = await this.connect.refresh(session.refreshToken, session.sub);
+    if (r.status !== "ok") recordAuthEvent(this.db, t, "session_refresh_failed", { sessionHash: session.idHash, sub: session.sub, detail: { status: r.status, reason: r.reason } });
     if (r.status === "ended") {
       this.end(session.idHash, `central:${r.reason}`);
       return { status: "ended", reason: r.reason };
@@ -167,6 +174,11 @@ export class SessionStore {
         t,
         session.idHash,
       );
+    recordAuthEvent(this.db, t, "session_refreshed", {
+      sessionHash: session.idHash,
+      sub: session.sub,
+      detail: { refreshTokenRotated: !!r.tokens.refreshToken && r.tokens.refreshToken !== session.refreshToken },
+    });
     return { status: "ok", session: this.byHash(session.idHash)! };
   }
 }
