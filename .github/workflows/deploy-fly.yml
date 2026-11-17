@@ -189,6 +189,12 @@ jobs:
               done
               printf '  %-22s %-45s A     %s\n' "$ns" "$DOMAIN" "$(dig @"$ns" +norecurse +short A "$DOMAIN" | tr '\n' ' ')"
             done
+            ns1=$(dig @1.1.1.1 +short NS "$zone" | head -1)
+            echo "Zone serial and timing (SOA from $ns1): $(dig @"$ns1" +norecurse +short SOA "$zone")"
+            echo "Names a DNS form may have created by mistake (authoritative):"
+            for n in "$DOMAIN.$zone" "store.store.$zone" "_acme-challenge.$DOMAIN.$zone" "www.$DOMAIN" "store"; do
+              printf '  %-60s %s\n' "$n" "$(dig @"$ns1" +norecurse +short ANY "$n" 2>/dev/null | tr '\n' ' ')$(dig @"$ns1" +norecurse +short CNAME "$n" | tr '\n' ' ')"
+            done
             echo "Other public resolvers (A for $DOMAIN): 8.8.8.8 → $(dig @8.8.8.8 +short A "$DOMAIN" | tr '\n' ' ') | 9.9.9.9 → $(dig @9.9.9.9 +short A "$DOMAIN" | tr '\n' ' ')"
             echo "Fly address health: $(curl -s -m 15 https://$APP.fly.dev/api/v1/health || echo unreachable)"
             echo "Domain health:      $(curl -s -m 15 https://$DOMAIN/api/v1/health | head -c 300 || echo unreachable)"
