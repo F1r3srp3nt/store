@@ -149,6 +149,14 @@ jobs:
             echo
             flyctl machines list --app "$APP" 2>&1 | head -20 || true
             echo
+            echo "Machine events (newest first):"
+            for m in $(flyctl machines list --app "$APP" --json 2>/dev/null | jq -r '.[].id'); do
+              flyctl machine status "$m" --app "$APP" 2>&1 | sed -n '/Event Logs/,$p' | head -25
+            done
+            echo
+            echo "Recent server logs (no tokens are ever logged):"
+            flyctl logs --app "$APP" --no-tail 2>&1 | tail -60 || true
+            echo
             flyctl ips list --app "$APP" 2>&1 || true
             echo
             flyctl certs show "$DOMAIN" --app "$APP" 2>&1 || echo "No certificate requested for $DOMAIN yet."
