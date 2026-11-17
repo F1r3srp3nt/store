@@ -112,6 +112,13 @@ jobs:
         if: inputs.mode == 'deploy'
         run: node scripts/smoke-deployment.mjs "${{ inputs.check_url }}" --expect-commit "${{ github.sha }}" --wait 300
 
+      - name: Smoke-test the public domain (status mode, once DNS points to Fly)
+        if: inputs.mode == 'status'
+        continue-on-error: true
+        run: |
+          echo "Response headers from https://$DOMAIN/api/v1/health:"
+          curl -sS -m 20 -D - -o /dev/null "https://$DOMAIN/api/v1/health" | grep -iE '^HTTP|^server|^fly-request-id|^strict-transport' || true
+          node scripts/smoke-deployment.mjs "https://$DOMAIN/" --expect-commit "$(curl -s -m 15 https://$APP.fly.dev/hcg-build.json | jq -r .commit)"
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"
@@ -175,7 +182,14 @@ jobs:
             zone="${DOMAIN#*.}"
             echo "  zone $zone NS:  $(dig @1.1.1.1 +short NS "$zone" | tr '\n' ' ')"
             echo "  status for $DOMAIN: $(dig @1.1.1.1 "$DOMAIN" A | grep -o 'status: [A-Z]*')"
-            echo "  authoritative answer: $(dig +short NS "$zone" | head -1 | xargs -I{} dig @{} +noall +answer "$DOMAIN" ANY 2>/dev/null | tr '\n' ' ')"
+            echo "Authoritative answers (each of the zone's name servers, no recursion):"
+            for ns in $(dig @1.1.1.1 +short NS "$zone"); do
+              for n in "$DOMAIN" "_acme-challenge.$DOMAIN"; do
+                printf '  %-22s %-45s CNAME %s\n' "$ns" "$n" "$(dig @"$ns" +norecurse +short CNAME "$n" | tr '\n' ' ')"
+              done
+              printf '  %-22s %-45s A     %s\n' "$ns" "$DOMAIN" "$(dig @"$ns" +norecurse +short A "$DOMAIN" | tr '\n' ' ')"
+            done
+            echo "Other public resolvers (A for $DOMAIN): 8.8.8.8 → $(dig @8.8.8.8 +short A "$DOMAIN" | tr '\n' ' ') | 9.9.9.9 → $(dig @9.9.9.9 +short A "$DOMAIN" | tr '\n' ' ')"
             echo "Fly address health: $(curl -s -m 15 https://$APP.fly.dev/api/v1/health || echo unreachable)"
             echo "Domain health:      $(curl -s -m 15 https://$DOMAIN/api/v1/health | head -c 300 || echo unreachable)"
             echo '```'
