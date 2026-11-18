@@ -112,6 +112,13 @@ jobs:
         if: inputs.mode == 'deploy'
         run: node scripts/smoke-deployment.mjs "${{ inputs.check_url }}" --expect-commit "${{ github.sha }}" --wait 300
 
+      - name: Smoke-test the public domain (status mode, once DNS points to Fly)
+        if: inputs.mode == 'status'
+        continue-on-error: true
+        run: |
+          echo "Response headers from https://$DOMAIN/api/v1/health:"
+          curl -sS -m 20 -D - -o /dev/null "https://$DOMAIN/api/v1/health" | grep -iE '^HTTP|^server|^fly-request-id|^strict-transport' || true
+          node scripts/smoke-deployment.mjs "https://$DOMAIN/" --expect-commit "$(curl -s -m 15 https://$APP.fly.dev/hcg-build.json | jq -r .commit)"
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"
@@ -136,13 +143,59 @@ jobs:
           {
             echo "## HCG Store on Fly.io ($APP)"
             echo '```'
+            echo "Apps visible to this token (name, organisation, status):"
+            flyctl apps list 2>&1 | head -20 || true
+            echo
+            flyctl status --app "$APP" 2>&1 | head -12 || true
+            echo
+            echo "Volumes:"
+            flyctl volumes list --app "$APP" 2>&1 || true
+            echo
+            echo "Secret names (values are never shown):"
+            flyctl secrets list --app "$APP" --json 2>/dev/null | jq -r '.[] | (.name // .Name)' || true
+            echo
             flyctl machines list --app "$APP" 2>&1 | head -20 || true
+            echo
+            echo "Machine events (newest first):"
+            for m in $(flyctl machines list --app "$APP" --json 2>/dev/null | jq -r '.[].id'); do
+              flyctl machine status "$m" --app "$APP" 2>&1 | sed -n '/Event Logs/,$p' | head -25
+            done
+            echo
+            echo "Recent server logs (no tokens are ever logged):"
+            # Public log: drop SSH session lines and redact anything that looks like an e-mail address.
+            flyctl logs --app "$APP" --no-tail 2>&1 | grep -v -i "ssh session" \
+              | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<redacted>/g' | tail -60 || true
             echo
             flyctl ips list --app "$APP" 2>&1 || true
             echo
             flyctl certs show "$DOMAIN" --app "$APP" 2>&1 || echo "No certificate requested for $DOMAIN yet."
             echo
+            flyctl certs setup "$DOMAIN" --app "$APP" 2>&1 || true
+            echo
             echo "DNS now: $(dig +short CNAME "$DOMAIN" | tr '\n' ' ') $(dig +short A "$DOMAIN" | tr '\n' ' ')"
+            echo "DNS detail (public resolver 1.1.1.1):"
+            for n in "$DOMAIN" "_acme-challenge.$DOMAIN"; do
+              for t in CNAME A AAAA TXT; do
+                printf '  %-45s %-5s %s\n' "$n" "$t" "$(dig @1.1.1.1 +short "$t" "$n" | tr '\n' ' ')"
+              done
+            done
+            zone="${DOMAIN#*.}"
+            echo "  zone $zone NS:  $(dig @1.1.1.1 +short NS "$zone" | tr '\n' ' ')"
+            echo "  status for $DOMAIN: $(dig @1.1.1.1 "$DOMAIN" A | grep -o 'status: [A-Z]*')"
+            echo "Authoritative answers (each of the zone's name servers, no recursion):"
+            for ns in $(dig @1.1.1.1 +short NS "$zone"); do
+              for n in "$DOMAIN" "_acme-challenge.$DOMAIN"; do
+                printf '  %-22s %-45s CNAME %s\n' "$ns" "$n" "$(dig @"$ns" +norecurse +short CNAME "$n" | tr '\n' ' ')"
+              done
+              printf '  %-22s %-45s A     %s\n' "$ns" "$DOMAIN" "$(dig @"$ns" +norecurse +short A "$DOMAIN" | tr '\n' ' ')"
+            done
+            ns1=$(dig @1.1.1.1 +short NS "$zone" | head -1)
+            echo "Zone serial and timing (SOA from $ns1): $(dig @"$ns1" +norecurse +short SOA "$zone")"
+            echo "Names a DNS form may have created by mistake (authoritative):"
+            for n in "$DOMAIN.$zone" "store.store.$zone" "_acme-challenge.$DOMAIN.$zone" "www.$DOMAIN" "store"; do
+              printf '  %-60s %s\n' "$n" "$(dig @"$ns1" +norecurse +short ANY "$n" 2>/dev/null | tr '\n' ' ')$(dig @"$ns1" +norecurse +short CNAME "$n" | tr '\n' ' ')"
+            done
+            echo "Other public resolvers (A for $DOMAIN): 8.8.8.8 → $(dig @8.8.8.8 +short A "$DOMAIN" | tr '\n' ' ') | 9.9.9.9 → $(dig @9.9.9.9 +short A "$DOMAIN" | tr '\n' ' ')"
             echo "Fly address health: $(curl -s -m 15 https://$APP.fly.dev/api/v1/health || echo unreachable)"
             echo "Domain health:      $(curl -s -m 15 https://$DOMAIN/api/v1/health | head -c 300 || echo unreachable)"
             echo '```'
