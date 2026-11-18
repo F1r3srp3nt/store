@@ -13,6 +13,61 @@ async function signIn(page: Page, sub: string, returnTo = "/library") {
 
 const unique = (name: string) => `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+test.describe("account card on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Signed in as and E-mail stack, and a long address wraps without horizontal overflow", async ({ page }) => {
+    const errors = collectErrors(page);
+    // A long account name and address, like a real company e-mail on a phone.
+    await signIn(page, unique("ceo.of.a.company.with.a.long.mailbox.name"), "/account");
+    const card = page.locator(".connection").first();
+    await expect(card.getByText("Signed in", { exact: true })).toBeVisible();
+    const label = card.getByText("Signed in as", { exact: true });
+    const mail = card.getByText("E-mail", { exact: true });
+    const a = (await label.boundingBox())!;
+    const b = (await mail.boundingBox())!;
+    expect(b.y).toBeGreaterThan(a.y + a.height); // stacked, not side by side
+    for (const dd of await card.locator(".kv dd").all()) {
+      const box = (await dd.boundingBox())!;
+      const cardBox = (await card.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 0.5);
+      expect(await dd.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("My HCG apps: Owner access confirmed by HCG, per-app status and source, no overflow", async ({ page }) => {
+    const errors = collectErrors(page);
+    const sub = unique("owner");
+    await page.request.post(`${ACCOUNT}/__e2e/owner-access/${encodeURIComponent(sub)}`);
+    await signIn(page, sub, "/account");
+    const section = page.locator(".my-apps");
+    await expect(section.getByRole("heading", { name: "My HCG apps" })).toBeVisible();
+    await expect(section.locator(".my-apps__head").getByText("Owner access — All features")).toBeVisible();
+    const quasar = section.locator(".my-app", { hasText: "Fixture Quasar Shell" }).first();
+    await expect(quasar.locator(".badge")).toHaveText("Owner access — All features");
+    await expect(quasar.getByText("Founder / Owner grant")).toBeVisible();
+    await expect(quasar.getByText(/^HCG: .* · HCG Store: /)).toBeVisible(); // release shown separately from access
+    await expect(section.getByText(/Purchased/)).toHaveCount(0);
+    await expect(section.getByText("Not yet registered with HCG").first()).toBeVisible(); // products without a central ID
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    for (const card of await section.locator(".my-app").all()) {
+      expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test("My HCG apps: an ordinary account sees no Owner access", async ({ page }) => {
+    await signIn(page, unique("ordinary"), "/account");
+    const section = page.locator(".my-apps");
+    await expect(section.getByRole("heading", { name: "My HCG apps" })).toBeVisible();
+    await expect(section.locator(".my-app").first()).toBeVisible();
+    await expect(section.getByText(/Owner access/)).toHaveCount(0);
+    await expect(section.getByText("Founder / Owner grant")).toHaveCount(0);
+  });
+});
+
 test.describe("account, purchase and protected delivery (TEST mode)", () => {
   test("signed-out visitors see product information, sign-in prompts and no files", async ({ page, request }) => {
     const errors = collectErrors(page);

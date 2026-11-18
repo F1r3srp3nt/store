@@ -4,6 +4,7 @@ import { useAccount } from "../account/account-context";
 import { DOWNLOADS_NOT_AVAILABLE, signInUrl, storeApi, type Health } from "../account/api";
 import { useCatalogueState } from "../app/catalogue-context";
 import { IconInfo, IconLink, IconLock, IconShield, IconUser } from "../components/Icons";
+import { MyApps } from "../components/MyApps";
 import { PageMeta } from "../components/PageMeta";
 
 export function AccountPage() {
@@ -68,8 +69,14 @@ export function AccountPage() {
                 <dl className="kv">
                   <div>
                     <dt>Signed in as</dt>
-                    <dd>{account.user.name ?? account.user.email ?? "HCG account"}</dd>
+                    <dd>{account.profile?.displayName ?? account.user.name ?? account.user.email ?? "HCG account"}</dd>
                   </div>
+                  {account.profile?.designation && (
+                    <div>
+                      <dt>Designation</dt>
+                      <dd>{account.profile.designation}</dd>
+                    </div>
+                  )}
                   {account.user.email && (
                     <div>
                       <dt>E-mail</dt>
@@ -186,6 +193,7 @@ export function AccountPage() {
             )}
           </section>
         </div>
+        {account.status === "signed-in" && <MyApps />}
       </div>
     </>
   );

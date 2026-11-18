@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart]
+        options: [deploy, status, evidence, restart, profile]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -35,6 +35,22 @@ on:
         description: "evidence: only events at or after this time (ms since 1970)"
         required: false
         default: "0"
+      session_ref:
+        description: "profile: 12-hex reference of a sign-in the Store verified and matched with HCG's /me (from mode=evidence)"
+        required: false
+        default: ""
+      display_name:
+        description: "profile: Store display name (presentation only; grants nothing)"
+        required: false
+        default: ""
+      designation:
+        description: "profile: Store designation, e.g. Founder / Original User (presentation only; grants nothing)"
+        required: false
+        default: ""
+      authorised_by:
+        description: "profile: who authorised this change (recorded in the append-only profile audit)"
+        required: false
+        default: ""
 
 concurrency:
   group: fly-deploy
@@ -119,6 +135,57 @@ jobs:
           echo "Response headers from https://$DOMAIN/api/v1/health:"
           curl -sS -m 20 -D - -o /dev/null "https://$DOMAIN/api/v1/health" | grep -iE '^HTTP|^server|^fly-request-id|^strict-transport' || true
           node scripts/smoke-deployment.mjs "https://$DOMAIN/" --expect-commit "$(curl -s -m 15 https://$APP.fly.dev/hcg-build.json | jq -r .commit)"
+      - name: Compare what each host serves (custom domain, Fly hostname, GitHub Pages IPs)
+        if: inputs.mode == 'status'
+        continue-on-error: true
+        run: |
+          {
+          echo "## Host comparison"
+          echo '```'
+          probe() { # label, url, extra curl args
+            local label="$1" url="$2"; shift 2
+            for p in /api/v1/health /api/v1/session "/auth/login?return_to=/account" /hcg-build.json /account; do
+              out=$(curl -sS -m 20 -o /tmp/body -D /tmp/hdr -w '%{http_code}' "$@" "$url$p" 2>&1 || true)
+              ctype=$(grep -i '^content-type:' /tmp/hdr | head -1 | tr -d '\r' | cut -d' ' -f2-)
+              srv=$(grep -iE '^server:' /tmp/hdr | head -1 | tr -d '\r' | cut -d' ' -f2-)
+              cache=$(grep -iE '^cache-control:' /tmp/hdr | head -1 | tr -d '\r' | cut -d' ' -f2-)
+              loc=$(grep -i '^location:' /tmp/hdr | head -1 | tr -d '\r' | sed -E 's/(state|nonce|code_challenge)=[^&]+/\1=…/g' | cut -c1-200)
+              body=$(head -c 400 /tmp/body | tr '\n' ' ')
+              case "$p" in
+                /hcg-build.json) body=$(jq -c '{deployEnv,hostingTarget,accountService,commit}' /tmp/body 2>/dev/null || echo "$body" | cut -c1-80);;
+                /account) body=$(grep -o '<script[^>]*src="[^"]*"' /tmp/body | head -1);;
+                *) case "$ctype" in application/json*) ;; *) body="(not JSON) $(echo "$body" | cut -c1-60)";; esac;;
+              esac
+              printf '%-18s %-30s %s | %s | server=%s | cache=%s | %s %s\n' "$label" "$p" "$out" "$ctype" "$srv" "$cache" "$loc" "$body"
+            done
+          }
+          probe "custom-domain" "https://$DOMAIN"
+          probe "fly-hostname" "https://$APP.fly.dev"
+          probe "github-pages-ip" "https://$DOMAIN" --resolve "$DOMAIN:443:185.199.108.153"
+          echo
+          echo "TTL of the store record at the authoritative server:"
+          dig @ns1.dnsdomene.net +norecurse +noall +answer "$DOMAIN" CNAME
+          echo "Zone default (SOA minimum / negative-cache TTL):"
+          dig @ns1.dnsdomene.net +norecurse +noall +answer hakmicapitalgroup.com SOA
+          echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Set a Store profile (presentation only; grants nothing; recorded with who authorised and performed it)
+        if: inputs.mode == 'profile'
+        env:
+          REF: ${{ inputs.session_ref }}
+          DN: ${{ inputs.display_name }}
+          DS: ${{ inputs.designation }}
+          AB: ${{ inputs.authorised_by }}
+        run: |
+          echo "$REF" | grep -Eq '^[0-9a-f]{12}$' || { echo "::error::session_ref must be 12 lowercase hex characters"; exit 1; }
+          [ -n "$AB" ] || { echo "::error::authorised_by is required"; exit 1; }
+          b() { printf %s "$1" | base64 -w0; }
+          PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=profile)"
+          run() { flyctl ssh console --app "$APP" --command "runuser -u node -- env HCG_STORE_DATA_DIR=/data node --no-warnings server-dist/store-profile.mjs $1" | grep '^{' | tail -1; }
+          set_out=$(run "set --session-ref $REF --display-name-b64 $(b "$DN") --designation-b64 $(b "$DS") --authorised-by-b64 $(b "$AB") --performed-by-b64 $(b "$PB")")
+          show_out=$(run "show --session-ref $REF")
+          { echo "## Store profile"; echo '```json'; echo "$set_out" | jq .; echo "$show_out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$set_out" | jq -e 'has("error") | not' >/dev/null
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"

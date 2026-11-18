@@ -12,7 +12,7 @@ export type AccountState =
   | { status: "no-server" }
   | { status: "not-configured" }
   | { status: "signed-out"; notice: string | null }
-  | { status: "signed-in"; user: NonNullable<SessionInfo["user"]>; centralCheckUnavailable: boolean }
+  | { status: "signed-in"; user: NonNullable<SessionInfo["user"]>; profile: SessionInfo["profile"] | null; centralCheckUnavailable: boolean }
   | { status: "error"; message: string };
 
 interface AccountContextValue {
@@ -46,7 +46,7 @@ export function AccountProvider({
     try {
       const s = await api.session();
       if (!s.configured) setState({ status: "not-configured" });
-      else if (s.signedIn && s.user) setState({ status: "signed-in", user: s.user, centralCheckUnavailable: s.centralCheck === "unavailable" });
+      else if (s.signedIn && s.user) setState({ status: "signed-in", user: s.user, profile: s.profile ?? null, centralCheckUnavailable: s.centralCheck === "unavailable" });
       else setState({ status: "signed-out", notice: s.endedReason ?? null });
     } catch (e) {
       setState(e instanceof StoreServerUnavailable ? { status: "no-server" } : { status: "error", message: "Your account status could not be loaded." });

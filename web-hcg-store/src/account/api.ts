@@ -8,8 +8,37 @@ export interface SessionInfo {
   configured: boolean;
   signedIn: boolean;
   user: { sub: string; email: string | null; name: string | null } | null;
+  /** HCG Store's presentation of the account (display name, designation). Grants nothing. */
+  profile?: { displayName: string | null; designation: string | null } | null;
   centralCheck?: "unavailable";
   endedReason?: string;
+}
+
+/** One registered HCG product and what HCG's /access reports for this account (read server-side). Display only. */
+export interface MyApp {
+  centralProductId: string | null;
+  name: string;
+  storeProductId: string | null;
+  slug: string | null;
+  /** HCG's registry status (in_development, planned, live, …). */
+  hcgReleaseStatus: string | null;
+  /** HCG Store's own release availability, separate from access. */
+  storeRelease: "released" | "not-released" | "not-in-store";
+  access: {
+    state: "owner" | "licensed" | "none" | "unknown" | "not-registered";
+    source: string | null;
+    editions: "all" | string[];
+    features: { available: string[]; notAvailable: number };
+  };
+  download: "available" | "not-released" | "not-in-store" | "not-registered" | "not-available" | "not-entitled";
+  manage: string | null;
+}
+
+export interface MyApps {
+  centralStatus: "ok" | "unavailable";
+  displayName: string | null;
+  ownerAccess: { label: string; source: string } | null;
+  apps: MyApp[];
 }
 
 /** "free": a release approved as public and free; any signed-in HCG account may download it. Not ownership. */
@@ -109,6 +138,7 @@ export const storeApi = {
   health: () => request<Health>("/api/v1/health"),
   access: (slug: string) => request<{ productId: string; signedIn: boolean; editions: EditionAccess[] }>(`/api/v1/products/${encodeURIComponent(slug)}/access`),
   library: () => request<Library>("/api/v1/library"),
+  myApps: () => request<MyApps>("/api/v1/my-apps"),
   checkout: (offerId: string) => request<{ checkoutId: string; redirectUrl: string; testMode: boolean }>("/api/v1/checkout", { method: "POST", body: JSON.stringify({ offerId }) }),
   checkoutStatus: (id: string) =>
     request<{ id: string; status: "open" | "pending" | "completed" | "failed"; productId: string | null; editionId: string | null; title: string | null }>(

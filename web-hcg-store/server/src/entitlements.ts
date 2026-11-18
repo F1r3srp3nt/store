@@ -24,6 +24,35 @@ export interface OwnedItem {
   expiresAt: number | null;
 }
 
+/** HCG's Founder product-ownership policy key (shared product-access handoff, 18 Nov 2026). */
+export const FOUNDER_POLICY = "founder_owner_all_products";
+
+/** One product's feature as HCG's /access reports it for this account. */
+export interface FeatureAccess {
+  key: string;
+  enabled: boolean;
+  allowed: boolean;
+  source: string | null;
+  reason: string | null;
+}
+
+/** What HCG's /access reports for one product and this account. Display only: /check decides protected actions. */
+export interface ProductAccess {
+  centralProductId: string;
+  name: string | null;
+  /** HCG's registry release status (e.g. in_development, planned, live). Not Store release availability. */
+  releaseStatus: string | null;
+  /** "founder_owner" only when HCG's answer confirms the Founder policy for this product. */
+  kind: "founder_owner" | "organisation_license" | "none" | "unknown";
+  entitlementSource: string | null;
+  editions: "all" | string[];
+  features: FeatureAccess[];
+}
+
+export type AccountAccess =
+  | { status: "ok"; founderPolicy: boolean; displayName: string | null; products: ProductAccess[] }
+  | { status: "unavailable"; reason: string };
+
 export interface Subject {
   sub: string;
   /** Current HCG Connect access token (needed by the central API). Never logged. */
@@ -51,6 +80,13 @@ export interface EntitlementAuthority {
    */
   checkFeature(subject: Subject, centralProductId: string, featureKey: string): Promise<CheckResult>;
   list(subject: Subject): Promise<{ status: "ok"; items: OwnedItem[] } | { status: "unavailable"; reason: string }>;
+  /**
+   * What HCG reports this account can use, per registered product, for display ("My HCG apps"): /me (Founder policy,
+   * display name, organisations), /library (registered products for the Founder, licences) and /access per product.
+   * `candidates` are central product IDs the Store knows; the Founder's list comes from HCG. Access decisions for
+   * protected actions still go through check().
+   */
+  accountAccess(subject: Subject, candidates: string[]): Promise<AccountAccess>;
   /** Synchronous, so it can run inside the payment-event transaction (test ledger only). */
   grant(sub: string, centralProductId: string, edition: string, source: string, expiresAt: number | null): void;
   revoke(sub: string, centralProductId: string, edition: string, source: string): void;
@@ -72,6 +108,9 @@ export class NoAuthority implements EntitlementAuthority {
   }
   async list() {
     return { status: "unavailable" as const, reason: "No entitlement authority is configured." };
+  }
+  async accountAccess(): Promise<AccountAccess> {
+    return { status: "unavailable", reason: "No entitlement authority is configured." };
   }
   grant(): void {
     throw new Error(UNSUPPORTED);
@@ -140,10 +179,67 @@ export class TestLedgerAuthority implements EntitlementAuthority {
       .run(this.now(), sub, centralProductId, edition, source);
   }
 
+  private readonly founders = new Set<string>();
+
+  /** TEST stand-in for HCG's Founder product-ownership policy (activated and revoked by HCG's Owner, never by the Store). */
+  setFounderPolicy(sub: string, on: boolean): void {
+    if (on) this.founders.add(sub);
+    else this.founders.delete(sub);
+  }
+
+  async accountAccess(subject: Subject, candidates: string[]): Promise<AccountAccess> {
+    const founder = this.founders.has(subject.sub);
+    const rows = this.db
+      .prepare(`SELECT product_id, edition, expires_at FROM test_entitlements WHERE sub = ? AND status = 'active' AND edition NOT LIKE 'feature:%'`)
+      .all(subject.sub) as { product_id: string; edition: string; expires_at: number | null }[];
+    const live = rows.filter((r) => r.expires_at === null || r.expires_at > this.now());
+    const ids = [...new Set([...candidates, ...live.map((r) => r.product_id)])];
+    const products = ids.map((id): ProductAccess => {
+      const mine = live.filter((r) => r.product_id === id);
+      const editions: "all" | string[] = founder || mine.some((r) => r.edition === "*" || r.edition === "default") ? "all" : mine.map((r) => r.edition);
+      return {
+        centralProductId: id,
+        name: null,
+        releaseStatus: "in_development",
+        kind: founder ? "founder_owner" : mine.length ? "organisation_license" : "none",
+        entitlementSource: founder ? FOUNDER_POLICY : mine.length ? "organisation_license" : null,
+        editions: founder ? "all" : editions,
+        features: [{ key: "download", enabled: true, allowed: founder || mine.length > 0, source: founder ? FOUNDER_POLICY : mine.length ? "organisation_license" : null, reason: null }],
+      };
+    });
+    return { status: "ok", founderPolicy: founder, displayName: null, products };
+  }
+
   /** Test helper: revoke everything for a subject (simulates an HCG administrator revoking access). */
   revokeAll(sub: string): void {
     this.db.prepare(`UPDATE test_entitlements SET status = 'revoked', updated_at = ? WHERE sub = ?`).run(this.now(), sub);
+    this.founders.delete(sub);
   }
+}
+
+/**
+ * HCG's /access answer for one product, read defensively. The Founder kind is accepted only when the answer itself says
+ * so for this product (owned, kind founder_owner, policy and source founder_owner_all_products); anything unexpected
+ * is "unknown", never access.
+ */
+export function parseAccess(json: unknown, productId: string): ProductAccess {
+  const unknown: ProductAccess = { centralProductId: productId, name: null, releaseStatus: null, kind: "unknown", entitlementSource: null, editions: [], features: [] };
+  const a = json as {
+    api_version?: unknown; product?: { product_id?: unknown; name?: unknown; release_status?: unknown };
+    ownership?: { owned?: unknown; kind?: unknown; policy_key?: unknown }; entitlement_source?: unknown; editions?: unknown; feature_details?: unknown;
+  };
+  if (!a || a.api_version !== "v1" || a.product?.product_id !== productId || !a.ownership) return unknown;
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  const owned = a.ownership.owned === true;
+  let kind: ProductAccess["kind"] = "none";
+  if (owned && a.ownership.kind === "founder_owner" && a.ownership.policy_key === FOUNDER_POLICY && a.entitlement_source === FOUNDER_POLICY) kind = "founder_owner";
+  else if (owned && a.ownership.kind === "organisation_license" && a.entitlement_source === "organisation_license") kind = "organisation_license";
+  else if (owned || a.ownership.kind !== "none") return { ...unknown, name: str(a.product.name), releaseStatus: str(a.product.release_status) };
+  const editions: "all" | string[] = a.editions === "all" ? "all" : Array.isArray(a.editions) ? a.editions.filter((e): e is string => typeof e === "string") : [];
+  const features = (Array.isArray(a.feature_details) ? a.feature_details : [])
+    .filter((f): f is Record<string, unknown> => !!f && typeof f === "object" && typeof (f as { feature_key?: unknown }).feature_key === "string")
+    .map((f) => ({ key: f.feature_key as string, enabled: f.enabled === true, allowed: f.allowed === true, source: str(f.entitlement_source), reason: str(f.reason) }));
+  return { centralProductId: productId, name: str(a.product.name), releaseStatus: str(a.product.release_status), kind, entitlementSource: kind === "none" ? null : str(a.entitlement_source), editions: kind === "none" ? [] : editions, features };
 }
 
 /**
@@ -189,7 +285,7 @@ export async function fetchMe(
   baseUrl: string,
   token: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ status: "ok"; userId: string } | { status: "unauthorized" } | { status: "unavailable"; reason: string }> {
+): Promise<{ status: "ok"; userId: string; displayName: string | null } | { status: "unauthorized" } | { status: "unavailable"; reason: string }> {
   try {
     const res = await fetchImpl(`${baseUrl}/me`, {
       headers: { authorization: `Bearer ${token}`, accept: "application/json" },
@@ -199,9 +295,10 @@ export async function fetchMe(
     if (res.status === 401) return { status: "unauthorized" };
     const type = res.headers.get("content-type") ?? "";
     if (res.status !== 200 || !type.includes("application/json")) return { status: "unavailable", reason: `HTTP ${res.status}` };
-    const body = (await res.json()) as { api_version?: unknown; user?: { id?: unknown } };
+    const body = (await res.json()) as { api_version?: unknown; user?: { id?: unknown; display_name?: unknown } };
     if (body.api_version !== "v1" || typeof body.user?.id !== "string") return { status: "unavailable", reason: "unrecognised answer" };
-    return { status: "ok", userId: body.user.id };
+    const dn = typeof body.user.display_name === "string" ? body.user.display_name.trim().slice(0, 120) : "";
+    return { status: "ok", userId: body.user.id, displayName: dn || null };
   } catch (e) {
     return { status: "unavailable", reason: e instanceof Error ? e.name : "error" };
   }
@@ -306,7 +403,41 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
     return unknown ? { status: "unavailable", reason: wantsEdition ? "HCG did not confirm access for this edition." : "HCG did not confirm this access." } : { status: "not-granted" };
   }
 
-  /** Display only (PREVIEW route). Never used to decide access. */
+  async accountAccess(subject: Subject, candidates: string[]): Promise<AccountAccess> {
+    const token = subject.accessToken;
+    if (!token) return { status: "unavailable", reason: "No HCG access token." };
+    const [meR, libR] = await Promise.all([this.call("/me", token), this.call("/library", token)]);
+    if (!meR || meR.status !== 200 || !meR.json) return { status: "unavailable", reason: "HCG's /me did not answer." };
+    const me = meR.json as { api_version?: unknown; user?: { display_name?: unknown }; organisations?: { org_id?: unknown }[]; product_policy?: { active?: unknown; policy_key?: unknown } };
+    if (me.api_version !== "v1") return { status: "unavailable", reason: "HCG's /me answer was not recognised." };
+    const founderPolicy = me.product_policy?.active === true && me.product_policy.policy_key === FOUNDER_POLICY;
+    const orgs = (Array.isArray(me.organisations) ? me.organisations : []).map((o) => o.org_id).filter((id): id is string => typeof id === "string").slice(0, MAX_ORGS);
+    const lib = libR?.status === 200 && libR.json ? (libR.json as { api_version?: unknown; items?: unknown; founder_ownership?: unknown }) : null;
+    const licensed = Array.isArray(lib?.items) ? (lib!.items as { product_id?: unknown; status?: unknown }[]).filter((i) => i.status === "active").map((i) => i.product_id).filter((p): p is string => typeof p === "string") : [];
+    const registered = founderPolicy && Array.isArray(lib?.founder_ownership)
+      ? (lib!.founder_ownership as { product_id?: unknown }[]).map((p) => p.product_id).filter((p): p is string => typeof p === "string")
+      : [];
+    const ids = [...new Set([...registered, ...candidates, ...licensed])].filter((id) => /^[a-z0-9][a-z0-9._-]{1,79}$/.test(id)).slice(0, 80);
+    const one = async (id: string): Promise<ProductAccess> => {
+      // The Founder needs no organisation; an ordinary account is asked per organisation it belongs to.
+      const queries = founderPolicy ? [""] : orgs;
+      let best: ProductAccess = { centralProductId: id, name: null, releaseStatus: null, kind: orgs.length || founderPolicy ? "unknown" : "none", entitlementSource: null, editions: [], features: [] };
+      for (const org of queries) {
+        const r = await this.call(`/access?product=${encodeURIComponent(id)}${org ? `&org=${encodeURIComponent(org)}` : ""}`, token);
+        if (!r || r.status !== 200 || !r.json) continue;
+        const a = parseAccess(r.json, id);
+        const rank = { founder_owner: 3, organisation_license: 2, none: 1, unknown: 0 } as const;
+        if (rank[a.kind] > rank[best.kind] || (best.kind === "unknown" && a.name)) best = a;
+      }
+      return best;
+    };
+    const products: ProductAccess[] = [];
+    for (let k = 0; k < ids.length; k += 6) products.push(...(await Promise.all(ids.slice(k, k + 6).map(one))));
+    const displayName = typeof me.user?.display_name === "string" ? me.user.display_name : null;
+    return { status: "ok", founderPolicy, displayName, products };
+  }
+
+  /** Display only. Never used to decide access. */
   async list(subject: Subject) {
     if (!subject.accessToken) return { status: "unavailable" as const, reason: "No HCG access token." };
     const r = await this.call("/library", subject.accessToken);

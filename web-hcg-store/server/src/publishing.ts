@@ -171,12 +171,12 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   /**
-   * The central product a publishing permission is scoped to: the product's own central ID. A product HCG has not
-   * registered (no central ID), a Store draft product, or "*" (creating a draft product) is scoped to HCG Store's own
-   * central product, `hcg.store`; such releases can never be approved for public delivery (see /approve).
+   * HCG's contract (main-site Maker/Store handoff v2, 17 Nov 2026): `store.publish` and `store.release.approve` are
+   * personal grants on HCG Store's own central product, `hcg.store`, whatever product is being published. A Maker
+   * licence, a purchase, organisation membership or another product's permission never counts.
    */
-  function permissionScope(productId: string): string {
-    return (productId === "*" ? null : productInfo(productId)?.centralId) ?? STORE_CENTRAL_PRODUCT_ID;
+  function permissionScope(_productId: string): string {
+    return STORE_CENTRAL_PRODUCT_ID;
   }
 
   async function permitted(actor: Actor, permission: "publish" | "approve", productId: string): Promise<boolean> {
