@@ -44,11 +44,11 @@ test.describe("account card on a phone", () => {
     await signIn(page, sub, "/account");
     const section = page.locator(".my-apps");
     await expect(section.getByRole("heading", { name: "My HCG apps" })).toBeVisible();
-    await expect(section.getByText("Owner access — All features")).toBeVisible();
-    const quasar = section.locator(".my-app", { hasText: "Fixture Quasar Shell" });
-    await expect(quasar.getByText("Owner access", { exact: true })).toBeVisible();
+    await expect(section.locator(".my-apps__head").getByText("Owner access — All features")).toBeVisible();
+    const quasar = section.locator(".my-app", { hasText: "Fixture Quasar Shell" }).first();
+    await expect(quasar.locator(".badge")).toHaveText("Owner access — All features");
     await expect(quasar.getByText("Founder / Owner grant")).toBeVisible();
-    await expect(quasar.getByText("All features")).toBeVisible();
+    await expect(quasar.getByText(/^HCG: .* · HCG Store: /)).toBeVisible(); // release shown separately from access
     await expect(section.getByText(/Purchased/)).toHaveCount(0);
     await expect(section.getByText("Not yet registered with HCG").first()).toBeVisible(); // products without a central ID
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -63,8 +63,8 @@ test.describe("account card on a phone", () => {
     const section = page.locator(".my-apps");
     await expect(section.getByRole("heading", { name: "My HCG apps" })).toBeVisible();
     await expect(section.locator(".my-app").first()).toBeVisible();
-    await expect(section.getByText("Owner access — All features")).toHaveCount(0);
-    await expect(section.getByText("Owner access", { exact: true })).toHaveCount(0);
+    await expect(section.getByText(/Owner access/)).toHaveCount(0);
+    await expect(section.getByText("Founder / Owner grant")).toHaveCount(0);
   });
 });
 

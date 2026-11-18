@@ -68,7 +68,7 @@ createServer((req, res) => {
   // TEST server only: stands in for HCG's Owner granting the Owner-access policy to a subject.
   const owner = /^\/__e2e\/owner-access\/([^/]+)$/.exec(req.url ?? "");
   if (owner && req.method === "POST") {
-    authority.setOwnerAccess(decodeURIComponent(owner[1]!), true);
+    authority.setFounderPolicy(decodeURIComponent(owner[1]!), true);
     res.writeHead(204).end();
     return;
   }

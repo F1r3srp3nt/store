@@ -14,21 +14,30 @@ export interface SessionInfo {
   endedReason?: string;
 }
 
-/** One registered HCG product and what HCG reports this account holds (server-side, from HCG's /library). */
+/** One registered HCG product and what HCG's /access reports for this account (read server-side). Display only. */
 export interface MyApp {
-  productId: string;
-  slug: string;
   centralProductId: string | null;
-  editions: { id: string; name: string }[];
-  released: boolean;
-  access: { state: "owner" | "licensed" | "none" | "unavailable" | "not-registered"; source: string | null; allEditions: boolean; editionIds: string[] };
-  download: "available" | "not-released" | "not-registered" | "not-available" | "not-entitled";
+  name: string;
+  storeProductId: string | null;
+  slug: string | null;
+  /** HCG's registry status (in_development, planned, live, …). */
+  hcgReleaseStatus: string | null;
+  /** HCG Store's own release availability, separate from access. */
+  storeRelease: "released" | "not-released" | "not-in-store";
+  access: {
+    state: "owner" | "licensed" | "none" | "unknown" | "not-registered";
+    source: string | null;
+    editions: "all" | string[];
+    features: { available: string[]; notAvailable: number };
+  };
+  download: "available" | "not-released" | "not-in-store" | "not-registered" | "not-available" | "not-entitled";
   manage: string | null;
 }
 
 export interface MyApps {
   centralStatus: "ok" | "unavailable";
-  ownerAccess: { label: string; source: string; grantedAt: string | null } | null;
+  displayName: string | null;
+  ownerAccess: { label: string; source: string } | null;
   apps: MyApp[];
 }
 

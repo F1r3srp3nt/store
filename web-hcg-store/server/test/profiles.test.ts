@@ -55,12 +55,12 @@ describe("Store profiles", () => {
     const web = await h.signIn(FOUNDER);
     const sub = subjectOfVerifiedSession(h.db, sessionRef(FOUNDER.sub));
     expect(sub).toBe(FOUNDER.sub);
-    expect(set(sub, "F1r3srp3nt - YasinTrades (CEO & Founder)", "Founder / Original User").changed).toBe(true);
-    expect(set(sub, "F1r3srp3nt - YasinTrades (CEO & Founder)", "Founder / Original User").changed).toBe(false); // idempotent
+    expect(set(sub, "Founder Display Name (test)", "Founder / Original User").changed).toBe(true);
+    expect(set(sub, "Founder Display Name (test)", "Founder / Original User").changed).toBe(false); // idempotent
     const events = h.db.prepare("SELECT action, authorised_by, performed_by FROM store_profile_events WHERE sub = ?").all(sub);
     expect(events).toEqual([{ action: "profile.set", authorised_by: "founder (test)", performed_by: "operator (test)" }]);
     const s = (await (await web.get("/api/v1/session")).json()) as { profile: unknown; user: { email: string } };
-    expect(s.profile).toEqual({ displayName: "F1r3srp3nt - YasinTrades (CEO & Founder)", designation: "Founder / Original User" });
+    expect(s.profile).toEqual({ displayName: "Founder Display Name (test)", designation: "Founder / Original User" });
     expect(s.user.email).toBe(FOUNDER.email); // the HCG identity itself is unchanged
     // The audit of profile changes cannot be rewritten.
     expect(() => h.db.exec("UPDATE store_profile_events SET authorised_by = 'someone else'")).toThrow(/append-only/);
@@ -80,7 +80,7 @@ describe("Store profiles", () => {
   it("grant nothing: a founder profile, a founder name or e-mail, and browser data never permit publishing or approval", async () => {
     // An ordinary account whose HCG name is also "Founder", with the founder's display name and designation.
     await h.signIn(ORDINARY);
-    set(ORDINARY.sub, "F1r3srp3nt - YasinTrades (CEO & Founder)", "Founder / Original User");
+    set(ORDINARY.sub, "Founder Display Name (test)", "Founder / Original User");
     const call = await desktop(ORDINARY);
     expect((await call("POST", "/api/v1/publishing/releases", RELEASE)).status).toBe(403);
     // Browser-supplied data: extra JSON fields are refused, and headers are not read.
@@ -102,7 +102,7 @@ describe("Store profiles", () => {
 
   it("permissions come only from HCG's grants on hcg.store, and revoking them takes effect on the next request", async () => {
     await h.signIn(FOUNDER);
-    set(FOUNDER.sub, "F1r3srp3nt - YasinTrades (CEO & Founder)", "Founder / Original User");
+    set(FOUNDER.sub, "Founder Display Name (test)", "Founder / Original User");
     const call = await desktop(FOUNDER);
     expect((await call("POST", "/api/v1/publishing/releases", RELEASE)).status).toBe(403); // profile alone: nothing
     ledger.grant(FOUNDER.sub, "hcg.store", featureEdition("store.publish"), "hcg-erp", null); // HCG's personal grant

@@ -50,47 +50,38 @@ it. It does not change registration dates, history or ordering.
 The features stay **disabled** centrally until publishing is activated (PUBLISHING.md §7); holding a grant does not
 enable an unfinished service. Public approval always needs a second, different person with `store.release.approve`.
 
-## Owner access to every product (PROPOSED central policy)
+## Founder product ownership (central, live)
 
-HCG Store shows **"Owner access — All features"** only when HCG reports the policy below; until HCG builds it, the
-Store shows exactly the licences HCG reports. HCG Store has no way to create this access itself, by design.
+HCG's main site published the shared product-access API on 18 Nov 2026 (main-site
+`docs/hcg-connect/shared-product-access-handoff.md`). The Founder's account holds the Owner-audited policy
+`founder_owner_all_products`: every registered HCG product, edition and feature, including products registered
+later. It is attached to the account's user ID, creates no purchase, licence or billing record, grants no ERP or admin
+role, does not make a planned product available or enable a disabled feature, and does not bypass Store's
+different-person approval rule. It is activated and revoked only in ERP → App Integrations → HCG Connect / HCG Auth →
+Founder product ownership, with a `founder.product_access.grant` audit event.
 
-**What the main site would build** (an Owner-reviewed migration; not built yet):
-
-1. **A personal policy, not a licence or a purchase.** One row per account: `policy = "owner_all_products"`,
-   `source = "founder_owner_grant"`, granted and revoked only by the HCG Owner (Owner-only database function), keyed to
-   the account's immutable user ID, with `owner_access.grant` / `owner_access.revoke` audit entries (actor, reason,
-   time). No purchase or licence row is written, so payment records and licences stay untouched.
-2. **All current and future products.** Evaluated when access is checked, so a product registered later is covered
-   without a new grant.
-3. **`/check` returns it consistently to every app.** For an account with active owner access, the licence and
-   organisation layers are satisfied for every product and edition, with an additive response field
-   `"basis": "owner_access"`. Unchanged:
-   - **availability** still applies: a product or feature HCG has switched off stays off for everyone, so access
-     never makes an unfinished integration operational;
-   - **staff permissions** (`store.publish`, `store.release.approve` and any future personal-grant features) are not
-     covered: they stay personal grants, and Store's different-person approval rule stays.
-4. **`/library` reports it**, additively, so apps can show it:
-
-```json
-"owner_access": { "policy": "owner_all_products", "source": "founder_owner_grant", "status": "active",
-                  "granted_at": "<ISO time>", "revoked_at": null }
-```
-
-HCG Store recognises only that exact form (`server/src/entitlements.ts`, `parseLibrary`): anything else, a revoked
-policy, another source, or a `role`, `owner` or similar field, is ignored. Revocation shows on the next page load,
-and every download is still decided by `/check` at the moment it is requested.
+How HCG Store reads it (server-side, with the account's own HCG token; `server/src/entitlements.ts`):
+- `GET /me`: `product_policy` (`active`, `policy_key: "founder_owner_all_products"`) and the account's `display_name`.
+  The Store shows "Owner access — All features" only when this is active.
+- `GET /library`: `founder_ownership` (every registered product for the Founder) and licence `items`.
+- `GET /access?product=<id>` (Founder) or `&org=<organisation>` (ordinary accounts, per organisation they belong to):
+  each product's ownership kind, entitlement source, editions, features and HCG `release_status`. A product shows
+  "Owner access — All features" with source "Founder / Owner grant" only when its own answer says
+  `ownership.kind: "founder_owner"` and `entitlement_source: "founder_owner_all_products"` (`parseAccess`).
+- `POST /check` still decides every protected action at the moment it happens.
 
 ## My HCG apps (Account page)
 
-`GET /api/v1/my-apps` (signed in), shown as "My HCG apps": one entry per registered product (registered first, then
-products HCG has not registered yet) with its icon and name, access state, editions, features, entitlement source and
-the actions that actually exist:
+`GET /api/v1/my-apps` (signed in), shown as "My HCG apps": one entry per registered product (for the Founder, HCG's
+whole registry; for others, the Store's products and any they hold a licence for), with its icon (a monogram for apps
+not in the Store), access state, editions, features, entitlement source, HCG's release status and HCG Store's release
+availability (shown separately), and the actions that actually exist:
 - **Open** (the product page) always; **Download** only when a release is approved, downloads are switched on and HCG
   reports access; **Manage in HCG** (the HCG account portal) when the account has access.
-- Sources: "Founder / Owner grant" (the policy above), "Purchased in HCG Store" (a verified Store purchase),
-  "HCG internal grant", "Licence (perpetual)", "Subscription" or "Trial" (from HCG's licence type). Owner access is
-  never shown as "Purchased".
+- Sources: "Founder / Owner grant" (`founder_owner_all_products`), "Organisation licence", "Purchased in HCG Store"
+  (an organisation licence from a verified Store purchase), "Personal grant", "App access", "Included for every HCG
+  account". Owner access is never shown as "Purchased".
+- Each view records a token-free `my_apps_viewed` audit event with counts only (no product list, no account ID).
 - Unreleased apps say "Not released yet", whatever the access.
 
 ## Verified behaviour
@@ -101,10 +92,11 @@ the actions that actually exist:
 - permissions come only from HCG's grants on `hcg.store`; a grant on another product, ownership or a role never counts;
 - revoking a grant takes effect on the next request;
 - the profile audit cannot be altered;
-- My HCG apps (`server/test/my-apps.test.ts`, `e2e/account.spec.ts`): Owner access covers every registered product with
-  source "Founder / Owner grant" and no purchase record; ordinary accounts see only their own grants; a founder name,
-  e-mail or profile grants nothing; only the exact, active policy counts; revocation applies on the next request; the
-  section has no horizontal overflow at 390px.
+- My HCG apps (`server/test/my-apps.test.ts`, `e2e/account.spec.ts`) against a mock with the handoff's exact response
+  shapes: the Founder sees every registry product as Owner access with source "Founder / Owner grant", no organisation
+  sent and no purchase record; ordinary accounts are asked per organisation and see only their own licence; a founder
+  name, e-mail or profile grants nothing; an answer for another product or with another source is not accepted;
+  revocation shows on the next load; no horizontal overflow at 390px.
 
 The main site's own acceptance (17 Nov 2026) covers the ERP side: an ordinary licensed member without a personal grant
 is refused, only the Owner can assign or revoke, and both are audited.
