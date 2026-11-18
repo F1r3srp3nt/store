@@ -119,6 +119,40 @@ jobs:
           echo "Response headers from https://$DOMAIN/api/v1/health:"
           curl -sS -m 20 -D - -o /dev/null "https://$DOMAIN/api/v1/health" | grep -iE '^HTTP|^server|^fly-request-id|^strict-transport' || true
           node scripts/smoke-deployment.mjs "https://$DOMAIN/" --expect-commit "$(curl -s -m 15 https://$APP.fly.dev/hcg-build.json | jq -r .commit)"
+      - name: Compare what each host serves (custom domain, Fly hostname, GitHub Pages IPs)
+        if: inputs.mode == 'status'
+        continue-on-error: true
+        run: |
+          {
+          echo "## Host comparison"
+          echo '```'
+          probe() { # label, url, extra curl args
+            local label="$1" url="$2"; shift 2
+            for p in /api/v1/health /api/v1/session "/auth/login?return_to=/account" /hcg-build.json /account; do
+              out=$(curl -sS -m 20 -o /tmp/body -D /tmp/hdr -w '%{http_code}' "$@" "$url$p" 2>&1 || true)
+              ctype=$(grep -i '^content-type:' /tmp/hdr | head -1 | tr -d '\r' | cut -d' ' -f2-)
+              srv=$(grep -iE '^server:' /tmp/hdr | head -1 | tr -d '\r' | cut -d' ' -f2-)
+              cache=$(grep -iE '^cache-control:' /tmp/hdr | head -1 | tr -d '\r' | cut -d' ' -f2-)
+              loc=$(grep -i '^location:' /tmp/hdr | head -1 | tr -d '\r' | sed -E 's/(state|nonce|code_challenge)=[^&]+/\1=…/g' | cut -c1-200)
+              body=$(head -c 400 /tmp/body | tr '\n' ' ')
+              case "$p" in
+                /hcg-build.json) body=$(jq -c '{deployEnv,hostingTarget,accountService,commit}' /tmp/body 2>/dev/null || echo "$body" | cut -c1-80);;
+                /account) body=$(grep -o '<script[^>]*src="[^"]*"' /tmp/body | head -1);;
+                *) case "$ctype" in application/json*) ;; *) body="(not JSON) $(echo "$body" | cut -c1-60)";; esac;;
+              esac
+              printf '%-18s %-30s %s | %s | server=%s | cache=%s | %s %s\n' "$label" "$p" "$out" "$ctype" "$srv" "$cache" "$loc" "$body"
+            done
+          }
+          probe "custom-domain" "https://$DOMAIN"
+          probe "fly-hostname" "https://$APP.fly.dev"
+          probe "github-pages-ip" "https://$DOMAIN" --resolve "$DOMAIN:443:185.199.108.153"
+          echo
+          echo "TTL of the store record at the authoritative server:"
+          dig @ns1.dnsdomene.net +norecurse +noall +answer "$DOMAIN" CNAME
+          echo "Zone default (SOA minimum / negative-cache TTL):"
+          dig @ns1.dnsdomene.net +norecurse +noall +answer hakmicapitalgroup.com SOA
+          echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"
