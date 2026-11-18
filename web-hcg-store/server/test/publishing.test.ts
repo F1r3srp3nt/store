@@ -157,29 +157,30 @@ describe("Ship to Store", () => {
     expect((await admin.call("GET", "/api/v1/publishing/products")).body.products).toEqual([]);
   });
 
-  it("checks publishing per product: HCG's central feature on that product, never ownership or another product's grant", async () => {
+  it("checks HCG's personal grants on hcg.store, never ownership, a role, or a grant on another product", async () => {
     const SCOPED = { sub: "user-scoped", email: "scoped@example.test", name: "Scoped" };
-    // store.publish for HCG's central product fixture.quasar.shell only, plus ownership of it (a purchase).
+    // A store.publish grant on the published product's own central ID is not HCG's contract: it permits nothing.
     ledger.grant(SCOPED.sub, "fixture.quasar.shell", featureEdition("store.publish"), "test", null);
     ledger.grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
     const scoped = await desktop(SCOPED);
-    expect((await scoped.call("GET", "/api/v1/publishing/products")).body.products.map((p: { id: string }) => p.id)).toEqual([PRODUCT]);
-    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "private" })).status).toBe(201);
-    // A product HCG has not registered, and a new draft product, are scoped to HCG Store's own product (hcg.store).
-    const other = { ...RELEASE, productId: "fixture-orbit-notes", editionId: null, eligibility: "private" };
-    expect((await scoped.call("POST", "/api/v1/publishing/releases", other)).body.error.code).toBe("not_publisher");
-    expect((await scoped.call("POST", "/api/v1/publishing/products", { id: "scoped-draft", title: "Scoped draft" })).status).toBe(403);
+    expect((await scoped.call("GET", "/api/v1/publishing/products")).body.products).toEqual([]);
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "private" })).body.error.code).toBe("not_publisher");
     // Owning the product (the download licence) is not permission to publish it; neither is a role.
     const buyer = await desktop(BUYER);
     expect((await buyer.call("POST", "/api/v1/publishing/releases", { ...RELEASE, build: "77", eligibility: "private" })).body.error.code).toBe("not_publisher");
-    // store.publish on hcg.store covers unregistered products, which can never be approved for public delivery.
+    // The personal grant on hcg.store permits publishing (catalogue products and draft products alike).
     ledger.grant(SCOPED.sub, "hcg.store", featureEdition("store.publish"), "test", null);
+    const other = { ...RELEASE, productId: "fixture-orbit-notes", editionId: null, eligibility: "private" };
     expect((await scoped.call("POST", "/api/v1/publishing/releases", other)).status).toBe(201);
-    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, build: "78" })).status).toBe(201);
-    // The approver permission is a different feature: publishing rights do not approve.
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, build: "78", eligibility: "private" })).status).toBe(201);
+    expect((await scoped.call("POST", "/api/v1/publishing/products", { id: "scoped-draft", title: "Scoped draft" })).status).toBe(201);
+    // The approver permission is a different grant: publishing rights do not approve.
     const web = await h.signIn(SCOPED);
     const rel = (await scoped.call("GET", `/api/v1/publishing/releases?productId=${PRODUCT}`)).body.releases[0];
     expect((await web.post(`/api/v1/publishing/releases/${rel.id}/approve`, { eligibility: "private", confirm: rel.version })).status).toBe(403);
+    // Revoking the grant takes effect on the next request (checked fresh every time, never cached).
+    ledger.revokeAll(SCOPED.sub);
+    expect((await scoped.call("POST", "/api/v1/publishing/releases", { ...RELEASE, build: "79", eligibility: "private" })).body.error.code).toBe("not_publisher");
   });
 
   it("creates a private draft, uploads in chunks, verifies the SHA-256 and stores the file immutably", async () => {

@@ -68,8 +68,14 @@ export function AccountPage() {
                 <dl className="kv">
                   <div>
                     <dt>Signed in as</dt>
-                    <dd>{account.user.name ?? account.user.email ?? "HCG account"}</dd>
+                    <dd>{account.profile?.displayName ?? account.user.name ?? account.user.email ?? "HCG account"}</dd>
                   </div>
+                  {account.profile?.designation && (
+                    <div>
+                      <dt>Designation</dt>
+                      <dd>{account.profile.designation}</dd>
+                    </div>
+                  )}
                   {account.user.email && (
                     <div>
                       <dt>E-mail</dt>

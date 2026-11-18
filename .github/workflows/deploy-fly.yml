@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart]
+        options: [deploy, status, evidence, restart, profile]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -35,6 +35,22 @@ on:
         description: "evidence: only events at or after this time (ms since 1970)"
         required: false
         default: "0"
+      session_ref:
+        description: "profile: 12-hex reference of a sign-in the Store verified and matched with HCG's /me (from mode=evidence)"
+        required: false
+        default: ""
+      display_name:
+        description: "profile: Store display name (presentation only; grants nothing)"
+        required: false
+        default: ""
+      designation:
+        description: "profile: Store designation, e.g. Founder / Original User (presentation only; grants nothing)"
+        required: false
+        default: ""
+      authorised_by:
+        description: "profile: who authorised this change (recorded in the append-only profile audit)"
+        required: false
+        default: ""
 
 concurrency:
   group: fly-deploy
@@ -153,6 +169,23 @@ jobs:
           dig @ns1.dnsdomene.net +norecurse +noall +answer hakmicapitalgroup.com SOA
           echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Set a Store profile (presentation only; grants nothing; recorded with who authorised and performed it)
+        if: inputs.mode == 'profile'
+        env:
+          REF: ${{ inputs.session_ref }}
+          DN: ${{ inputs.display_name }}
+          DS: ${{ inputs.designation }}
+          AB: ${{ inputs.authorised_by }}
+        run: |
+          echo "$REF" | grep -Eq '^[0-9a-f]{12}$' || { echo "::error::session_ref must be 12 lowercase hex characters"; exit 1; }
+          [ -n "$AB" ] || { echo "::error::authorised_by is required"; exit 1; }
+          b() { printf %s "$1" | base64 -w0; }
+          PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=profile)"
+          run() { flyctl ssh console --app "$APP" --command "runuser -u node -- env HCG_STORE_DATA_DIR=/data node --no-warnings server-dist/store-profile.mjs $1" | grep '^{' | tail -1; }
+          set_out=$(run "set --session-ref $REF --display-name-b64 $(b "$DN") --designation-b64 $(b "$DS") --authorised-by-b64 $(b "$AB") --performed-by-b64 $(b "$PB")")
+          show_out=$(run "show --session-ref $REF")
+          { echo "## Store profile"; echo '```json'; echo "$set_out" | jq .; echo "$show_out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$set_out" | jq -e 'has("error") | not' >/dev/null
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"

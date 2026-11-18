@@ -30,6 +30,7 @@ import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
 import { PaymentLedger, signTestEvent, TEST_SIGNATURE_HEADER, verifyTestEvent, type PaymentEventType } from "./payments";
 import { findArtifact, findByRepoKey, findProduct, type Registry } from "./registry";
+import { getProfile } from "./profiles";
 import { createPublishing } from "./publishing";
 import { SessionStore, type Session } from "./sessions";
 import { handleSileo } from "./sileo";
@@ -181,6 +182,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       configured: !!connect,
       signedIn: !!s,
       user: s ? { sub: s.sub, email: s.email, name: s.name } : null,
+      /** How HCG Store presents this account (profiles.ts). Presentation only: it grants nothing. */
+      profile: s ? getProfile(db, s.sub) : null,
       /** Sign-in confirmed this account with HCG's /me. */
       hcgAccountConfirmed: !!s?.accountConfirmedAt,
     };

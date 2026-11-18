@@ -217,6 +217,27 @@ const MIGRATIONS: string[] = [
   // 6: a purchase grant names the central features it includes (main-site plan: a grant covers only the purchased
   // product, edition and features).
   `ALTER TABLE central_grants ADD COLUMN features TEXT NOT NULL DEFAULT '[]';`,
+  // 7: Store profiles (profiles.ts): presentation only (display name, designation), keyed to a verified HCG subject;
+  // grants nothing. Changes are append-only events recording who authorised and who performed them.
+  `CREATE TABLE store_profiles (
+     sub TEXT PRIMARY KEY,
+     display_name TEXT,
+     designation TEXT,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   );
+   CREATE TABLE store_profile_events (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     sub TEXT NOT NULL,
+     action TEXT NOT NULL,
+     before_json TEXT,
+     after_json TEXT NOT NULL,
+     authorised_by TEXT NOT NULL,
+     performed_by TEXT NOT NULL
+   );
+   CREATE TRIGGER store_profile_events_no_update BEFORE UPDATE ON store_profile_events BEGIN SELECT RAISE(ABORT, 'profile events are append-only'); END;
+   CREATE TRIGGER store_profile_events_no_delete BEFORE DELETE ON store_profile_events BEGIN SELECT RAISE(ABORT, 'profile events are append-only'); END;`,
 ];
 
 /**

@@ -25,7 +25,7 @@ import { openDatabase } from "../src/db";
 import { featureEdition, TestLedgerAuthority } from "../src/entitlements";
 import { STORE_CENTRAL_PRODUCT_ID } from "../src/publishing";
 import { HcgConnectClient } from "../src/hcg-connect";
-import { findProduct, loadRegistry } from "../src/registry";
+import { loadRegistry } from "../src/registry";
 import { Client, FIXTURE_CATALOGUE, TEST_OFFERS } from "./harness";
 import { MockHcgConnect } from "./mock-hcg-connect";
 
@@ -97,12 +97,11 @@ const control = createServer(async (req, res) => {
   const out = (status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
   try {
     if (req.url === "/grant") {
-      // Publishing permissions are central features of a product (store.publish, store.release.approve). Older
-      // callers name them hcg.store.publish / hcg.store.approve with edition = Store product ID or "*".
+      // Publishing permissions are HCG's personal grants on hcg.store (store.publish, store.release.approve). Older
+      // callers name them hcg.store.publish / hcg.store.approve; any edition they send is ignored.
       const feature = ({ "hcg.store.publish": "store.publish", "hcg.store.approve": "store.release.approve" } as Record<string, string>)[b.central!] ?? b.central!;
       if (feature === cfg.publishing.publisherCentralId || feature === cfg.publishing.approverCentralId) {
-        const product = !b.edition || b.edition === "*" ? "*" : (findProduct(registry, b.edition)?.registry.centralId ?? STORE_CENTRAL_PRODUCT_ID);
-        authority.grant(b.sub!, product, featureEdition(feature), "e2e", null);
+        authority.grant(b.sub!, STORE_CENTRAL_PRODUCT_ID, featureEdition(feature), "e2e", null);
       } else authority.grant(b.sub!, b.central!, b.edition ?? "*", "e2e", null);
       return out(200, { ok: true });
     }

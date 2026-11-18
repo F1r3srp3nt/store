@@ -29,17 +29,17 @@ change adds; nothing that worked was replaced.
   (HCG Executable Maker's own client); signature, issuer and subject are verified against HCG Connect's JWKS.
   In production that is HCG Executable Maker's production client `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (issued by HCG,
   `configured_untested`). The server refuses the Store's own sign-in client and, in production, development clients.
-- **May publish / may approve**: HCG's central features `store.publish` and `store.release.approve` (main-site plan,
-  16 Nov 2026), checked **per product** on every action with the caller's own HCG token:
-  `POST /check {org_id, product_id: <the product's central ID>, feature_key: "store.publish"}` for each organisation
-  from `/me`. Granted only on `allowed: true` echoing that organisation, product and feature; anything else is "not
-  permitted" (or 503 when HCG cannot answer). Never inferred from owning the product, from an HCG role, or from anything
-  the client sends. A product HCG has not registered (no central ID) and a Store draft product are scoped to HCG Store's
-  own central product, `hcg.store`; such releases can never be approved for public delivery.
-- **Not yet true centrally:** HCG has not created these features. The main-site plan also records that today any member
-  of a licensed organisation passes `/check`; per-person grants for these staff features are planned (its step 4).
-  Until both exist, `/check` answers `feature_unavailable` and nobody can publish; publishing must stay off in
-  production until a denied-upload test with an organisation member *without* the grant passes.
+- **May publish / may approve**: HCG's personal grants `store.publish` and `store.release.approve` on HCG Store's own
+  central product `hcg.store` (main-site contract v2, 17 Nov 2026), whatever product is being published. Checked on
+  every action with the caller's own HCG token: `POST /check {org_id, product_id: "hcg.store", feature_key}` for each
+  organisation from `/me`. Granted only on `allowed: true` echoing that organisation, product and feature; anything
+  else is "not permitted" (or 503 when HCG cannot answer). Never inferred from owning a product, a Maker licence,
+  organisation membership, an HCG role, a Store profile, or anything the client sends. Draft products and products
+  HCG has not registered can never be approved for public delivery.
+- **Central state (17 Nov 2026):** both features exist on `hcg.store`, locked to personal grants (membership, licences
+  and purchases never suffice), assigned and revoked only by the Owner in ERP with `feature.grant` / `feature.revoke`
+  audit entries. Both are **disabled/planned and granted to nobody**, so `/check` refuses everyone and publishing stays
+  off in production. Store keeps its own different-person rule for public approval on top of the central grant.
 - **May download a public paid/subscription/entitlement release**: the product's central entitlement, exactly as
   before. Free public releases: any signed-in HCG account. Internal testing: a central entitlement for the product.
   Private: publishers only. HCG roles are never read.

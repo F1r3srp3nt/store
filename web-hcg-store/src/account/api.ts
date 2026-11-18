@@ -8,6 +8,8 @@ export interface SessionInfo {
   configured: boolean;
   signedIn: boolean;
   user: { sub: string; email: string | null; name: string | null } | null;
+  /** HCG Store's presentation of the account (display name, designation). Grants nothing. */
+  profile?: { displayName: string | null; designation: string | null } | null;
   centralCheck?: "unavailable";
   endedReason?: string;
 }
