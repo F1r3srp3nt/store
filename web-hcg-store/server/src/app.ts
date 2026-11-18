@@ -29,11 +29,14 @@ import type { CentralGrantOutbox } from "./grants";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
 import { PaymentLedger, signTestEvent, TEST_SIGNATURE_HEADER, verifyTestEvent, type PaymentEventType } from "./payments";
-import { findArtifact, findByRepoKey, findProduct, type Registry } from "./registry";
+import { currentReleaseOf, findArtifact, findByRepoKey, findProduct, type Registry } from "./registry";
 import { getProfile } from "./profiles";
 import { createPublishing } from "./publishing";
 import { SessionStore, type Session } from "./sessions";
 import { handleSileo } from "./sileo";
+
+/** HCG's account portal, where an account's HCG licences are managed (main-site handoff, /features links.account). */
+const HCG_ACCOUNT_URL = "https://beta.hakmicapitalgroup.com/client-portal";
 
 export interface AppDeps {
   cfg: StoreConfig;
@@ -203,6 +206,55 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       return { "access-control-allow-origin": origin, "access-control-allow-credentials": "true", "access-control-allow-methods": "GET", vary: "Origin, Cookie" };
     }
     return {};
+  }
+
+  /**
+   * "My HCG apps": one entry per registered product (Store catalogue products with a confirmed central ID, plus those
+   * not yet registered, shown as such), with what HCG reports this account holds (/library), including HCG's
+   * Owner-access policy when HCG confirms it. Display only: every download is still decided by HCG's /check at use.
+   */
+  async function myApps(session: Session) {
+    const rank = (s: string) => ({ owner: 0, licensed: 0, none: 1, unavailable: 1, "not-registered": 2 })[s] ?? 3;
+    const lib = await authority.library({ sub: session.sub, accessToken: session.accessToken });
+    const purchasedOffers = new Set(ledger.purchasesFor(session.sub).filter((p) => p.status === "active").map((p) => p.offer_id));
+    const purchasedProducts = new Set(registry.offers.filter((o) => purchasedOffers.has(o.id)).map((o) => o.productId));
+    const sourceLabel = (licenseType: string, productId: string) =>
+      purchasedProducts.has(productId) ? "Purchased in HCG Store"
+        : licenseType === "internal" ? "HCG internal grant"
+        : licenseType === "subscription" ? "Subscription"
+        : licenseType === "trial" ? "Trial"
+        : licenseType === "perpetual" ? "Licence (perpetual)" : "HCG licence";
+    const ownerAccess = lib.status === "ok" ? lib.ownerAccess : null;
+    const apps = registry.catalogue.products
+      .filter((p) => !p.supersededBy)
+      .map((product) => {
+        const central = product.registry.centralId;
+        const editions = product.editions.map((e) => ({ id: e.id, name: e.name }));
+        const released = !!currentReleaseOf(registry.catalogue, product);
+        let access: { state: "owner" | "licensed" | "none" | "unavailable" | "not-registered"; source: string | null; allEditions: boolean; editionIds: string[] };
+        if (!central) access = { state: "not-registered", source: null, allEditions: false, editionIds: [] };
+        else if (lib.status !== "ok") access = { state: "unavailable", source: null, allEditions: false, editionIds: [] };
+        else if (ownerAccess) access = { state: "owner", source: "Founder / Owner grant", allEditions: true, editionIds: editions.map((e) => e.id) };
+        else {
+          const mine = lib.items.filter((i) => i.centralProductId === central);
+          const whole = mine.find((i) => i.scope === "product" || i.edition === "*");
+          const keyed = new Set(mine.filter((i) => i.scope === "edition").map((i) => i.edition));
+          const editionIds = whole ? editions.map((e) => e.id) : product.editions.filter((e) => e.centralEditionKey && keyed.has(e.centralEditionKey)).map((e) => e.id);
+          access = mine.length && (whole || editionIds.length)
+            ? { state: "licensed", source: sourceLabel((whole ?? mine[0]!).licenseType, product.id), allEditions: !!whole, editionIds }
+            : { state: "none", source: null, allEditions: false, editionIds: [] };
+        }
+        const entitled = access.state === "owner" || access.state === "licensed";
+        const download = !released ? "not-released" : !central ? "not-registered" : !cfg.protectedDownloads ? "not-available" : entitled ? "available" : "not-entitled";
+        return { productId: product.id, slug: product.slug, centralProductId: central, editions, released, access, download, manage: entitled ? HCG_ACCOUNT_URL : null };
+      })
+      // Products the account has access to first, then registered ones, then those HCG has not registered yet.
+      .sort((a, b) => rank(a.access.state) - rank(b.access.state));
+    return {
+      centralStatus: lib.status,
+      ownerAccess: ownerAccess ? { label: "Owner access — All features", source: "Founder / Owner grant", grantedAt: ownerAccess.grantedAt } : null,
+      apps,
+    };
   }
 
   async function library(session: Session) {
@@ -467,6 +519,12 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       const raw = await readBody(req);
       const outcome = applyTestWebhook(raw, req.headers[TEST_SIGNATURE_HEADER] as string | undefined);
       return json(res, 200, { received: true, outcome });
+    }
+    if (p === "/api/v1/my-apps" && m === "GET") {
+      const fresh = await freshSession(req);
+      if (fresh.unavailable) return errorJson(res, 503, "hcg_unavailable", "Your apps could not be loaded right now. Try again shortly.");
+      if (!fresh.session) return errorJson(res, 401, "sign_in_required", "Sign in with HCG Connect to see your apps.", fresh.ended ? { "set-cookie": sessions.clearCookie() } : {});
+      return json(res, 200, await myApps(fresh.session));
     }
     if (p === "/api/v1/library" && m === "GET") {
       const fresh = await freshSession(req);

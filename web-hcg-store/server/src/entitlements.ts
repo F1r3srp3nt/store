@@ -24,6 +24,33 @@ export interface OwnedItem {
   expiresAt: number | null;
 }
 
+/**
+ * HCG's central Owner-access policy (PROPOSED to the main site, docs/STORE-OWNER.md): a personal, Owner-granted policy
+ * that gives one account customer access to every current and future HCG product, edition and customer feature. It is
+ * not a licence, not a purchase and not an administrative permission (store.publish / store.release.approve stay
+ * personal grants). HCG Store recognises it only in this exact form from HCG's /library, never from a name, an e-mail
+ * address or anything a browser sends.
+ */
+export interface OwnerAccess {
+  policy: "owner_all_products";
+  source: "founder_owner_grant";
+  grantedAt: string | null;
+}
+
+/** One active licence from HCG's /library, for display. Never sufficient to serve a file: /check decides that. */
+export interface LibraryItem {
+  centralProductId: string;
+  /** "product": the whole product; "edition": one edition key, or "*" for the explicit all-editions licence. */
+  scope: "product" | "edition";
+  edition: string | null;
+  licenseType: string;
+  expiresAt: number | null;
+}
+
+export type LibraryView =
+  | { status: "ok"; ownerAccess: OwnerAccess | null; items: LibraryItem[] }
+  | { status: "unavailable"; reason: string };
+
 export interface Subject {
   sub: string;
   /** Current HCG Connect access token (needed by the central API). Never logged. */
@@ -51,6 +78,8 @@ export interface EntitlementAuthority {
    */
   checkFeature(subject: Subject, centralProductId: string, featureKey: string): Promise<CheckResult>;
   list(subject: Subject): Promise<{ status: "ok"; items: OwnedItem[] } | { status: "unavailable"; reason: string }>;
+  /** What HCG reports this account holds, for display ("My HCG apps"). Access decisions still go through check(). */
+  library(subject: Subject): Promise<LibraryView>;
   /** Synchronous, so it can run inside the payment-event transaction (test ledger only). */
   grant(sub: string, centralProductId: string, edition: string, source: string, expiresAt: number | null): void;
   revoke(sub: string, centralProductId: string, edition: string, source: string): void;
@@ -72,6 +101,9 @@ export class NoAuthority implements EntitlementAuthority {
   }
   async list() {
     return { status: "unavailable" as const, reason: "No entitlement authority is configured." };
+  }
+  async library(): Promise<LibraryView> {
+    return { status: "unavailable", reason: "No entitlement authority is configured." };
   }
   grant(): void {
     throw new Error(UNSUPPORTED);
@@ -140,10 +172,58 @@ export class TestLedgerAuthority implements EntitlementAuthority {
       .run(this.now(), sub, centralProductId, edition, source);
   }
 
+  private readonly ownerAccess = new Map<string, OwnerAccess>();
+
+  /** TEST stand-in for HCG's Owner-access policy (granted and revoked by HCG's Owner, never by the Store). */
+  setOwnerAccess(sub: string, on: boolean): void {
+    if (on) this.ownerAccess.set(sub, { policy: "owner_all_products", source: "founder_owner_grant", grantedAt: new Date(this.now()).toISOString() });
+    else this.ownerAccess.delete(sub);
+  }
+
+  async library(subject: Subject): Promise<LibraryView> {
+    const rows = this.db
+      .prepare(`SELECT product_id, edition, source, expires_at FROM test_entitlements WHERE sub = ? AND status = 'active' AND edition NOT LIKE 'feature:%'`)
+      .all(subject.sub) as { product_id: string; edition: string; source: string; expires_at: number | null }[];
+    const items = rows
+      .filter((r) => r.expires_at === null || r.expires_at > this.now())
+      .map((r): LibraryItem => ({
+        centralProductId: r.product_id,
+        scope: r.edition === "default" ? "product" : "edition",
+        edition: r.edition === "default" ? null : r.edition,
+        licenseType: /^(pur|chk)_/.test(r.source) ? "perpetual" : "internal",
+        expiresAt: r.expires_at,
+      }));
+    return { status: "ok", ownerAccess: this.ownerAccess.get(subject.sub) ?? null, items };
+  }
+
   /** Test helper: revoke everything for a subject (simulates an HCG administrator revoking access). */
   revokeAll(sub: string): void {
     this.db.prepare(`UPDATE test_entitlements SET status = 'revoked', updated_at = ? WHERE sub = ?`).run(this.now(), sub);
+    this.ownerAccess.delete(sub);
   }
+}
+
+/** HCG's /library answer, read defensively: anything unexpected is ignored, never treated as access. */
+export function parseLibrary(json: unknown, now: number): LibraryView {
+  const lib = json as { api_version?: unknown; items?: unknown; owner_access?: unknown };
+  if (!lib || lib.api_version !== "v1" || !Array.isArray(lib.items)) return { status: "unavailable", reason: "HCG's library answer was not recognised." };
+  const items: LibraryItem[] = [];
+  for (const raw of lib.items as Record<string, unknown>[]) {
+    if (raw.status !== "active" || typeof raw.product_id !== "string" || typeof raw.license_type !== "string") continue;
+    const ends = typeof raw.ends_at === "string" ? Date.parse(raw.ends_at) : null;
+    if (ends !== null && (!Number.isFinite(ends) || ends <= now)) continue;
+    if (raw.scope === "product" && raw.scope_key === null) {
+      items.push({ centralProductId: raw.product_id, scope: "product", edition: null, licenseType: raw.license_type, expiresAt: ends });
+    } else if (raw.scope === "module" && typeof raw.scope_key === "string" && raw.scope_key.startsWith("edition:")) {
+      items.push({ centralProductId: raw.product_id, scope: "edition", edition: raw.scope_key.slice("edition:".length), licenseType: raw.license_type, expiresAt: ends });
+    }
+  }
+  const o = lib.owner_access as Record<string, unknown> | null | undefined;
+  const ownerAccess: OwnerAccess | null =
+    o && o.policy === "owner_all_products" && o.source === "founder_owner_grant" && o.status === "active" && (o.revoked_at === undefined || o.revoked_at === null)
+      ? { policy: "owner_all_products", source: "founder_owner_grant", grantedAt: typeof o.granted_at === "string" ? o.granted_at : null }
+      : null;
+  return { status: "ok", ownerAccess, items };
 }
 
 /**
@@ -306,7 +386,14 @@ export class HcgEcosystemAuthority implements EntitlementAuthority {
     return unknown ? { status: "unavailable", reason: wantsEdition ? "HCG did not confirm access for this edition." : "HCG did not confirm this access." } : { status: "not-granted" };
   }
 
-  /** Display only (PREVIEW route). Never used to decide access. */
+  async library(subject: Subject): Promise<LibraryView> {
+    if (!subject.accessToken) return { status: "unavailable", reason: "No HCG access token." };
+    const r = await this.call("/library", subject.accessToken);
+    if (!r || r.status !== 200 || !r.json) return { status: "unavailable", reason: "HCG's library route did not answer." };
+    return parseLibrary(r.json, this.now());
+  }
+
+  /** Display only. Never used to decide access. */
   async list(subject: Subject) {
     if (!subject.accessToken) return { status: "unavailable" as const, reason: "No HCG access token." };
     const r = await this.call("/library", subject.accessToken);

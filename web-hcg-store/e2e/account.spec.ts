@@ -36,6 +36,36 @@ test.describe("account card on a phone", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   });
+
+  test("My HCG apps: Owner access confirmed by HCG, per-app status and source, no overflow", async ({ page }) => {
+    const errors = collectErrors(page);
+    const sub = unique("owner");
+    await page.request.post(`${ACCOUNT}/__e2e/owner-access/${encodeURIComponent(sub)}`);
+    await signIn(page, sub, "/account");
+    const section = page.locator(".my-apps");
+    await expect(section.getByRole("heading", { name: "My HCG apps" })).toBeVisible();
+    await expect(section.getByText("Owner access — All features")).toBeVisible();
+    const quasar = section.locator(".my-app", { hasText: "Fixture Quasar Shell" });
+    await expect(quasar.getByText("Owner access", { exact: true })).toBeVisible();
+    await expect(quasar.getByText("Founder / Owner grant")).toBeVisible();
+    await expect(quasar.getByText("All features")).toBeVisible();
+    await expect(section.getByText(/Purchased/)).toHaveCount(0);
+    await expect(section.getByText("Not yet registered with HCG").first()).toBeVisible(); // products without a central ID
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    for (const card of await section.locator(".my-app").all()) {
+      expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test("My HCG apps: an ordinary account sees no Owner access", async ({ page }) => {
+    await signIn(page, unique("ordinary"), "/account");
+    const section = page.locator(".my-apps");
+    await expect(section.getByRole("heading", { name: "My HCG apps" })).toBeVisible();
+    await expect(section.locator(".my-app").first()).toBeVisible();
+    await expect(section.getByText("Owner access — All features")).toHaveCount(0);
+    await expect(section.getByText("Owner access", { exact: true })).toHaveCount(0);
+  });
 });
 
 test.describe("account, purchase and protected delivery (TEST mode)", () => {

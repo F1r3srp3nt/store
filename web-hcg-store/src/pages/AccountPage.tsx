@@ -4,6 +4,7 @@ import { useAccount } from "../account/account-context";
 import { DOWNLOADS_NOT_AVAILABLE, signInUrl, storeApi, type Health } from "../account/api";
 import { useCatalogueState } from "../app/catalogue-context";
 import { IconInfo, IconLink, IconLock, IconShield, IconUser } from "../components/Icons";
+import { MyApps } from "../components/MyApps";
 import { PageMeta } from "../components/PageMeta";
 
 export function AccountPage() {
@@ -192,6 +193,7 @@ export function AccountPage() {
             )}
           </section>
         </div>
+        {account.status === "signed-in" && <MyApps />}
       </div>
     </>
   );

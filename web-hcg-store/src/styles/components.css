@@ -1122,3 +1122,77 @@
   border-style: solid;
   border-color: rgba(94, 234, 212, 0.45);
 }
+
+/* ---------- My HCG apps (Account page) ---------- */
+.my-apps {
+  margin-top: 24px;
+}
+.my-apps__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.my-apps__head h2 {
+  margin: 0;
+}
+.my-apps__head .state-pill {
+  margin-left: 0;
+}
+.state-pill--owner {
+  color: var(--mint);
+  border-style: solid;
+  border-color: rgba(94, 234, 212, 0.45);
+  background: var(--mint-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.state-pill--owner svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.my-apps__list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 14px;
+}
+.my-app {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.my-app > :first-child {
+  flex: none;
+}
+.my-app__body {
+  min-width: 0;
+  flex: 1;
+}
+.my-app__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 10px;
+}
+.my-app__title h3 {
+  margin: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.my-app__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}

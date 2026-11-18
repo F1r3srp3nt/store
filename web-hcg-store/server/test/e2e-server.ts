@@ -55,14 +55,24 @@ const cfg = parseStoreConfig({
 const registry = loadRegistry({ catalogueDir: cfg.catalogueDir, offersFile: cfg.offersFile, artifactsFile: cfg.artifactsFile, testMode: true });
 const db = openDatabase(":memory:");
 const now = () => Date.now();
+const authority = new TestLedgerAuthority(db, now);
 const app = createStoreApp({
   cfg,
   db,
   registry,
   connect: new HcgConnectClient(cfg.hcgConnect!),
-  authority: new TestLedgerAuthority(db, now),
+  authority,
   now,
 });
-createServer((req, res) => void app.handle(req, res)).listen(STORE_PORT, "127.0.0.1", () => {
+createServer((req, res) => {
+  // TEST server only: stands in for HCG's Owner granting the Owner-access policy to a subject.
+  const owner = /^\/__e2e\/owner-access\/([^/]+)$/.exec(req.url ?? "");
+  if (owner && req.method === "POST") {
+    authority.setOwnerAccess(decodeURIComponent(owner[1]!), true);
+    res.writeHead(204).end();
+    return;
+  }
+  void app.handle(req, res);
+}).listen(STORE_PORT, "127.0.0.1", () => {
   console.log(`TEST HCG Store server on ${origin} (mock HCG Connect on ${idp.origin})`);
 });

@@ -50,6 +50,49 @@ it. It does not change registration dates, history or ordering.
 The features stay **disabled** centrally until publishing is activated (PUBLISHING.md §7); holding a grant does not
 enable an unfinished service. Public approval always needs a second, different person with `store.release.approve`.
 
+## Owner access to every product (PROPOSED central policy)
+
+HCG Store shows **"Owner access — All features"** only when HCG reports the policy below; until HCG builds it, the
+Store shows exactly the licences HCG reports. HCG Store has no way to create this access itself, by design.
+
+**What the main site would build** (an Owner-reviewed migration; not built yet):
+
+1. **A personal policy, not a licence or a purchase.** One row per account: `policy = "owner_all_products"`,
+   `source = "founder_owner_grant"`, granted and revoked only by the HCG Owner (Owner-only database function), keyed to
+   the account's immutable user ID, with `owner_access.grant` / `owner_access.revoke` audit entries (actor, reason,
+   time). No purchase or licence row is written, so payment records and licences stay untouched.
+2. **All current and future products.** Evaluated when access is checked, so a product registered later is covered
+   without a new grant.
+3. **`/check` returns it consistently to every app.** For an account with active owner access, the licence and
+   organisation layers are satisfied for every product and edition, with an additive response field
+   `"basis": "owner_access"`. Unchanged:
+   - **availability** still applies: a product or feature HCG has switched off stays off for everyone, so access
+     never makes an unfinished integration operational;
+   - **staff permissions** (`store.publish`, `store.release.approve` and any future personal-grant features) are not
+     covered: they stay personal grants, and Store's different-person approval rule stays.
+4. **`/library` reports it**, additively, so apps can show it:
+
+```json
+"owner_access": { "policy": "owner_all_products", "source": "founder_owner_grant", "status": "active",
+                  "granted_at": "<ISO time>", "revoked_at": null }
+```
+
+HCG Store recognises only that exact form (`server/src/entitlements.ts`, `parseLibrary`): anything else, a revoked
+policy, another source, or a `role`, `owner` or similar field, is ignored. Revocation shows on the next page load,
+and every download is still decided by `/check` at the moment it is requested.
+
+## My HCG apps (Account page)
+
+`GET /api/v1/my-apps` (signed in), shown as "My HCG apps": one entry per registered product (registered first, then
+products HCG has not registered yet) with its icon and name, access state, editions, features, entitlement source and
+the actions that actually exist:
+- **Open** (the product page) always; **Download** only when a release is approved, downloads are switched on and HCG
+  reports access; **Manage in HCG** (the HCG account portal) when the account has access.
+- Sources: "Founder / Owner grant" (the policy above), "Purchased in HCG Store" (a verified Store purchase),
+  "HCG internal grant", "Licence (perpetual)", "Subscription" or "Trial" (from HCG's licence type). Owner access is
+  never shown as "Purchased".
+- Unreleased apps say "Not released yet", whatever the access.
+
 ## Verified behaviour
 
 `server/test/profiles.test.ts`, `server/test/publishing.test.ts`, `server/test/ecosystem.test.ts`:
@@ -57,7 +100,11 @@ enable an unfinished service. Public approval always needs a second, different p
 - there is no HTTP route that writes a profile, a role or a grant;
 - permissions come only from HCG's grants on `hcg.store`; a grant on another product, ownership or a role never counts;
 - revoking a grant takes effect on the next request;
-- the profile audit cannot be altered.
+- the profile audit cannot be altered;
+- My HCG apps (`server/test/my-apps.test.ts`, `e2e/account.spec.ts`): Owner access covers every registered product with
+  source "Founder / Owner grant" and no purchase record; ordinary accounts see only their own grants; a founder name,
+  e-mail or profile grants nothing; only the exact, active policy counts; revocation applies on the next request; the
+  section has no horizontal overflow at 390px.
 
 The main site's own acceptance (17 Nov 2026) covers the ERP side: an ordinary licensed member without a personal grant
 is refused, only the Owner can assign or revoke, and both are audited.

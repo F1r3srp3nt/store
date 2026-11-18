@@ -14,6 +14,24 @@ export interface SessionInfo {
   endedReason?: string;
 }
 
+/** One registered HCG product and what HCG reports this account holds (server-side, from HCG's /library). */
+export interface MyApp {
+  productId: string;
+  slug: string;
+  centralProductId: string | null;
+  editions: { id: string; name: string }[];
+  released: boolean;
+  access: { state: "owner" | "licensed" | "none" | "unavailable" | "not-registered"; source: string | null; allEditions: boolean; editionIds: string[] };
+  download: "available" | "not-released" | "not-registered" | "not-available" | "not-entitled";
+  manage: string | null;
+}
+
+export interface MyApps {
+  centralStatus: "ok" | "unavailable";
+  ownerAccess: { label: string; source: string; grantedAt: string | null } | null;
+  apps: MyApp[];
+}
+
 /** "free": a release approved as public and free; any signed-in HCG account may download it. Not ownership. */
 export type AccessState = "signed-out" | "owned" | "free" | "not-owned" | "not-for-sale" | "unavailable";
 
@@ -111,6 +129,7 @@ export const storeApi = {
   health: () => request<Health>("/api/v1/health"),
   access: (slug: string) => request<{ productId: string; signedIn: boolean; editions: EditionAccess[] }>(`/api/v1/products/${encodeURIComponent(slug)}/access`),
   library: () => request<Library>("/api/v1/library"),
+  myApps: () => request<MyApps>("/api/v1/my-apps"),
   checkout: (offerId: string) => request<{ checkoutId: string; redirectUrl: string; testMode: boolean }>("/api/v1/checkout", { method: "POST", body: JSON.stringify({ offerId }) }),
   checkoutStatus: (id: string) =>
     request<{ id: string; status: "open" | "pending" | "completed" | "failed"; productId: string | null; editionId: string | null; title: string | null }>(
