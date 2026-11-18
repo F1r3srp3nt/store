@@ -63,6 +63,42 @@
   pointer-events: none;
 }
 
+/*
+ * Sentinel's moving light (HCG Sentinel, Theme.swift `SweepLine`): a 2px cyan highlight, 35% of the line's width,
+ * fading to transparent at both ends, travelling across the remaining 65% with ease-in-out over 3.2s and back again,
+ * forever. Sentinel cyan rgb(0.25, 0.87, 0.96) = #40def5. Decorative only: a pseudo-element (not in the accessibility
+ * tree, no pointer events), absolutely positioned over the existing divider (no layout shift), animated with transform
+ * only. With reduced motion it rests in the centre, as Sentinel's does.
+ */
+.site-header::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 35%;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(64, 222, 245, 0), #40def5, rgba(64, 222, 245, 0));
+  pointer-events: none;
+  z-index: 1;
+  /* 65% of the line = 185.714% of this 35%-wide light. */
+  transform: translateX(0);
+  animation: sentinel-sweep 3.2s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes sentinel-sweep {
+  to {
+    transform: translateX(185.714%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-header::before {
+    animation: none;
+    /* Centred, like Sentinel's static state: 32.5% of the line = 92.857% of the light. */
+    transform: translateX(92.857%);
+    will-change: auto;
+  }
+}
+
 .site-header__inner {
   max-width: var(--page-max);
   margin-inline: auto;
