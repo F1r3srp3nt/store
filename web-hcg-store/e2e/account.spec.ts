@@ -13,6 +13,31 @@ async function signIn(page: Page, sub: string, returnTo = "/library") {
 
 const unique = (name: string) => `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+test.describe("account card on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Signed in as and E-mail stack, and a long address wraps without horizontal overflow", async ({ page }) => {
+    const errors = collectErrors(page);
+    // A long account name and address, like a real company e-mail on a phone.
+    await signIn(page, unique("ceo.of.a.company.with.a.long.mailbox.name"), "/account");
+    const card = page.locator(".connection").first();
+    await expect(card.getByText("Signed in", { exact: true })).toBeVisible();
+    const label = card.getByText("Signed in as", { exact: true });
+    const mail = card.getByText("E-mail", { exact: true });
+    const a = (await label.boundingBox())!;
+    const b = (await mail.boundingBox())!;
+    expect(b.y).toBeGreaterThan(a.y + a.height); // stacked, not side by side
+    for (const dd of await card.locator(".kv dd").all()) {
+      const box = (await dd.boundingBox())!;
+      const cardBox = (await card.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 0.5);
+      expect(await dd.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe("account, purchase and protected delivery (TEST mode)", () => {
   test("signed-out visitors see product information, sign-in prompts and no files", async ({ page, request }) => {
     const errors = collectErrors(page);

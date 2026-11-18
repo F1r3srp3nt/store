@@ -535,11 +535,22 @@
   text-transform: uppercase;
   color: var(--text-faint);
 }
+.kv > div {
+  /* Grid items default to min-width: auto, which lets a long value (an e-mail address) push past its column. */
+  min-width: 0;
+}
 .kv dd {
   margin: 4px 0 0;
   color: var(--text);
   font-size: 14.5px;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  /* Narrow screens: one field per row, label above value. */
+  .kv {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .kv--compact {
   gap: 10px 16px;
