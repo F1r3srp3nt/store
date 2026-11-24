@@ -90,6 +90,8 @@ export interface HarnessOptions {
   /** fetch used by the central grant outbox (D5); set HCG_STORE_GRANT_API_URL/CREDENTIAL in env to enable it. */
   grantFetch?: typeof fetch;
   withStaticDir?: string;
+  /** fetch used for HCG Payments (provider "hcg-payments"). */
+  paymentsFetch?: typeof fetch;
 }
 
 export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> {
@@ -144,7 +146,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
         ? new HcgEcosystemAuthority(cfg.ecosystem!.baseUrl, opts.ecosystemFetch)
         : new NoAuthority();
   const outbox = new CentralGrantOutbox(db, clock.now, cfg.grants, opts.grantFetch);
-  const app = createStoreApp({ cfg, db, registry, connect, authority, now: clock.now, outbox, ecosystemFetch: opts.ecosystemFetch });
+  const app = createStoreApp({ cfg, db, registry, connect, authority, now: clock.now, outbox, ecosystemFetch: opts.ecosystemFetch, paymentsFetch: opts.paymentsFetch });
   server.on("request", (req, res) => void app.handle(req, res));
 
   const anonymous = () => new Client(origin);
