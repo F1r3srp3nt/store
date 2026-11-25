@@ -71,7 +71,14 @@ export interface EditionAccess {
 }
 
 export interface Library {
-  owned: { productId: string; slug: string; name: string; editionId: string | null; editionName: string | null; state: string }[];
+  owned: {
+    productId: string; slug: string; name: string; editionId: string | null; editionName: string | null; state: string;
+    /** "licensed": HCG reports access (licence, grant or Founder/Owner); "free": a published free release, no ownership. */
+    acquisition?: "licensed" | "free"; licence?: string; tier?: string | null; pricingModel?: string;
+    /** The catalogue's explicit current release; null = not released yet. */
+    currentRelease?: { id: string; version: string; channel: string; releaseDate: string | null } | null;
+    hcgRepoKey?: string | null; channel?: string | null;
+  }[];
   purchases: {
     id: string;
     title: string;
@@ -85,6 +92,10 @@ export interface Library {
     createdAt: number;
     testOnly: boolean;
   }[];
+  subscriptions?: Library["purchases"];
+  invoices?: { available: boolean; items: unknown[]; message: string };
+  devices?: { kind: string; label: string; connectedAt: number }[];
+  devicesNote?: string;
   ownershipUnavailable: boolean;
   downloadsMessage: string | null;
 }
@@ -133,12 +144,43 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body;
 }
 
+/** Release Manager (Ship to Store): metadata only, shown to the people HCG lets publish or approve a product. */
+export type ReleaseStage =
+  | "draft" | "validation-pending" | "validation-failed" | "uploaded" | "awaiting-approval"
+  | "approved" | "published" | "superseded" | "withdrawn";
+export interface ManagedRelease {
+  id: string; productId: string; productTitle: string; productSource: "catalogue" | "draft"; editionId: string | null;
+  version: string; build: string; channel: string; status: string; stage: ReleaseStage; approvedEligibility: string | null;
+  requestedEligibility: string; distribution: string; createdAt: number; submittedAt: number | null; approvedAt: number | null;
+  publishedAt: number | null; supersededBy: string | null; withdrawnReason: string | null; files: number; reviewUrl: string;
+  mayApprove: boolean; mayPublish: boolean;
+}
+export interface ChecksumReport { ok: boolean; checkedAt: number; files: { id: string; fileName: string; expected: string | null; actual: string | null; ok: boolean }[] }
+export interface ReleaseComparison {
+  from: { id: string; version: string; build: string }; to: { id: string; version: string; build: string };
+  fields: { field: string; from: unknown; to: unknown }[];
+  releaseNotes: { added: string[]; removed: string[] };
+  files: { change: "added" | "removed" | "changed" | "identical"; platform: string; format: string; architectures: string[]; sizeDelta?: number }[];
+}
+
 export const storeApi = {
   session: () => request<SessionInfo>("/api/v1/session"),
   health: () => request<Health>("/api/v1/health"),
   access: (slug: string) => request<{ productId: string; signedIn: boolean; editions: EditionAccess[] }>(`/api/v1/products/${encodeURIComponent(slug)}/access`),
   library: () => request<Library>("/api/v1/library"),
   myApps: () => request<MyApps>("/api/v1/my-apps"),
+  releaseManager: () => request<{ releases: ManagedRelease[]; auditIntact: boolean }>("/api/v1/publishing/manager"),
+  /** A mismatch answers 409 with the same report, so both are read here. */
+  verifyChecksums: async (id: string): Promise<ChecksumReport> => {
+    const res = await fetch(`${base()}/api/v1/publishing/releases/${encodeURIComponent(id)}/verify-checksums`, {
+      method: "POST", credentials: "same-origin", headers: { accept: "application/json", "content-type": "application/json" }, body: "{}",
+    });
+    const body = (await res.json()) as ChecksumReport & { error?: { code: string; message: string } };
+    if (res.ok || (res.status === 409 && Array.isArray(body.files))) return body;
+    throw new StoreApiError(res.status, body.error?.code ?? "error", body.error?.message ?? "Request failed.");
+  },
+  compareReleases: (from: string, to: string) =>
+    request<ReleaseComparison>(`/api/v1/publishing/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   checkout: (offerId: string) => request<{ checkoutId: string; redirectUrl: string; testMode: boolean }>("/api/v1/checkout", { method: "POST", body: JSON.stringify({ offerId }) }),
   checkoutStatus: (id: string) =>
     request<{ id: string; status: "open" | "pending" | "completed" | "failed"; productId: string | null; editionId: string | null; title: string | null }>(

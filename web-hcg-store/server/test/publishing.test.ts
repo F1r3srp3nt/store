@@ -58,6 +58,11 @@ function ipa(extra: { name: string; data?: Buffer }[] = [], opts: { signed?: boo
   const files = [{ name: "Payload/Sample.app/Info.plist", data: Buffer.from(info) },
     ...(opts.signed === false ? [] : [{ name: "Payload/Sample.app/_CodeSignature/CodeResources", data: Buffer.from("x") }]),
     ...(opts.profile === null || opts.signed === false ? [] : [{ name: "Payload/Sample.app/embedded.mobileprovision", data: profile(opts.profile ?? "ad-hoc") }]), ...extra];
+  return zip(files);
+}
+
+/** A ZIP archive; `beforeCentralDirectory` is placed between the entries and the central directory (APK Signing Block). */
+function zip(files: { name: string; data?: Buffer }[], beforeCentralDirectory: Buffer = Buffer.alloc(0)): Buffer {
   const locals: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
@@ -76,8 +81,8 @@ function ipa(extra: { name: string; data?: Buffer }[] = [], opts: { signed?: boo
   }
   const cd = Buffer.concat(central);
   const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, cd, end]);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset + beforeCentralDirectory.length, 16);
+  return Buffer.concat([...locals, beforeCentralDirectory, cd, end]);
 }
 
 
@@ -117,10 +122,13 @@ async function desktop(user = PUBLISHER, client = MAKER_CLIENT) {
   return new Desktop(await h.idp.accessToken(user, client));
 }
 
+/** Build provenance every file needs before submission (Executable Maker reports it). */
+const PROV = { sourceCommit: "0123abcd", buildProvider: "github-actions", toolchain: "Xcode 17.0 (test)" };
+
 const RELEASE = { productId: PRODUCT, editionId: "standard", version: "1.2.0", build: "42", releaseNotes: ["First Ship to Store build."], compatibility: { minimumOs: { ios: "15.0" }, architectures: ["arm64"], notes: [] }, distribution: "paid", eligibility: "public" };
 
 async function upload(d: Desktop, releaseId: string, file: Buffer, name = "Sample-1.2.0.ipa", declared = sha(file)) {
-  const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { fileName: name, platform: "ios", format: "ipa", sizeBytes: file.length, sha256: declared, signing: { status: "signed", evidence: "codesign --verify: valid", tool: "HCG Executable Maker" } });
+  const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { fileName: name, platform: "ios", ...PROV, format: "ipa", sizeBytes: file.length, sha256: declared, signing: { status: "signed", evidence: "codesign --verify: valid", tool: "HCG Executable Maker" } });
   expect(a.status, JSON.stringify(a.body)).toBe(201);
   const chunk = a.body.chunkBytes as number;
   for (let start = 0; start < file.length; start += chunk) {
@@ -233,7 +241,7 @@ describe("Ship to Store", () => {
     for (const fileName of ["../x.ipa", "a/b.ipa", "x.ipa.sh", "x .ipa"]) {
       expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName, platform: "ios", format: "ipa", sizeBytes: 10, sha256: "a".repeat(64) })).status).toBe(400);
     }
-    expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "x.apk", platform: "android", format: "apk", sizeBytes: 10, sha256: "a".repeat(64) })).status).toBe(400);
+    expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "x.exe", platform: "android", format: "exe", sizeBytes: 10, sha256: "a".repeat(64) })).status).toBe(400);
     // Recovery: remove the rejected files and upload the right one.
     for (const id of [wrong.id]) expect((await d.call("DELETE", `/api/v1/publishing/artifacts/${id}`)).status).toBe(200);
     expect((await (await upload(d, rel.body.id, file, "Good.ipa")).complete()).status).toBe(200);
@@ -243,7 +251,7 @@ describe("Ship to Store", () => {
     const d = await desktop();
     const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "private" });
     const file = ipa([{ name: "Payload/Sample.app/Big", data: randomBytes(1_800_000) }]);
-    const a = await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Resume.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file) });
+    const a = await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Resume.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file), ...PROV });
     const chunk = a.body.chunkBytes as number;
     // First chunk arrives; the second is "lost" (sent short), then the URL expires.
     const first = await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${chunk - 1}/${file.length}` }, body: file.subarray(0, chunk) });
@@ -290,6 +298,13 @@ describe("Ship to Store", () => {
     expect(page).toContain("build 42");
     const ok = await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "1.2.0" });
     expect(ok.status).toBe(200);
+    // Approved is not yet published: nothing is delivered to customers until a person publishes it explicitly.
+    ledger.grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
+    expect((await fetchDownload(buyer, up.id)).status).toBe(403);
+    expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "1.2.0" })).status).toBe(403); // never from a desktop app
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "" })).status).toBe(400);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "1.2.0" })).status).toBe(200);
+    ledger.revokeAll(BUYER.sub);
     // Paid public release: no entitlement → refused; entitlement (granted by HCG) → the exact bytes.
     expect((await fetchDownload(buyer, up.id)).status).toBe(403);
     ledger.grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
@@ -319,6 +334,7 @@ describe("Ship to Store", () => {
     await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`);
     const approverWeb = await h.signIn(APPROVER);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "1.2.0" })).status).toBe(200);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "1.2.0" })).status).toBe(200);
     const anyone = await desktop(BUYER);
     const link = await anyone.call("POST", `/api/v1/publishing/artifacts/${up.id}/download-url`);
     expect(link.status).toBe(200); // free + public: any signed-in HCG account
@@ -361,7 +377,7 @@ describe("Ship to Store", () => {
     const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, editionId: "unleashed", version: "1.0.1", compatibility: { minimumOs: {}, architectures: ["iphoneos-arm64"], notes: [] }, destinations: ["hcg-store", "hcg-repo"] });
     expect(rel.status, JSON.stringify(rel.body)).toBe(201);
     const declare = (file: Buffer, name: string, pkg: { id: string; version: string; architecture: string } | null) =>
-      d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: name, platform: "ios", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg });
+      d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: name, platform: "ios", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg, ...PROV });
     const good = deb("com.example.fixture.quasar.unleashed", "1.0.1", "iphoneos-arm64");
     expect((await declare(good, "q.deb", null)).status).toBe(400); // HCG Repo needs the control fields declared
     const send = async (file: Buffer, name: string, pkg: { id: string; version: string; architecture: string }) => {
@@ -383,6 +399,8 @@ describe("Ship to Store", () => {
     await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`);
     const approverWeb = await h.signIn(APPROVER);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "1.0.1" })).status).toBe(200);
+    expect(h.app.publishing.publishedFor("fixture-quasar-shell", "unleashed")).toEqual([]); // approved, not yet published
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "1.0.1" })).status).toBe(200);
     // …and only then, as a normal entitlement-gated Store artifact with its version and layout for Sileo.
     expect(h.app.publishing.publishedFor("fixture-quasar-shell", "unleashed").map((a) => a.id)).toEqual([ok.body.artifact.id]);
     expect(h.app.publishing.publishedMeta(ok.body.artifact.id)).toEqual({ version: "1.0.1", architectures: ["iphoneos-arm64"] });
@@ -395,7 +413,7 @@ describe("Ship to Store", () => {
       return rel.body.id as string;
     };
     const ship = async (releaseId: string, file: Buffer, pkg: { id: string; version: string; architecture: string }) => {
-      const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { fileName: `q_${pkg.version}.deb`, platform: "ios", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg });
+      const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { fileName: `q_${pkg.version}.deb`, platform: "ios", format: "deb", sizeBytes: file.length, sha256: sha(file), architectures: ["iphoneos-arm64"], package: pkg, ...PROV });
       if (a.status !== 201) return a;
       expect((await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file })).status).toBe(200);
       return d.call("POST", `/api/v1/publishing/artifacts/${a.body.artifact.id}/complete`);
@@ -417,6 +435,7 @@ describe("Ship to Store", () => {
     expect((await stranger.get(`/api/v1/downloads/${fileId}`)).status).toBe(404); // not published: not revealed
     const approverWeb = await h.signIn(APPROVER);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/approve`, { eligibility: "public", confirm: "2.0.1" })).status).toBe(200);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/publish`, { confirm: "2.0.1" })).status).toBe(200);
 
     // 2. Public + free: any signed-in account, without owning it; signed out still 401.
     const access = (await (await stranger.get("/api/v1/products/fixture-quasar-shell/access")).json()) as { editions: { editionId: string; state: string; owned: boolean; artifacts: { id: string }[] }[] };
@@ -455,6 +474,9 @@ describe("Ship to Store", () => {
     const approverWeb = await h.signIn(APPROVER);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "internal-testing", confirm: "3.0.0", current: true })).status).toBe(400);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "3.0.0", current: true })).status).toBe(200);
+    // Approved but unpublished: not exported to the public catalogue.
+    expect(exportReleaseRecords(h.db, Date.now()).records).toHaveLength(0);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "3.0.0" })).status).toBe(200);
 
     const docs = JSON.parse(readFileSync(join(FIXTURE_CATALOGUE, "products.json"), "utf8"));
     const products = docs.products.map((p: any) => ({ id: p.id, centralId: p.registry.centralId, editionIds: (p.editions ?? []).map((e: any) => e.id), currentReleaseId: p.currentReleaseId ?? null }));
@@ -487,7 +509,7 @@ describe("Ship to Store", () => {
   // ───────────── Ship to Shop: what each file is, and who may see a draft ─────────────
 
   async function send(d: Desktop, releaseId: string, file: Buffer, decl: Record<string, unknown>) {
-    const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { sizeBytes: file.length, sha256: sha(file), signing: { status: "not-checked", evidence: null, tool: null }, ...decl });
+    const a = await d.call("POST", `/api/v1/publishing/releases/${releaseId}/artifacts`, { sizeBytes: file.length, sha256: sha(file), signing: { status: "not-checked", evidence: null, tool: null }, ...decl, ...PROV });
     if (a.status !== 201) return a;
     expect((await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file })).status).toBe(200);
     return d.call("POST", `/api/v1/publishing/artifacts/${a.body.artifact.id}/complete`);
@@ -543,7 +565,7 @@ describe("Ship to Store", () => {
     const d = await desktop();
     const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version: "2.1.0", build: "1", eligibility: "public" });
     const file = ipa([{ name: "Payload/Sample.app/Sample", data: randomBytes(300_000) }]);
-    const a = await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Review.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file), kind: "device-build" });
+    const a = await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Review.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file), kind: "device-build", ...PROV });
     // Unauthorised uploads: another HCG account cannot add files, a forged upload URL is refused.
     const buyer = await desktop(BUYER);
     expect((await buyer.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Evil.ipa", platform: "ios", format: "ipa", sizeBytes: 10, sha256: sha(Buffer.from("x")) })).status).toBe(403);
@@ -574,5 +596,146 @@ describe("Ship to Store", () => {
     await d.call("POST", `/api/v1/publishing/releases/${first.body.id}/submit`);
     const after = await d.call("POST", "/api/v1/publishing/releases", body);
     expect([after.status, after.body.error.code]).toEqual([409, "version_exists"]);
+  });
+
+  // ───────────── Distribution Infrastructure v2: Android formats, provenance, Release Manager ─────────────
+
+  const apk = (opts: { v1?: boolean; v2?: boolean; dex?: boolean } = {}) =>
+    zip([{ name: "AndroidManifest.xml" }, ...(opts.dex === false ? [] : [{ name: "classes.dex" }]), { name: "resources.arsc" }, ...(opts.v1 ? [{ name: "META-INF/CERT.RSA" }, { name: "META-INF/CERT.SF" }] : [])],
+      opts.v2 ? Buffer.concat([randomBytes(24), Buffer.from("APK Sig Block 42")]) : undefined);
+  const aab = () => zip([{ name: "BundleConfig.pb" }, { name: "base/manifest/AndroidManifest.xml" }, { name: "base/dex/classes.dex" }]);
+
+  it("accepts Android APKs and App Bundles by content; an App Bundle is never delivered to customers", async () => {
+    const d = await desktop();
+    const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, editionId: "standard", version: "5.0.0", build: "500", compatibility: { minimumOs: {}, architectures: [], notes: [] } });
+    const android = (fileName: string, format: string) => ({ fileName, platform: "android", format });
+    // Content decides: an APK without classes.dex, or an AAB without its manifest, is refused.
+    expect((await send(d, rel.body.id, apk({ dex: false, v2: true }), android("NoDex.apk", "apk"))).status).toBe(422);
+    expect((await send(d, rel.body.id, apk({ v2: true }), android("Wrong.aab", "aab"))).status).toBe(422);
+    const signed = await send(d, rel.body.id, apk({ v2: true }), android("App-5.0.0.apk", "apk"));
+    expect(signed.status, JSON.stringify(signed.body)).toBe(200);
+    expect(signed.body.artifact).toMatchObject({ kind: "android-app", validation: { signatureStructure: "present" }, readiness: { ordinaryInstall: false }, customerDelivery: true });
+    expect((await send(d, rel.body.id, apk({ v1: true }), android("V1-5.0.0.apk", "apk"))).body.artifact.validation.signatureStructure).toBe("present");
+    expect((await send(d, rel.body.id, apk(), android("Unsigned-5.0.0.apk", "apk"))).body.artifact.readiness.status).toBe("unsigned");
+    const bundle = await send(d, rel.body.id, aab(), android("App-5.0.0.aab", "aab"));
+    expect(bundle.body.artifact).toMatchObject({ kind: "distribution-bundle", readiness: { status: "distribution-only", ordinaryInstall: false }, customerDelivery: false });
+    // An unsigned APK blocks public approval, like an unsigned iOS build.
+    const unsignedId = (await d.call("GET", `/api/v1/publishing/releases/${rel.body.id}`)).body.artifacts.find((a: any) => a.fileName === "Unsigned-5.0.0.apk").id;
+    await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`);
+    const approverWeb = await h.signIn(APPROVER);
+    const refused = await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "5.0.0" });
+    expect(refused.status).toBe(409);
+    // Removing that file takes the release back to draft; then submit, approve and publish.
+    expect((await d.call("DELETE", `/api/v1/publishing/artifacts/${unsignedId}`)).status).toBe(200);
+    expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`)).status).toBe(200);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "5.0.0" })).status).toBe(200);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "5.0.0" })).status).toBe(200);
+    ledger.grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
+    const buyer = await desktop(BUYER);
+    expect((await fetchDownload(buyer, signed.body.artifact.id)).status).toBe(200);
+    const denied = await fetchDownload(buyer, bundle.body.artifact.id);
+    expect([denied.status, (denied.body as { error?: { code?: string } } | undefined)?.error?.code]).toEqual([403, "staff_only"]);
+    expect(h.app.publishing.publishedFor(PRODUCT, "standard").map((x) => x.id)).not.toContain(bundle.body.artifact.id);
+    expect((await fetchDownload(approverWeb, bundle.body.artifact.id)).status).toBe(200); // staff can still review it
+    // The public catalogue never lists the App Bundle.
+    const exported = exportReleaseRecords(h.db, Date.now());
+    expect(exported.records[0]!.artifacts.map((a) => a.format).sort()).toEqual(["apk", "apk"]);
+  });
+
+  it("requires release notes and each file's source commit, build provider and toolchain at submission, never the repository", async () => {
+    const d = await desktop();
+    const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version: "6.0.0", build: "600", releaseNotes: [] });
+    const file = ipa();
+    const a = await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/artifacts`, { fileName: "Old.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file) });
+    expect(a.status).toBe(201); // drafts stay compatible with older Executable Maker versions
+    await fetch(a.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file });
+    expect((await d.call("POST", `/api/v1/publishing/artifacts/${a.body.artifact.id}/complete`)).status).toBe(200);
+    expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`)).body.error.code).toBe("release_notes_required");
+    // Release notes are part of the draft; a new draft with notes, still without provenance:
+    const rel2 = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version: "6.0.0", build: "601" });
+    const b = await d.call("POST", `/api/v1/publishing/releases/${rel2.body.id}/artifacts`, { fileName: "Old.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file) });
+    await fetch(b.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file });
+    await d.call("POST", `/api/v1/publishing/artifacts/${b.body.artifact.id}/complete`);
+    const missing = await d.call("POST", `/api/v1/publishing/releases/${rel2.body.id}/submit`);
+    expect([missing.status, missing.body.error.code]).toEqual([409, "provenance_required"]);
+    // Bad provenance is refused at declaration.
+    for (const bad of [{ sourceCommit: "main" }, { buildProvider: "someone-elses-ci" }, { sourceRepository: "private/repo" }]) {
+      expect((await d.call("POST", `/api/v1/publishing/releases/${rel2.body.id}/artifacts`, { fileName: "New.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file), ...PROV, ...bad })).status).toBe(400);
+    }
+    // A replacement with provenance (new file name) takes the old file out of the release; then it can be submitted.
+    const c = await d.call("POST", `/api/v1/publishing/releases/${rel2.body.id}/artifacts`, { fileName: "New.ipa", platform: "ios", format: "ipa", sizeBytes: file.length, sha256: sha(file), ...PROV, validationReport: { tool: "HCG Executable Maker", passed: true, summary: "Bundle checks passed." }, replaces: b.body.artifact.id });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    await fetch(c.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file });
+    expect((await d.call("POST", `/api/v1/publishing/artifacts/${c.body.artifact.id}/complete`)).body.artifact.provenance).toEqual({ ...PROV, validationReport: { tool: "HCG Executable Maker", passed: true, summary: "Bundle checks passed." } });
+    expect((await d.call("POST", `/api/v1/publishing/releases/${rel2.body.id}/submit`)).status).toBe(200);
+    const view = (await d.call("GET", `/api/v1/publishing/releases/${rel2.body.id}`)).body;
+    expect(view.artifacts.map((x: any) => [x.fileName, x.status]).sort()).toEqual([["New.ipa", "verified"], ["Old.ipa", "removed"]]);
+    expect(view.stage).toBe("awaiting-approval");
+  });
+
+  it("Release Manager: a new file invalidates an approval; publication is explicit and may supersede; checksums, comparison and the cross-product list", async () => {
+    const d = await desktop();
+    const approverWeb = await h.signIn(APPROVER);
+    const shipRelease = async (version: string, build: string, file: Buffer) => {
+      const rel = await d.call("POST", "/api/v1/publishing/releases", { ...RELEASE, version, build, releaseNotes: [`Notes for ${version}.`] });
+      expect(rel.body.stage).toBe("draft");
+      const up = await upload(d, rel.body.id, file, `Sample-${version}.ipa`);
+      expect((await d.call("GET", `/api/v1/publishing/releases/${rel.body.id}`)).body.stage).toBe("validation-pending");
+      await up.complete();
+      expect((await d.call("GET", `/api/v1/publishing/releases/${rel.body.id}`)).body.stage).toBe("uploaded");
+      await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/submit`);
+      expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: version })).status).toBe(200);
+      return { id: rel.body.id as string, fileId: up.id };
+    };
+    const v1 = await shipRelease("7.0.0", "700", ipa());
+    // Adding a file after approval: the approval no longer applies, the release is a draft again, and it says why.
+    const extra = await upload(d, v1.id, ipa([{ name: "Payload/Sample.app/extra.txt" }]), "Sample-7.0.0-b.ipa");
+    let view = (await d.call("GET", `/api/v1/publishing/releases/${v1.id}`)).body;
+    expect([view.status, view.approvedEligibility, view.approvedBy]).toEqual(["draft", null, null]);
+    expect(view.audit.map((x: any) => x.action)).toContain("release.approval-invalidated");
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${v1.id}/publish`, { confirm: "7.0.0" })).status).toBe(409); // not approved any more
+    await extra.complete();
+    await d.call("POST", `/api/v1/publishing/releases/${v1.id}/submit`);
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${v1.id}/approve`, { eligibility: "public", confirm: "7.0.0" })).status).toBe(200);
+    // The creator can never publish; the approver publishes.
+    const creatorWeb = await h.signIn(PUBLISHER);
+    ledger.grant(PUBLISHER.sub, "*", featureEdition("store.release.approve"), "test", null);
+    expect((await creatorWeb.post(`/api/v1/publishing/releases/${v1.id}/publish`, { confirm: "7.0.0" })).status).toBe(403);
+    expect(((await (await approverWeb.post(`/api/v1/publishing/releases/${v1.id}/publish`, { confirm: "7.0.0" })).json()) as { stage: string }).stage).toBe("published");
+    // Published files are immutable: no new files, no removals.
+    expect((await d.call("POST", `/api/v1/publishing/releases/${v1.id}/artifacts`, { fileName: "Late.ipa", platform: "ios", format: "ipa", sizeBytes: 10, sha256: "a".repeat(64), ...PROV })).status).toBe(409);
+    expect((await d.call("DELETE", `/api/v1/publishing/artifacts/${v1.fileId}`)).status).toBe(409);
+
+    // A second release, published WITHOUT superseding, leaves the first published; with supersede it replaces it.
+    const v2 = await shipRelease("7.1.0", "710", ipa([{ name: "Payload/Sample.app/new.txt" }]));
+    expect((await approverWeb.post(`/api/v1/publishing/releases/${v2.id}/publish`, { confirm: "7.1.0", supersede: true })).status).toBe(200);
+    expect((await d.call("GET", `/api/v1/publishing/releases/${v1.id}`)).body).toMatchObject({ status: "superseded", supersededBy: v2.id });
+    ledger.grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
+    const buyer = await desktop(BUYER);
+    expect((await fetchDownload(buyer, v1.fileId)).status).toBe(410);
+    expect((await fetchDownload(buyer, v2.fileId)).status).toBe(200);
+
+    // Checksum re-verification of the stored files; a changed file on disk is caught.
+    const ok = await d.call("POST", `/api/v1/publishing/releases/${v2.id}/verify-checksums`);
+    expect([ok.status, ok.body.ok, ok.body.files.length]).toEqual([200, true, 1]);
+    const key = (h.db.prepare("SELECT storage_key FROM pub_artifacts WHERE id = ?").get(v2.fileId) as { storage_key: string }).storage_key;
+    const { chmodSync, writeFileSync } = await import("node:fs");
+    const path = join(h.cfg.artifactStorageDir, key);
+    chmodSync(path, 0o644);
+    writeFileSync(path, "tampered");
+    const bad = await d.call("POST", `/api/v1/publishing/releases/${v2.id}/verify-checksums`);
+    expect([bad.status, bad.body.ok]).toEqual([409, false]);
+
+    // Comparison between versions of one product.
+    const cmp = (await d.call("GET", `/api/v1/publishing/compare?from=${v1.id}&to=${v2.id}`)).body;
+    expect(cmp.fields.map((f: any) => f.field)).toEqual(expect.arrayContaining(["version", "build", "status"]));
+    expect(cmp.releaseNotes).toEqual({ added: ["Notes for 7.1.0."], removed: ["Notes for 7.0.0."] });
+    expect(cmp.files.some((f: any) => f.change === "changed")).toBe(true);
+
+    // Cross-product list for the people HCG lets publish or approve; nobody else sees anything.
+    const list = (await approverWeb.get("/api/v1/publishing/manager").then((r) => r.json())) as { releases: { id: string; stage: string }[]; auditIntact: boolean };
+    expect(list.releases.map((r) => [r.id, r.stage])).toEqual([[v2.id, "published"], [v1.id, "superseded"]]);
+    expect(list.auditIntact).toBe(true);
+    expect((await (await h.signIn(STRANGER)).get("/api/v1/publishing/manager").then((r) => r.json()) as { releases: unknown[] }).releases).toEqual([]);
   });
 });

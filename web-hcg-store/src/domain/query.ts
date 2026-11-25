@@ -73,6 +73,7 @@ export function filterProducts(c: Catalogue, query: CatalogueQuery): Product[] {
   const scored: { p: Product; nameHits: number; avail: Availability }[] = [];
   for (const p of c.products) {
     if (p.supersededBy) continue; // merged into another product; reachable by its old link only
+    if (p.visibility === "draft") continue; // prepared entry, not described yet: never listed
     const t = matchesText(p, query.q);
     if (!t.match) continue;
     if (!matchesPlatforms(p, query.platforms)) continue;

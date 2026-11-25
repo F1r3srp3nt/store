@@ -886,3 +886,13 @@
   background: rgba(5, 7, 10, 0.72);
   border: 1px solid var(--line-strong);
 }
+
+/* Product videos (catalogue v2 trailers): self-hosted, never autoplayed. */
+.product-trailer {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  background: #000;
+}

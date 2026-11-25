@@ -6,7 +6,7 @@ import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
 import { currentRelease } from "../domain/model";
 import type { Edition, Product } from "../domain/schema";
-import { EDITION_CHANNELS, IDENTIFIER_KINDS, PLATFORMS } from "../domain/taxonomy";
+import { ACCESS_REQUIREMENTS, EDITION_CHANNELS, EDITION_TIERS, IDENTIFIER_KINDS, PLATFORMS, PRICING_MODELS } from "../domain/taxonomy";
 import { IconArrowRight, IconCheck, IconDownload, IconInfo, IconLock, IconShield } from "./Icons";
 
 type Loaded = { status: "loading" } | { status: "ok"; editions: EditionAccess[] } | { status: "unavailable"; message: string };
@@ -136,6 +136,24 @@ function EditionCard({
               <dt>Status</dt>
               <dd>{edition.status}</dd>
             </div>
+            {edition.tier && (
+              <div>
+                <dt>Edition</dt>
+                <dd>{EDITION_TIERS[edition.tier].label}</dd>
+              </div>
+            )}
+            {edition.pricingModel !== "not-set" && (
+              <div>
+                <dt>Pricing model</dt>
+                <dd>{PRICING_MODELS[edition.pricingModel].label}</dd>
+              </div>
+            )}
+            {edition.access !== "unknown" && (
+              <div>
+                <dt>Access</dt>
+                <dd>{ACCESS_REQUIREMENTS[edition.access].label}</dd>
+              </div>
+            )}
             {edition.identifiers.map((i) => (
               <div key={`${i.kind}:${i.value}`} className="kv__wide">
                 <dt>{IDENTIFIER_KINDS[i.kind]}</dt>
@@ -159,6 +177,19 @@ function EditionCard({
             )}
           </dl>
           {edition.note && <p className="fine">{edition.note}</p>}
+          {edition.channel === "jailbreak-package" && repo && (
+            <div className="edition__repo">
+              <h4 className="feature-heading">Installing from HCG Repo</h4>
+              <ol className="plain-list">
+                <li>Needs a jailbroken iPhone or iPad. It does not install on ordinary devices.</li>
+                <li>
+                  In Sileo, add HCG Repo (the source address is on the <a className="text-link" href={hcgRepoProductUrl(repo.key)}>HCG Repo page</a>).
+                </li>
+                <li>Sign in with your HCG account when Sileo asks; HCG Store decides access.</li>
+                <li>Install the package. Sileo, not HCG Store, offers its updates.</li>
+              </ol>
+            </div>
+          )}
         </>
       )}
 

@@ -18,9 +18,9 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { gunzipSync, inflateRawSync, inflateSync } from "node:zlib";
 
-export const PLATFORMS = ["windows", "macos", "ios", "ipados", "linux"] as const;
+export const PLATFORMS = ["windows", "macos", "ios", "ipados", "linux", "android"] as const;
 export type PublishPlatform = (typeof PLATFORMS)[number];
-export const FORMATS = ["exe", "msi", "msix", "zip", "dmg", "pkg", "ipa", "deb", "rpm", "appimage"] as const;
+export const FORMATS = ["exe", "msi", "msix", "zip", "dmg", "pkg", "ipa", "deb", "rpm", "appimage", "apk", "aab"] as const;
 export type PublishFormat = (typeof FORMATS)[number];
 
 /** Allowed platform → formats, with the file extension each format must have. */
@@ -31,10 +31,18 @@ export const ALLOWED: Record<PublishPlatform, Partial<Record<PublishFormat, stri
   ios: { ipa: ".ipa", deb: ".deb" },
   ipados: { ipa: ".ipa", deb: ".deb" },
   linux: { deb: ".deb", rpm: ".rpm", appimage: ".appimage" },
+  // .aab: an upload format for authorised distribution (e.g. Google Play). Never delivered to customers as a download.
+  android: { apk: ".apk", aab: ".aab" },
 };
 
+/**
+ * Formats HCG Store never delivers to customers, whatever is approved: they are for authorised distribution only and
+ * are not installed directly. Publishers and approvers can still download them to review.
+ */
+export const STAFF_ONLY_FORMATS: ReadonlySet<string> = new Set(["aab"]);
+
 /** What a file is, decided by the Store from its content (the uploader's declaration is only compared with it). */
-export const KINDS = ["installer", "portable-app", "device-build", "simulator-build", "jailbreak-package"] as const;
+export const KINDS = ["installer", "portable-app", "device-build", "simulator-build", "jailbreak-package", "android-app", "distribution-bundle"] as const;
 export type ArtifactKind = (typeof KINDS)[number];
 /** iOS provisioning, read from Payload/<app>.app/embedded.mobileprovision (the signed profile is not verified here). */
 export type Provisioning = "development" | "ad-hoc" | "enterprise" | "app-store" | "none" | "unreadable";
@@ -50,6 +58,8 @@ export const CONTENT_TYPES: Record<PublishFormat, string> = {
   deb: "application/vnd.debian.binary-package",
   rpm: "application/x-rpm",
   appimage: "application/octet-stream",
+  apk: "application/vnd.android.package-archive",
+  aab: "application/octet-stream",
 };
 
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+()~-]{0,199}$/;
@@ -88,6 +98,8 @@ export interface ContentReport {
 /** Kind implied by format alone (IPAs and .debs need their content: see inspectContent). */
 export function kindFromFormat(platform: string, format: string): ArtifactKind | null {
   if (format === "ipa") return "device-build";
+  if (format === "apk") return "android-app";
+  if (format === "aab") return "distribution-bundle";
   if (format === "deb") return platform === "ios" || platform === "ipados" ? "jailbreak-package" : "installer";
   if (format === "zip" || format === "appimage") return "portable-app";
   return ["exe", "msi", "msix", "dmg", "pkg", "rpm"].includes(format) ? "installer" : null;
@@ -110,6 +122,12 @@ export interface Readiness {
  */
 export function installReadiness(platform: string, kind: ArtifactKind | undefined, signature: ContentReport["signature"], reported: string, ios?: ContentReport["ios"]): Readiness {
   const r = (status: string, label: string, ordinaryInstall = false): Readiness => ({ status, label, ordinaryInstall });
+  if (kind === "distribution-bundle") return r("distribution-only", "Android App Bundle: for authorised distribution (such as Google Play) only. It cannot be installed directly on a device, and HCG Store never delivers it to customers.");
+  if (kind === "android-app") {
+    if (signature === "absent" || reported === "unsigned") return r("unsigned", "Unsigned Android package: Android refuses to install it until it is signed.");
+    if (reported === "invalid") return r("unsigned", "The uploader's check found the APK signature INVALID: not installable.");
+    return r("signature-not-verified", "Android package with a signature (not verified by HCG Store). Installing it outside an app store needs the device to allow apps from that source.");
+  }
   if (kind === "simulator-build") return r("simulator-only", "iOS Simulator build: runs only in the Simulator on a Mac. Cannot be installed on an iPhone or iPad.");
   if (kind === "jailbreak-package") return r("jailbroken-devices-only", "Jailbreak package: installs only on jailbroken iPhones/iPads through a package manager (Sileo). Not for ordinary devices.");
   if (kind === "device-build") {
@@ -171,7 +189,7 @@ interface ZipEntry {
 }
 
 /** Central directory of a ZIP (ZIP64 aware). Throws with a readable reason when malformed. */
-function readZip(r: Reader): ZipEntry[] {
+function readZip(r: Reader): ZipEntry[] & { cdOffset?: number } {
   const tailLen = Math.min(r.size, 65_557);
   const tail = r.read(r.size - tailLen, tailLen);
   let eocd = -1;
@@ -193,7 +211,8 @@ function readZip(r: Reader): ZipEntry[] {
   if (count > LIMITS.maxEntries) throw new Error(`too many entries (${count}).`);
   if (cdOffset + cdSize > r.size) throw new Error("central directory lies outside the file.");
   const cd = r.read(cdOffset, cdSize);
-  const entries: ZipEntry[] = [];
+  const entries: ZipEntry[] & { cdOffset?: number } = [];
+  entries.cdOffset = cdOffset;
   let p = 0;
   for (let i = 0; i < count; i++) {
     if (p + 46 > cd.length || cd.readUInt32LE(p) !== 0x02014b50) throw new Error("malformed central directory.");
@@ -357,6 +376,31 @@ export function inspectContent(file: string, platform: PublishPlatform, format: 
           }
         } else {
           notes.push(`The control file is in ${control.name}; HCG Store reads only gzip control archives, so Package/Version/Architecture were not verified here.`);
+        }
+        break;
+      }
+      case "apk":
+      case "aab": {
+        let entries: ReturnType<typeof readZip>;
+        try { entries = readZip(r); } catch (e) { problems.push(`Not a valid ZIP-based ${format}: ${(e as Error).message}`); break; }
+        report.zipEntries = entries.length;
+        checkZipEntries(entries, problems);
+        const names = new Set(entries.map((e) => e.name));
+        if (format === "apk") {
+          if (!names.has("AndroidManifest.xml")) problems.push("An APK must contain AndroidManifest.xml at its root.");
+          if (!names.has("classes.dex")) problems.push("An APK must contain classes.dex at its root.");
+          // v1 (JAR) signature files, or the APK Signing Block ("APK Sig Block 42") just before the central directory.
+          const v1 = entries.some((e) => /^META-INF\/[^/]+\.(RSA|DSA|EC)$/i.test(e.name));
+          const at = entries.cdOffset ?? 0;
+          const v2 = at >= 16 && r.read(at - 16, 16).toString("latin1") === "APK Sig Block 42";
+          signature = v1 || v2 ? "present" : "absent";
+          report.kind = "android-app";
+        } else {
+          if (!names.has("base/manifest/AndroidManifest.xml")) problems.push("An Android App Bundle must contain base/manifest/AndroidManifest.xml.");
+          if (!names.has("BundleConfig.pb")) notes.push("BundleConfig.pb was not found; Google Play may refuse the bundle.");
+          signature = entries.some((e) => /^META-INF\/[^/]+\.(RSA|DSA|EC)$/i.test(e.name)) ? "present" : "absent";
+          report.kind = "distribution-bundle";
+          notes.push("App Bundles are for authorised distribution only. HCG Store keeps them for publishers and approvers and never delivers them to customers.");
         }
         break;
       }

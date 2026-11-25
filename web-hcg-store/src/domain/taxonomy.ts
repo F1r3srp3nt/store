@@ -67,6 +67,7 @@ export const ARTIFACT_FORMATS = {
   pkg: "macOS installer package (.pkg)",
   ipa: "iOS app archive (.ipa)",
   apk: "Android package (.apk)",
+  aab: "Android App Bundle (.aab), for authorised distribution only",
   appimage: "Linux AppImage",
   deb: "Debian package (.deb)",
   rpm: "RPM package (.rpm)",
@@ -97,6 +98,51 @@ export const EDITION_CHANNELS = {
 } as const;
 export type EditionChannel = keyof typeof EDITION_CHANNELS;
 export const EDITION_CHANNEL_IDS = Object.keys(EDITION_CHANNELS) as [EditionChannel, ...EditionChannel[]];
+
+/**
+ * Catalogue v2. Four separate concepts, never merged:
+ * - edition tier: which variant of the product (Standard, Professional, Founder Beta, Developer, Unleashed);
+ * - pricing model: how HCG intends to charge (free, paid, subscription), or not set yet; prices live only in offers;
+ * - release channel: alpha / beta / stable, per release;
+ * - development status: per product.
+ * "Coming soon" is derived (no approved current release), never stored.
+ */
+export const EDITION_TIERS = {
+  standard: { label: "Standard" },
+  professional: { label: "Professional" },
+  "founder-beta": { label: "Founder Beta" },
+  developer: { label: "Developer" },
+  unleashed: { label: "Unleashed" },
+} as const;
+export type EditionTier = keyof typeof EDITION_TIERS;
+export const EDITION_TIER_IDS = Object.keys(EDITION_TIERS) as [EditionTier, ...EditionTier[]];
+
+export const PRICING_MODELS = {
+  free: { label: "Free" },
+  paid: { label: "Paid" },
+  subscription: { label: "Subscription" },
+  "not-set": { label: "Pricing not set" },
+} as const;
+export type PricingModel = keyof typeof PRICING_MODELS;
+export const PRICING_MODEL_IDS = Object.keys(PRICING_MODELS) as [PricingModel, ...PricingModel[]];
+
+/** What HCG Connect requires before an edition can be used or downloaded. Decided centrally; this is the Store's statement. */
+export const ACCESS_REQUIREMENTS = {
+  none: { label: "No HCG account needed" },
+  "hcg-account": { label: "Sign-in with an HCG account" },
+  licence: { label: "HCG licence for this edition" },
+  unknown: { label: "Access requirement not stated" },
+} as const;
+export type AccessRequirement = keyof typeof ACCESS_REQUIREMENTS;
+export const ACCESS_REQUIREMENT_IDS = Object.keys(ACCESS_REQUIREMENTS) as [AccessRequirement, ...AccessRequirement[]];
+
+export const BUILD_PROVIDERS = {
+  local: { label: "Local build" },
+  "github-actions": { label: "GitHub Actions" },
+  "hcg-server-build-host": { label: "HCG Server Build Host" },
+} as const;
+export type BuildProvider = keyof typeof BUILD_PROVIDERS;
+export const BUILD_PROVIDER_IDS = Object.keys(BUILD_PROVIDERS) as [BuildProvider, ...BuildProvider[]];
 
 export const IDENTIFIER_KINDS = {
   "bundle-id": "Bundle identifier",

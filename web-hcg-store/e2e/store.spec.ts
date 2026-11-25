@@ -165,7 +165,7 @@ test.describe("keyboard navigation", () => {
     await page.goto(REAL + "/apps");
     await page.getByRole("searchbox", { name: "Search", exact: true }).focus();
     await page.keyboard.type("imap");
-    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 11 products match");
     await expect(page).toHaveURL(/\?q=imap/);
     await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
     await page.getByRole("checkbox", { name: "iOS" }).focus();
@@ -186,7 +186,7 @@ test.describe("keyboard navigation", () => {
     // browse page itself and looks for the result only in its results region.
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
     const results = page.getByRole("region", { name: "Results" });
-    await expect(results.getByRole("status")).toHaveText("1 of 10 products match");
+    await expect(results.getByRole("status")).toHaveText("1 of 11 products match");
     await expect(results.getByRole("link", { name: "HCG Terminal", exact: true })).toBeVisible();
   });
 });
@@ -198,7 +198,7 @@ test.describe("navigation on a busy device", () => {
   test("a filter ticked right after clearing the search keeps the search cleared", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(REAL + "/apps?q=imap");
-    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 10 products match");
+    await expect(page.getByRole("status").filter({ hasText: "products" })).toHaveText("1 of 11 products match");
     await throttle(page, 20);
     await page.getByRole("searchbox", { name: "Search", exact: true }).fill("");
     await page.getByRole("checkbox", { name: "iOS" }).focus();

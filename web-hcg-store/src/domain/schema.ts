@@ -1,6 +1,10 @@
 import { z } from "zod";
 import {
+  ACCESS_REQUIREMENT_IDS,
   ARTIFACT_FORMAT_IDS,
+  BUILD_PROVIDER_IDS,
+  EDITION_TIER_IDS,
+  PRICING_MODEL_IDS,
   CATEGORY_IDS,
   DEVELOPMENT_STATUS_IDS,
   EDITION_CHANNEL_IDS,
@@ -80,6 +84,35 @@ export const EditionSchema = z.strictObject({
    * against a product-wide grant or another edition: its central check reports "access unknown".
    */
   centralEditionKey: kebab.nullable().default(null),
+  /** Catalogue v2: which variant this is. Null = not stated. */
+  tier: z.enum(EDITION_TIER_IDS).nullable().default(null),
+  /** How HCG intends to charge for it. Never a price, never "available". */
+  pricingModel: z.enum(PRICING_MODEL_IDS).default("not-set"),
+  /** What HCG Connect requires for it, as stated by HCG. */
+  access: z.enum(ACCESS_REQUIREMENT_IDS).default("unknown"),
+});
+
+/** A public https link (documentation, support). No credentials, no internal hosts. */
+const publicLink = z.strictObject({
+  label: text,
+  url: z
+    .string()
+    .url()
+    .refine((u) => {
+      const x = new URL(u);
+      return x.protocol === "https:" && !x.username && !x.password && !/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[)/.test(x.hostname) && !x.hostname.endsWith(".internal") && !x.hostname.endsWith(".local");
+    }, "Use a public https URL without credentials (no localhost, private or .internal hosts)."),
+});
+
+/** A product video (trailer or walkthrough), self-hosted next to the site like screenshots. */
+export const TrailerSchema = z.strictObject({
+  src: relativeAsset,
+  poster: relativeAsset.nullable().default(null),
+  title: text,
+  /** "recording" = real footage of the software; "concept" = an animation that does not show a working app. */
+  kind: z.enum(["recording", "concept"]),
+  durationSeconds: z.number().int().positive().nullable().default(null),
+  provenance: text,
 });
 
 /** Product artwork: an icon and/or a cover image from an approved source, with provenance. */
@@ -163,6 +196,20 @@ export const ProductSchema = z.strictObject({
   supersededBy: kebab.nullable().default(null),
   /** Earlier names, shown on the successor's page so people can find it. */
   formerNames: z.array(text).default([]),
+  /**
+   * Catalogue v2. "draft": a prepared entry for a product HCG has named but not yet described. It is validated but
+   * never listed, searched or linked, has no page, and can have no release, offer or collection.
+   */
+  visibility: z.enum(["listed", "draft"]).default("listed"),
+  /** Product family (e.g. "hcg-lifeos" for LifeOS and LifeOS Companion). A grouping, not a licence. */
+  family: kebab.nullable().default(null),
+  trailers: z.array(TrailerSchema).default([]),
+  /** Hardware requirements as declared by HCG (CPU, RAM, devices, jailbreak). Never inferred. */
+  hardwareRequirements: z.array(text).default([]),
+  documentation: z.array(publicLink).default([]),
+  support: z.array(publicLink).default([]),
+  /** Other HCG products that work with this one (catalogue IDs). */
+  relatedProducts: z.array(kebab).default([]),
 });
 
 export const ArtifactSchema = z
@@ -192,6 +239,10 @@ export const ArtifactSchema = z
       .default({ status: "not-stated", evidence: null }),
     /** Edition this file belongs to, when the product has editions. */
     editionId: kebab.nullable().default(null),
+    /** Provenance (catalogue v2), as reported by the build: the commit, where it was built, and with what. */
+    sourceCommit: z.string().regex(/^[a-f0-9]{7,40}$/).nullable().default(null),
+    buildProvider: z.enum(BUILD_PROVIDER_IDS).nullable().default(null),
+    toolchain: text.nullable().default(null),
     /**
      * Files are delivered only by the HCG Store server after sign-in and an entitlement check
      * (see docs/ACCESS.md). The public catalogue therefore never contains a download URL.

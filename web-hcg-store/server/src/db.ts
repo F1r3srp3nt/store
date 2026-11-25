@@ -238,6 +238,14 @@ const MIGRATIONS: string[] = [
    );
    CREATE TRIGGER store_profile_events_no_update BEFORE UPDATE ON store_profile_events BEGIN SELECT RAISE(ABORT, 'profile events are append-only'); END;
    CREATE TRIGGER store_profile_events_no_delete BEFORE DELETE ON store_profile_events BEGIN SELECT RAISE(ABORT, 'profile events are append-only'); END;`,
+  // 8: Release Manager. Build provenance reported with each file (source commit, build provider, toolchain, the
+  // uploader's validation report), and an explicit publication step after approval: published, then superseded by a
+  // later published release (only when the person publishing chooses so). Approved releases are not delivered until
+  // published.
+  `ALTER TABLE pub_artifacts ADD COLUMN provenance TEXT;
+   ALTER TABLE pub_releases ADD COLUMN published_at INTEGER;
+   ALTER TABLE pub_releases ADD COLUMN published_by TEXT;
+   ALTER TABLE pub_releases ADD COLUMN superseded_by TEXT;`,
 ];
 
 /**
