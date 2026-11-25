@@ -43,6 +43,8 @@ export const OfferSchema = z.strictObject({
     )
     .min(1),
   status: z.enum(["draft", "approved-for-sale"]),
+  /** HCG Payments product and price this offer is sold as (provider "hcg-payments"). HCG Payments prices it; the Store checks the amount matches. */
+  payments: z.strictObject({ productId: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,80}$/), priceId: z.string().regex(/^[A-Za-z0-9_-]{3,120}$/) }).optional(),
   /** Test-mode offers are ignored outside test mode. */
   testOnly: z.boolean(),
 });

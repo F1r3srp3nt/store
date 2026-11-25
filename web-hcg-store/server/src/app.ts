@@ -29,6 +29,7 @@ import type { CentralGrantOutbox } from "./grants";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
 import { PaymentLedger, signTestEvent, TEST_SIGNATURE_HEADER, verifyTestEvent, type PaymentEventType } from "./payments";
+import { HcgPaymentsClient, HcgPaymentsError, returnStatus } from "./hcg-payments";
 import { currentReleaseOf, findArtifact, findByRepoKey, findProduct, type Registry } from "./registry";
 import { getProfile } from "./profiles";
 import { createPublishing } from "./publishing";
@@ -49,6 +50,8 @@ export interface AppDeps {
   outbox?: CentralGrantOutbox;
   /** fetch used for HCG's Ecosystem API at sign-in (tests inject a mock). */
   ecosystemFetch?: typeof fetch;
+  /** fetch used for HCG Payments (tests inject a mock). */
+  paymentsFetch?: typeof fetch;
   /** Used by the test checkout page to deliver its signed webhook. Defaults to an in-process call. */
   deliverTestWebhook?: (rawBody: string, signature: string) => Promise<void>;
 }
@@ -67,7 +70,24 @@ export function createStoreApp(deps: AppDeps): StoreApp {
   const { cfg, db, registry, connect, authority, now } = deps;
   const sessions = new SessionStore(db, cfg, connect, now);
   const ledger = new PaymentLedger(db, registry, authority, now, deps.outbox ?? null);
-  const paymentsReady = cfg.paymentProvider !== "none" && ledger.canFulfil && !!connect;
+  const payments = cfg.paymentProvider === "hcg-payments" && cfg.hcgPayments ? new HcgPaymentsClient(cfg.hcgPayments, db, now, deps.paymentsFetch) : null;
+  if (payments) {
+    const unmapped = registry.offers.filter((o) => o.status === "approved-for-sale" && !o.payments).map((o) => o.id);
+    if (unmapped.length) throw new Error(`HCG Payments: offers approved for sale without an HCG Payments price: ${unmapped.join(", ")}.`);
+  }
+  // HCG Payments purchases are fulfilled by HCG's licensing, so they need central checks (hcg-ecosystem), not the Store ledger.
+  const paymentsReady = payments ? !!connect && authority.kind === "hcg-ecosystem" : cfg.paymentProvider !== "none" && ledger.canFulfil && !!connect;
+
+  /** Offer IDs this person has an active paid purchase for (display only). */
+  async function activePurchaseOfferIds(sub: string): Promise<Set<string>> {
+    if (!payments) return new Set(ledger.purchasesFor(sub).filter((p) => p.status === "active").map((p) => p.offer_id));
+    try {
+      const paid = (await payments.billingHistory(sub)).filter((h) => ["paid", "partially_refunded", "active", "past_due"].includes(h.status));
+      return new Set(registry.offers.filter((o) => paid.some((h) => h.product_id === o.payments?.productId)).map((o) => o.id));
+    } catch {
+      return new Set();
+    }
+  }
   const accessDeps: AccessDeps = { cfg, registry, authority, sessions, paymentsReady };
   const staticRoot = cfg.staticDir ? resolve(cfg.staticDir) : "";
 
@@ -221,7 +241,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     const known = registry.catalogue.products.filter((p) => !p.supersededBy && p.visibility !== "draft");
     const candidates = known.map((p) => p.registry.centralId).filter((c): c is string => !!c);
     const acc = await authority.accountAccess({ sub: session.sub, accessToken: session.accessToken }, candidates);
-    const purchasedOffers = new Set(ledger.purchasesFor(session.sub).filter((p) => p.status === "active").map((p) => p.offer_id));
+    const purchasedOffers = await activePurchaseOfferIds(session.sub);
     const purchasedProducts = new Set(registry.offers.filter((o) => purchasedOffers.has(o.id)).map((o) => o.productId));
     const SOURCE: Record<string, string> = {
       founder_owner_all_products: "Founder / Owner grant",
@@ -335,7 +355,30 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         });
       }
     }
-    const purchases = ledger.purchasesFor(session.sub).map((p) => {
+    const purchases = payments
+      ? await payments
+          .billingHistory(session.sub)
+          .then((rows) =>
+            rows.map((h) => {
+              const offer = registry.offers.find((o) => o.payments?.productId === h.product_id);
+              return {
+                id: h.order_id,
+                offerId: offer?.id ?? null,
+                title: offer?.title ?? h.product_id,
+                productId: offer?.productId ?? null,
+                editionId: offer?.editionId ?? null,
+                amount: h.amount,
+                currency: h.currency.toUpperCase(),
+                kind: offer?.kind ?? "one-time",
+                status: h.status,
+                currentPeriodEnd: null,
+                createdAt: Date.parse(h.created_at),
+                testOnly: h.mode === "test",
+              };
+            }),
+          )
+          .catch(() => [])
+      : ledger.purchasesFor(session.sub).map((p) => {
       const offer = registry.offers.find((o) => o.id === p.offer_id);
       return {
         id: p.id,
@@ -418,6 +461,30 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     const access = await decideAccess(accessDeps, product, offer.editionId, fresh.session);
     if (access.state === "unavailable") return errorJson(res, 503, "hcg_unavailable", "Your access could not be checked. Nothing was charged.");
     if (access.owned) return errorJson(res, 409, "already_owned", "Your HCG account already includes this product.");
+    if (payments) {
+      if (!offer.payments) return errorJson(res, 404, "offer_not_found", "This product is not for sale.");
+      try {
+        const r = await payments.startCheckout({
+          sub: fresh.session.sub,
+          offerId: offer.id,
+          productId: offer.payments.productId,
+          priceId: offer.payments.priceId,
+          successUrl: (id) => `${cfg.publicOrigin}/checkout/return?checkout=${encodeURIComponent(id)}`,
+          cancelUrl: `${cfg.publicOrigin}/apps/${product.slug}?checkout=cancelled`,
+        });
+        // HCG Payments prices the checkout; it must be exactly the price this Store shows.
+        if (r.order.amount !== offer.unitAmount || r.order.currency.toUpperCase() !== offer.currency || !r.order.checkout?.url)
+          return errorJson(res, 502, "price_mismatch", "The checkout price did not match. Nothing was charged.");
+        return json(res, 201, { checkoutId: r.checkoutId, redirectUrl: r.order.checkout.url, testMode: true });
+      } catch (e) {
+        if (e instanceof HcgPaymentsError) {
+          if (e.code === "already_purchased" || e.code === "already_subscribed") return errorJson(res, 409, "already_owned", "Your HCG account already includes this product.");
+          if (e.code === "payment_pending") return errorJson(res, 409, "payment_pending", "A payment for this product is still being processed.");
+          if (e.status >= 500) return errorJson(res, 503, "payments_unavailable", "Checkout is temporarily unavailable. Nothing was charged.");
+        }
+        return errorJson(res, 502, "checkout_failed", "Checkout could not be started. Nothing was charged.");
+      }
+    }
     const chk = ledger.createCheckout(fresh.session.sub, offer, cfg.paymentProvider);
     // Only the TEST provider exists; its hosted page is served by this server in test mode.
     json(res, 201, { checkoutId: chk.id, redirectUrl: `/test-checkout/${chk.id}`, testMode: true });
@@ -562,7 +629,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     if (p === "/api/v1/offers" && m === "GET") {
       return json(res, 200, {
         checkoutAvailable: paymentsReady,
-        testMode: cfg.paymentProvider === "test",
+        testMode: cfg.paymentProvider === "test" || cfg.paymentProvider === "hcg-payments",
         offers: registry.offers.filter((o) => o.status === "approved-for-sale").map((o) => ({ ...accessOffer(o), productId: o.productId, editionId: o.editionId })),
       });
     }
@@ -577,6 +644,18 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     if (p === "/api/v1/checkout" && m === "POST") return checkout(req, res);
     if ((match = /^\/api\/v1\/checkout\/(chk_[A-Za-z0-9_-]+)$/.exec(p)) && m === "GET") {
       const s = currentSession(req);
+      if (payments) {
+        // Display only: what HCG Payments has recorded from VERIFIED provider events. Arriving here changes nothing.
+        const a = payments.attempt(match[1]!);
+        if (!s || !a || a.sub !== s.sub || !a.order_id) return errorJson(res, 404, "not_found", "Not found.");
+        const offer = registry.offers.find((o) => o.id === a.offer_id);
+        try {
+          const o = await payments.order(a.order_id);
+          return json(res, 200, { id: a.id, status: returnStatus(o), fulfilment: o.fulfilment, productId: offer?.productId ?? null, editionId: offer?.editionId ?? null, title: offer?.title ?? null });
+        } catch {
+          return errorJson(res, 503, "payments_unavailable", "The payment status could not be checked right now.");
+        }
+      }
       const chk = ledger.checkout(match[1]!);
       if (!s || !chk || chk.sub !== s.sub) return errorJson(res, 404, "not_found", "Not found.");
       const offer = registry.offers.find((o) => o.id === chk.offerId);

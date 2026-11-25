@@ -22,6 +22,14 @@ export interface HcgConnectSettings {
   scopes: string;
 }
 
+export interface HcgPaymentsSettings {
+  /** Base URL of the HCG Payments server, e.g. http://127.0.0.1:8790 in the local test environment. */
+  url: string;
+  clientId: string;
+  /** The Store server's HCG Payments client secret. Never logged or returned. */
+  secret: string;
+}
+
 export interface EcosystemSettings {
   /** Base URL of HCG's ecosystem API, e.g. https://beta.hakmicapitalgroup.com/api/public/ecosystem/v1 */
   baseUrl: string;
@@ -56,8 +64,10 @@ export interface StoreConfig {
   grants: GrantSettings | null;
   /** "test-ledger" exists only in test mode; "hcg-ecosystem" asks HCG's API. */
   entitlementAuthority: "none" | "test-ledger" | "hcg-ecosystem";
-  paymentProvider: "none" | "test";
+  paymentProvider: "none" | "test" | "hcg-payments";
   testPaymentWebhookSecret: string | null;
+  /** HCG Payments (TEST MODE ONLY): checkout orchestration; HCG's licensing decides ownership. */
+  hcgPayments: HcgPaymentsSettings | null;
   /** Launch switch for protected file delivery. Off unless explicitly enabled. */
   protectedDownloads: boolean;
   /** How old a central session confirmation may be before a protected action re-confirms it. */
@@ -216,12 +226,26 @@ export function parseStoreConfig(env: Env): StoreConfig {
   if (authority === "hcg-ecosystem" && !ecosystem) problems.push("HCG_STORE_ENTITLEMENT_AUTHORITY=hcg-ecosystem needs HCG_ECOSYSTEM_API_URL.");
 
   const paymentProvider = (env.HCG_STORE_PAYMENT_PROVIDER ?? "none") as StoreConfig["paymentProvider"];
-  if (!["none", "test"].includes(paymentProvider)) {
+  if (!["none", "test", "hcg-payments"].includes(paymentProvider)) {
     problems.push(
-      "HCG_STORE_PAYMENT_PROVIDER must be \"none\" or \"test\". No live payment provider is implemented: HCG has no approved payment integration yet.",
+      "HCG_STORE_PAYMENT_PROVIDER must be \"none\", \"test\" or \"hcg-payments\". No live payment provider is approved: live payments are disabled.",
     );
   }
   if (paymentProvider === "test" && !test) problems.push("The test payment provider can only be used in test mode. Live payments are disabled.");
+  let hcgPayments: HcgPaymentsSettings | null = null;
+  if (paymentProvider === "hcg-payments") {
+    // HCG Payments v0.1.0 is test-mode only; production checkout needs the founder's explicit approval and a reviewed change.
+    if (!test) problems.push("HCG Payments can only be used in test mode. Live payments need the founder's explicit approval.");
+    if (authority !== "hcg-ecosystem") problems.push("HCG Payments purchases are licensed centrally: use HCG_STORE_ENTITLEMENT_AUTHORITY=hcg-ecosystem.");
+    const url = httpsUrl(env.HCG_STORE_PAYMENTS_URL, "HCG_STORE_PAYMENTS_URL", problems, test);
+    const clientId = env.HCG_STORE_PAYMENTS_CLIENT_ID ?? "";
+    const secret = env.HCG_STORE_PAYMENTS_CLIENT_SECRET ?? "";
+    if (!url) problems.push("HCG Payments needs HCG_STORE_PAYMENTS_URL.");
+    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(clientId)) problems.push("HCG Payments needs HCG_STORE_PAYMENTS_CLIENT_ID.");
+    // The value is never repeated in an error message.
+    if (secret.length < 32 || /\s/.test(secret)) problems.push("HCG_STORE_PAYMENTS_CLIENT_SECRET is missing or not valid (at least 32 characters, no spaces).");
+    if (url && clientId && secret.length >= 32) hcgPayments = { url: url.replace(/\/$/, ""), clientId, secret };
+  }
   const testPaymentWebhookSecret = env.HCG_STORE_TEST_PAYMENT_WEBHOOK_SECRET ?? (paymentProvider === "test" ? randomBytes(24).toString("hex") : null);
 
   const protectedDownloads = env.HCG_STORE_PROTECTED_DOWNLOADS === "enabled";
@@ -300,6 +324,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
     entitlementAuthority: authority,
     paymentProvider,
     testPaymentWebhookSecret,
+    hcgPayments,
     protectedDownloads,
     sessionRecheckSeconds: int("HCG_STORE_SESSION_RECHECK_SECONDS", 60, 0, 900),
     sessionIdleSeconds: int("HCG_STORE_SESSION_IDLE_SECONDS", 7 * 24 * 3600, 300, 30 * 24 * 3600),

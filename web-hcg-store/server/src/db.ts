@@ -246,6 +246,16 @@ const MIGRATIONS: string[] = [
    ALTER TABLE pub_releases ADD COLUMN published_at INTEGER;
    ALTER TABLE pub_releases ADD COLUMN published_by TEXT;
    ALTER TABLE pub_releases ADD COLUMN superseded_by TEXT;`,
+  // 9: HCG Payments checkouts: only the link between a Store checkout attempt and the HCG Payments order.
+  // Amounts, payment state and the ledger live in HCG Payments; ownership lives in HCG's licensing.
+  `CREATE TABLE hcg_payments_checkouts (
+     id TEXT PRIMARY KEY,
+     sub TEXT NOT NULL,
+     offer_id TEXT NOT NULL,
+     order_id TEXT,
+     created_at INTEGER NOT NULL
+   );
+   CREATE INDEX hcg_payments_checkouts_sub ON hcg_payments_checkouts (sub);`,
 ];
 
 /**

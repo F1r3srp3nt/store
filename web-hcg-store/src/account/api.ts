@@ -183,7 +183,15 @@ export const storeApi = {
     request<ReleaseComparison>(`/api/v1/publishing/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   checkout: (offerId: string) => request<{ checkoutId: string; redirectUrl: string; testMode: boolean }>("/api/v1/checkout", { method: "POST", body: JSON.stringify({ offerId }) }),
   checkoutStatus: (id: string) =>
-    request<{ id: string; status: "open" | "pending" | "completed" | "failed"; productId: string | null; editionId: string | null; title: string | null }>(
+    request<{
+      id: string;
+      status: "open" | "pending" | "completed" | "failed" | "cancelled" | "refunded";
+      /** HCG Payments only: whether HCG's licensing has recorded the purchase yet. */
+      fulfilment?: "none" | "pending" | "granted" | "revoked" | "failed";
+      productId: string | null;
+      editionId: string | null;
+      title: string | null;
+    }>(
       `/api/v1/checkout/${encodeURIComponent(id)}`,
     ),
   logout: () => request<{ signedIn: false }>("/auth/logout", { method: "POST", body: "{}" }),
