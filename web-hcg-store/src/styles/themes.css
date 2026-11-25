@@ -1,0 +1,199 @@
+/*
+ * HCG Store themes (v3). The default, HCG Sovereign, is :root in tokens.css. Each theme below redefines only the
+ * channel tokens, surfaces, text, metal and atmosphere; every component reads those, so nothing is duplicated.
+ * Selected with `html[data-theme]` (src/theme/theme.ts), stored only in this browser.
+ *
+ * Contrast is checked by src/theme/themes.test.ts: body text ≥ 7:1 and links/accent ≥ 4.5:1 on each theme's page and
+ * panel colours.
+ */
+
+/* Cyberpunk: neon violet, magenta, electric blue, night-city light. Original HCG styling; no third-party assets. */
+html[data-theme="cyberpunk"] {
+  --accent-rgb: 255 77 240;
+  --accent-2-rgb: 47 184 255;
+  --accent-3-rgb: 150 92 255;
+  --hairline-rgb: 222 206 255;
+  --surface-rgb: 22 13 36;
+  --deep-rgb: 7 4 15;
+  --obsidian: #07040f;
+  --surface-0: #0c0718;
+  --surface-1: #120b22;
+  --surface-2: #1a1030;
+  --bg-top: #120626;
+  --cyan-600: #c23ab8;
+  --violet: #9b6bff;
+  --text: #f7f1ff;
+  --text-muted: #c9bde0;
+  --text-faint: #a596c2;
+  --accent-ink: #1a0418;
+  --atmos-1: rgb(255 77 240 / 0.09);
+  --atmos-2: rgb(47 184 255 / 0.08);
+  --atmos-3: rgb(150 92 255 / 0.08);
+  --grid-rgb: 150 92 255;
+  --grid-alpha: 0.07;
+  --energy-rgb: 47 184 255;
+  --particle-rgb: 255 77 240;
+  --theme-color: #07040f;
+  --metal: linear-gradient(180deg, #fbf3ff 0%, #e0cff5 42%, #a58cc7 54%, #efe3ff 100%);
+  --metal-button: linear-gradient(180deg, #fff4fe 0%, #f0c9f0 48%, #d39ee6 100%);
+}
+
+/* Crimson Frontier: black, crimson and industrial steel (after HCG Offensive Frontier's palette). */
+html[data-theme="crimson"] {
+  --accent-rgb: 255 72 88;
+  --accent-2-rgb: 200 210 222;
+  --accent-3-rgb: 255 140 90;
+  --hairline-rgb: 230 206 206;
+  --surface-rgb: 24 12 14;
+  --deep-rgb: 7 3 4;
+  --obsidian: #070304;
+  --surface-0: #0c0506;
+  --surface-1: #130809;
+  --surface-2: #1c0c0e;
+  --bg-top: #170607;
+  --cyan-600: #c92d3c;
+  --violet: #d7a2a2;
+  --text: #f8f1f1;
+  --text-muted: #d2bebe;
+  --text-faint: #ad9898;
+  --accent-ink: #1c0306;
+  --atmos-1: rgb(255 72 88 / 0.08);
+  --atmos-2: rgb(200 210 222 / 0.04);
+  --atmos-3: rgb(255 140 90 / 0.04);
+  --grid-rgb: 255 72 88;
+  --grid-alpha: 0.045;
+  --energy-rgb: 255 72 88;
+  --particle-rgb: 255 140 90;
+  --theme-color: #070304;
+  --metal: linear-gradient(180deg, #f5f2f2 0%, #d5cccc 42%, #9b8a8a 54%, #e8e0e0 100%);
+  --metal-button: linear-gradient(180deg, #f4efef 0%, #d9cfcf 48%, #b9a9a9 100%);
+}
+
+/* Founder Edition: obsidian, polished gold, titanium, executive restraint. */
+html[data-theme="founder"] {
+  --accent-rgb: 230 194 120;
+  --accent-2-rgb: 201 209 220;
+  --accent-3-rgb: 255 222 160;
+  --hairline-rgb: 236 224 200;
+  --surface-rgb: 20 18 14;
+  --deep-rgb: 6 6 6;
+  --obsidian: #060606;
+  --surface-0: #0b0a08;
+  --surface-1: #11100d;
+  --surface-2: #191712;
+  --bg-top: #110f0a;
+  --cyan-600: #b8924c;
+  --violet: #c9d1dc;
+  --text: #f8f5ee;
+  --text-muted: #d3cbb9;
+  --text-faint: #aca38f;
+  --accent-ink: #1a1305;
+  --atmos-1: rgb(230 194 120 / 0.07);
+  --atmos-2: rgb(201 209 220 / 0.04);
+  --atmos-3: rgb(255 222 160 / 0.035);
+  --grid-rgb: 230 194 120;
+  --grid-alpha: 0.04;
+  --energy-rgb: 230 194 120;
+  --particle-rgb: 255 222 160;
+  --emblem-alpha: 0.05;
+  --theme-color: #060606;
+  --metal: linear-gradient(180deg, #fff7e3 0%, #ecd29b 42%, #b38a43 54%, #f6e3b4 100%);
+  --metal-button: linear-gradient(180deg, #fff6df 0%, #ecd29b 48%, #c9a35d 100%);
+}
+
+/* Quantum Frost: white, silver, ice blue and translucent glass. The one light theme. */
+html[data-theme="frost"] {
+  color-scheme: light;
+  --accent-rgb: 0 112 176;
+  --accent-2-rgb: 86 150 220;
+  --accent-3-rgb: 120 190 235;
+  --hairline-rgb: 30 60 95;
+  --hi-rgb: 255 255 255;
+  --surface-rgb: 255 255 255;
+  --deep-rgb: 228 236 245;
+  --shadow-rgb: 40 70 110;
+  --mint-rgb: 0 128 110;
+  --amber-rgb: 168 98 0;
+  --rose-rgb: 196 40 70;
+  --obsidian: #eef3f8;
+  --surface-0: #f6f9fc;
+  --surface-1: #ffffff;
+  --surface-2: #eaf1f8;
+  --bg-top: #f8fbff;
+  --glass: rgb(255 255 255 / 0.72);
+  --glass-strong: rgb(255 255 255 / 0.92);
+  --cyan-600: #005a8f;
+  --violet: #4e5fb8;
+  --amber: #8a5200;
+  --mint: #006e5f;
+  --rose: #b3213d;
+  --text: #0c1624;
+  --text-muted: #34445a;
+  --text-faint: #4e5d72;
+  --accent-ink: #ffffff;
+  --button-text: #0c1624;
+  --link-hover: #00466f;
+  --accent-light: #3a9ad6;
+  --atmos-1: rgb(120 190 235 / 0.22);
+  --atmos-2: rgb(180 200 255 / 0.2);
+  --atmos-3: rgb(255 255 255 / 0.6);
+  --grid-rgb: 30 90 150;
+  --grid-alpha: 0.06;
+  --circuit-alpha: 0.05;
+  --emblem-alpha: 0.05;
+  --energy-rgb: 0 140 210;
+  --particle-rgb: 0 140 210;
+  --theme-color: #eef3f8;
+  --metal: linear-gradient(180deg, #ffffff 0%, #dfe7f0 42%, #b5c2d2 54%, #f2f6fa 100%);
+  --metal-button: linear-gradient(180deg, #ffffff 0%, #e4ebf3 48%, #c8d3df 100%);
+  --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 18px 40px -26px rgb(40 70 110 / 0.35);
+}
+
+/* Event Horizon: deep navy, cosmic violet, orbital structures. */
+html[data-theme="horizon"] {
+  --accent-rgb: 150 132 255;
+  --accent-2-rgb: 79 209 255;
+  --accent-3-rgb: 255 150 220;
+  --hairline-rgb: 200 210 255;
+  --surface-rgb: 12 16 40;
+  --deep-rgb: 3 6 20;
+  --obsidian: #030614;
+  --surface-0: #060a1e;
+  --surface-1: #0a0f28;
+  --surface-2: #101736;
+  --bg-top: #0a0d2e;
+  --cyan-600: #6f5ae6;
+  --violet: #4fd1ff;
+  --text: #f2f4ff;
+  --text-muted: #bcc3e6;
+  --text-faint: #98a0c8;
+  --accent-ink: #0b0626;
+  --atmos-1: rgb(150 132 255 / 0.09);
+  --atmos-2: rgb(79 209 255 / 0.06);
+  --atmos-3: rgb(255 150 220 / 0.04);
+  --grid-rgb: 150 132 255;
+  --grid-alpha: 0.045;
+  --energy-rgb: 79 209 255;
+  --particle-rgb: 200 210 255;
+  --theme-color: #030614;
+}
+
+/* Smooth theme changes, only while switching (theme.ts adds the class for 400 ms). */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition:
+    background-color 360ms var(--ease),
+    border-color 360ms var(--ease),
+    color 360ms var(--ease),
+    box-shadow 360ms var(--ease) !important;
+}
+
+/* The official chrome HCG mark is made for dark grounds: on the light theme it sits on a small titanium plate. */
+html[data-theme="frost"] .brand__mark {
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: linear-gradient(160deg, #1b2433, #0b111b);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.6), 0 6px 16px -8px rgb(40 70 110 / 0.6);
+}

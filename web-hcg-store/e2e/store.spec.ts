@@ -14,7 +14,7 @@ test.describe("routes and direct navigation", () => {
 
   test("client-side navigation moves focus to main content", async ({ page }) => {
     await page.goto(REAL + "/");
-    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Browse", exact: true }).click();
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Products", exact: true }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Browse apps");
     await expect(page.locator("#main")).toBeFocused();
     await page.goBack();
@@ -95,6 +95,14 @@ test.describe("responsive layouts", () => {
             window.scrollTo(0, y);
             await new Promise((r) => setTimeout(r, 40));
           }
+          // Swipe through horizontal shelves too: cards beyond the visible part load when they come into view.
+          for (const track of Array.from(document.querySelectorAll<HTMLElement>(".shelf__track, .featured"))) {
+            track.scrollIntoView({ block: "center" });
+            for (let x = 0; x <= track.scrollWidth; x += track.clientWidth / 2) {
+              track.scrollLeft = x;
+              await new Promise((r) => setTimeout(r, 40));
+            }
+          }
         });
         // Wait until every artwork image has actually decoded (a broken one would never get there).
         await expect
@@ -104,6 +112,7 @@ test.describe("responsive layouts", () => {
           .toBe(true);
         const bad = await page.evaluate(() =>
           Array.from(document.querySelectorAll<HTMLImageElement>(".product-cover--art img, .product-banner img, .product-mark--icon img"))
+            .filter((img) => img.getClientRects().length > 0) // decoration hidden at this width is not measured
             .map((img) => {
               const fit = getComputedStyle(img).objectFit;
               const box = img.clientWidth / img.clientHeight;

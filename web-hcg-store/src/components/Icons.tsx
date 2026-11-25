@@ -108,3 +108,36 @@ export const IconSpark = (p: P) => (
     <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6" />
   </svg>
 );
+export const IconPalette = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.7-1.6 1.7-1.6h2.1a3.9 3.9 0 0 0 3.9-3.9C20.5 6.9 16.7 3.5 12 3.5Z" />
+    <circle cx="7.6" cy="11" r="1.1" />
+    <circle cx="10.2" cy="7.3" r="1.1" />
+    <circle cx="14.6" cy="7.6" r="1.1" />
+  </svg>
+);
+export const IconChevronDown = (p: P) => (
+  <svg {...base(p)}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+export const IconGrid = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+  </svg>
+);
+export const IconOrbit = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="2.4" />
+    <ellipse cx="12" cy="12" rx="9" ry="4" />
+    <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(60 12 12)" />
+  </svg>
+);
+export const IconNew = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6" />
+  </svg>
+);

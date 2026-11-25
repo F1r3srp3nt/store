@@ -20,9 +20,9 @@ body {
    * Static (no fixed attachment) for scroll performance.
    */
   background-image:
-    radial-gradient(1000px 520px at 82% -8%, rgba(69, 225, 245, 0.055), transparent 62%),
-    radial-gradient(760px 460px at 8% 4%, rgba(169, 150, 255, 0.04), transparent 60%),
-    linear-gradient(180deg, #080a0f 0%, var(--obsidian) 60%);
+    radial-gradient(1000px 520px at 82% -8%, rgb(var(--accent-rgb) / 0.055), transparent 62%),
+    radial-gradient(760px 460px at 8% 4%, rgb(var(--accent-2-rgb) / 0.04), transparent 60%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--obsidian) 60%);
   color: var(--text);
   font-family: var(--font-body);
   font-size: 16px;
@@ -60,7 +60,7 @@ a {
 }
 
 a:hover {
-  color: #9cf0fb;
+  color: var(--link-hover);
 }
 
 code,
@@ -84,7 +84,7 @@ select {
 }
 
 ::selection {
-  background: rgba(69, 225, 245, 0.26);
+  background: rgb(var(--accent-rgb) / 0.26);
 }
 
 .visually-hidden {

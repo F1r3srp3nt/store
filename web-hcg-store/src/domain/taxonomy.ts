@@ -33,6 +33,7 @@ export const CATEGORIES = {
   commerce: { label: "Marketplaces & Commerce", description: "Buying, selling and listings." },
   analytics: { label: "Analytics", description: "Measurement and insight." },
   security: { label: "Security & Testing", description: "Authorised testing of your own devices, networks and services." },
+  infrastructure: { label: "Infrastructure & Servers", description: "Devices, storage and services you run yourself." },
   unclassified: { label: "Category to be confirmed", description: "Awaiting founder classification." },
 } as const;
 export type CategoryId = keyof typeof CATEGORIES;

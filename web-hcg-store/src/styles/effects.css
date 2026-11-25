@@ -1,0 +1,288 @@
+/*
+ * v3 motion and atmosphere. Rules:
+ * - Decoration only: aria-hidden layers, no pointer events, always behind content (z-index -1 inside .site-shell).
+ * - Cheap: large full-screen layers (atmosphere, grid, circuitry, particles, orbits, emblem) are static; only small
+ *   layers move (energy lines, the header light, hero symbols), with transform/opacity. Measured in docs/VISUAL-V3.md:
+ *   continuously animating the full-screen layers cost ~25 fps on desktop software rendering, so they stay still.
+ *   No canvas, no WebGL, no video.
+ * - Calm: long durations (14–60 s), low alpha. Nothing flashes.
+ * - Off for prefers-reduced-motion and for html[data-effects="off"] (the theme menu switch): layers stay, still.
+ */
+
+/* ---------- Background engine ---------- */
+html {
+  background-color: var(--obsidian);
+}
+body {
+  background: transparent;
+}
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--obsidian) 55%);
+}
+.ambient > * {
+  position: absolute;
+  pointer-events: none;
+}
+.ambient__atmos {
+  inset: 0;
+  background:
+    radial-gradient(1100px 600px at 85% -10%, var(--atmos-1), transparent 62%),
+    radial-gradient(900px 560px at 5% 10%, var(--atmos-2), transparent 60%),
+    radial-gradient(1200px 700px at 50% 115%, var(--atmos-3), transparent 65%);
+}
+.ambient__sheen {
+  inset: -20% -10%;
+  background: linear-gradient(115deg, transparent 38%, rgb(var(--hi-rgb) / 0.025) 46%, rgb(var(--hi-rgb) / 0.05) 50%, rgb(var(--hi-rgb) / 0.02) 54%, transparent 62%);
+}
+.ambient__circuit {
+  inset: 0;
+  background-color: rgb(var(--accent-rgb));
+  -webkit-mask: url("/brand/circuit.svg") repeat 0 0 / 240px 240px;
+  mask: url("/brand/circuit.svg") repeat 0 0 / 240px 240px;
+  opacity: calc(var(--circuit-alpha) * 4);
+  -webkit-mask-composite: source-in;
+}
+/* Fade the circuitry towards the centre so it frames, never sits behind, the content column. */
+.ambient__circuit::after {
+  content: none;
+}
+/* A flat holographic grid rising from the bottom edge (no 3D transform: measured cheaper to composite on scroll). */
+.ambient__grid {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 45vh;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 70%);
+  mask-image: linear-gradient(180deg, transparent, #000 70%);
+}
+.ambient__grid-plane {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgb(var(--grid-rgb) / var(--grid-alpha)) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--grid-rgb) / var(--grid-alpha)) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+.ambient__emblem {
+  width: min(70vw, 760px);
+  height: auto;
+  right: -8vw;
+  top: 18vh;
+  opacity: var(--emblem-alpha);
+  filter: grayscale(1) brightness(1.6);
+  transform: rotate(-8deg);
+}
+html[data-theme="frost"] .ambient__emblem {
+  filter: grayscale(1) brightness(0.5);
+}
+.ambient__orbit {
+  width: 140vmax;
+  height: 140vmax;
+  left: calc(50% - 70vmax);
+  top: calc(40% - 70vmax);
+  fill: none;
+  stroke: rgb(var(--accent-2-rgb) / 0.07);
+  stroke-width: 1;
+}
+.ambient__orbit-dashed {
+  stroke-dasharray: 2 10;
+  stroke: rgb(var(--accent-rgb) / 0.06);
+}
+.ambient__orbit-node {
+  fill: rgb(var(--accent-rgb) / 0.35);
+  stroke: none;
+}
+.ambient__particles {
+  inset: 0;
+  opacity: 0.7;
+}
+.ambient__particles--a {
+  background-image:
+    radial-gradient(1.4px 1.4px at 20px 30px, rgb(var(--particle-rgb) / 0.5), transparent),
+    radial-gradient(1px 1px at 140px 90px, rgb(var(--particle-rgb) / 0.35), transparent),
+    radial-gradient(1.2px 1.2px at 260px 180px, rgb(var(--hi-rgb) / 0.25), transparent);
+  background-size: 320px 220px;
+}
+.ambient__particles--b {
+  background-image:
+    radial-gradient(1px 1px at 80px 60px, rgb(var(--accent-2-rgb) / 0.4), transparent),
+    radial-gradient(1.6px 1.6px at 300px 260px, rgb(var(--particle-rgb) / 0.3), transparent);
+  background-size: 420px 340px;
+}
+.ambient__energy {
+  height: 1px;
+  width: 38vw;
+  left: 0;
+  background: linear-gradient(90deg, transparent, rgb(var(--energy-rgb) / 0.55), transparent);
+  box-shadow: 0 0 12px rgb(var(--energy-rgb) / 0.35);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: ambient-energy 16s var(--ease) infinite;
+}
+.ambient__energy--1 {
+  top: 22vh;
+}
+.ambient__energy--2 {
+  top: 58vh;
+  animation-duration: 21s;
+  animation-delay: -7s;
+}
+.ambient__energy--3 {
+  top: 84vh;
+  animation-duration: 27s;
+  animation-delay: -15s;
+}
+@keyframes ambient-energy {
+  0% {
+    transform: translate3d(-40vw, 0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  45% {
+    transform: translate3d(110vw, 0, 0);
+    opacity: 0.9;
+  }
+  46%,
+  100% {
+    transform: translate3d(110vw, 0, 0);
+    opacity: 0;
+  }
+}
+.ambient--quiet .ambient__orbit,
+.ambient--quiet .ambient__particles--b {
+  display: none;
+}
+
+/* Fewer layers on small screens: phones get the atmosphere, grid, emblem, one particle layer and one energy line. */
+@media (max-width: 700px) {
+  .ambient__orbit,
+  .ambient__particles--b,
+  .ambient__energy--2,
+  .ambient__energy--3 {
+    display: none;
+  }
+  .ambient__emblem {
+    width: 110vw;
+    right: -40vw;
+    top: 30vh;
+  }
+  .ambient__grid {
+    height: 40vh;
+  }
+}
+
+/* ---------- Scroll entrances (only when IntersectionObserver ran: html.reveal-ready) ---------- */
+html.reveal-ready[data-effects="on"] [data-reveal]:not([data-revealed]) {
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+}
+html.reveal-ready[data-effects="on"] [data-reveal] {
+  transition:
+    opacity 380ms var(--ease),
+    transform 380ms var(--ease);
+}
+
+/* ---------- Animated gradient border (cards, hero frame) ---------- */
+@property --hcg-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+.holo-border {
+  position: relative;
+  isolation: isolate;
+}
+.holo-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--hcg-angle),
+    rgb(var(--card-accent-rgb, var(--accent-rgb)) / 0.55),
+    rgb(var(--hairline-rgb) / 0.08) 22%,
+    rgb(var(--accent-2-rgb) / 0.35) 50%,
+    rgb(var(--hairline-rgb) / 0.08) 72%,
+    rgb(var(--card-accent-rgb, var(--accent-rgb)) / 0.55)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.75;
+  transition: opacity var(--t) var(--ease);
+}
+.holo-border--spin::before {
+  animation: holo-spin 9s linear infinite;
+}
+@media (hover: hover) {
+  .holo-border:hover::before {
+    animation: holo-spin 4s linear infinite;
+    opacity: 1;
+  }
+}
+@keyframes holo-spin {
+  to {
+    --hcg-angle: 360deg;
+  }
+}
+
+/* ---------- Premium loading state ---------- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--surface-rgb) / 0.6);
+  border-radius: var(--radius-sm);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.12), transparent);
+  animation: skeleton-sweep 1.6s var(--ease) infinite;
+}
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* ---------- Stillness: reduced motion or effects switched off ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ambient *,
+  .holo-border::before,
+  .skeleton::after,
+  .site-header::before {
+    animation: none !important;
+  }
+  .ambient__energy {
+    display: none;
+  }
+}
+html[data-effects="off"] .ambient *,
+html[data-effects="off"] .holo-border::before,
+html[data-effects="off"] .skeleton::after,
+html[data-effects="off"] .site-header::before {
+  animation: none !important;
+}
+html[data-effects="off"] .ambient__energy,
+html[data-effects="off"] .ambient__particles,
+html[data-effects="off"] .ambient__orbit {
+  display: none;
+}

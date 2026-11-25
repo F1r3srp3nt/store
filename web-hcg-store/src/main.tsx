@@ -4,11 +4,14 @@ import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/inter";
 import "@fontsource/jetbrains-mono/400.css";
 import "./styles/tokens.css";
+import "./styles/themes.css";
 import "./styles/base.css";
 import "./styles/layout.css";
 import "./styles/components.css";
 import "./styles/pages.css";
 import "./styles/storefront.css";
+import "./styles/effects.css";
+import "./styles/v3.css";
 import { App } from "./App";
 
 createRoot(document.getElementById("root")!).render(

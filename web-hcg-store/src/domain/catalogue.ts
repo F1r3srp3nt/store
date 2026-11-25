@@ -2,6 +2,9 @@ import type { z } from "zod";
 import { ProductsDocumentSchema, ReleasesDocumentSchema, type Artifact, type Product, type Release } from "./schema";
 import { compareSemver } from "./version";
 
+/** HCG systems a product may integrate with besides other products (ecosystem explorer). */
+export const INTEGRATION_SYSTEMS = ["hcg-connect", "hcg-repo"];
+
 export interface Catalogue {
   products: Product[];
   releases: Release[];
@@ -118,6 +121,16 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
       else if (byId.get(rel)!.visibility === "draft") errors.push(`Product "${product.id}" links to draft product "${rel}", which has no page.`);
     }
     if (new Set(product.relatedProducts).size !== product.relatedProducts.length) errors.push(`Product "${product.id}" lists a related product twice.`);
+    for (const i of product.integrations) {
+      const other = byId.get(i.with);
+      const system = INTEGRATION_SYSTEMS.includes(i.with);
+      if (!other && !system) errors.push(`Product "${product.id}" integrates with unknown "${i.with}".`);
+      else if (other?.visibility === "draft") errors.push(`Product "${product.id}" integrates with draft product "${i.with}", which has no page.`);
+      if (i.with === product.id) errors.push(`Product "${product.id}" lists an integration with itself.`);
+      if (i.status === "available" && (!product.currentReleaseId || (other && !other.currentReleaseId))) {
+        errors.push(`Product "${product.id}": the integration with "${i.with}" can be "available" only when both have an approved current release.`);
+      }
+    }
     if (product.visibility === "draft") {
       if (product.currentReleaseId) errors.push(`Draft product "${product.id}" cannot have a current release.`);
       if (product.collections.length) errors.push(`Draft product "${product.id}" cannot be in storefront collections.`);
