@@ -9,6 +9,17 @@ const ACCENTS: Record<Product["artwork"]["accent"], string> = {
   silver: "#d7dee8",
   mint: "var(--mint)",
   amber: "var(--amber)",
+  crimson: "#ff4858",
+};
+
+/** Accent channels for v3 card illumination and holographic borders (space-separated RGB). */
+export const ACCENT_RGB: Record<Product["artwork"]["accent"], string> = {
+  cyan: "var(--accent-rgb)",
+  violet: "169 150 255",
+  silver: "205 214 226",
+  mint: "94 234 212",
+  amber: "255 198 107",
+  crimson: "255 72 88",
 };
 
 /** True when the product has real cover artwork or a real screenshot to show. */

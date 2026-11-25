@@ -105,10 +105,44 @@ describe("store pages with the shipped catalogue", () => {
     expectNoFabrication(container);
   });
 
-  it("navigation offers Store, Browse, HCG Repo and Account", async () => {
+  it("theme selector: any visitor picks one of six themes; it is stored locally and changes nothing else", async () => {
+    window.localStorage.clear();
+    const { container } = renderAt("/");
+    await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
+    const before = container.querySelector("main")!.textContent;
+    fireEvent.click(screen.getAllByRole("button", { name: "Theme" })[0]!);
+    const group = screen.getAllByRole("group", { name: "Theme" })[0]!;
+    expect(within(group).getAllByRole("radio")).toHaveLength(6);
+    fireEvent.click(within(group).getByRole("radio", { name: /Quantum Frost/ }));
+    expect(document.documentElement.dataset.theme).toBe("frost");
+    expect(window.localStorage.getItem("hcg-store.theme")).toBe("frost");
+    expect(container.querySelector("main")!.textContent).toBe(before); // content, prices and access are untouched
+    fireEvent.click(screen.getAllByRole("switch", { name: /Decorative effects/ })[0]!);
+    expect(document.documentElement.dataset.effects).toBe("off");
+    expect(window.localStorage.getItem("hcg-store.effects")).toBe("off");
+    expect(screen.queryByRole("button", { name: /Pause/ })).toBeNull(); // no rotation without effects
+    window.localStorage.clear();
+  });
+
+  it("collapses homepage sections without eligible content (no releases, news or campaigns exist)", async () => {
+    renderAt("/");
+    await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
+    expect(screen.queryByRole("heading", { name: "New releases" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Recently updated" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
+    expect(screen.queryByText("Sponsored")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Upcoming technology" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "How HCG products connect" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "Areas" })).toBeInTheDocument();
+    expect(screen.queryByText(/HCG ADS|Signal Contractor|System Tester/)).toBeNull(); // drafts stay hidden
+  });
+
+  it("navigation offers Discover, Products, Categories, Platforms, New releases, HCG Repo and Account", async () => {
     renderAt("/");
     const nav = await screen.findByRole("navigation", { name: "Primary" });
-    expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Store", "Browse", "HCG Repo", "Account"]);
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual(["Discover", "Products", "New releases", "HCG Repo", "Account"]);
+    expect(within(nav).getByRole("button", { name: "Categories" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(nav).getByRole("button", { name: "Platforms" })).toBeInTheDocument();
   });
 
   it("home hero uses the banner as a labelled illustration and keeps the heading if it fails", async () => {

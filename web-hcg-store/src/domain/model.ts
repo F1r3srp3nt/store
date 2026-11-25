@@ -80,3 +80,44 @@ export function relatedProductsOf(c: Catalogue, product: Product): Product[] {
 export function inCollection(c: Catalogue, collection: Product["collections"][number]): Product[] {
   return listedProducts(c).filter((p) => p.collections.includes(collection));
 }
+
+// ---- v3 homepage sections. Each returns only products the data supports; an empty list hides the section. ----
+
+/** Listed products whose current release (explicit currentReleaseId) is approved, newest release first. */
+export function newReleases(c: Catalogue): { product: Product; release: Release }[] {
+  return listedProducts(c)
+    .flatMap((p) => {
+      const r = currentRelease(c, p);
+      return r ? [{ product: p, release: r }] : [];
+    })
+    .sort((a, b) => (b.release.releaseDate ?? "").localeCompare(a.release.releaseDate ?? ""));
+}
+
+/** Listed products with any approved release in the catalogue, by their latest approved release date. */
+export function recentlyUpdated(c: Catalogue): { product: Product; release: Release }[] {
+  const latest = new Map<string, Release>();
+  for (const r of c.releases) {
+    if (r.status !== "approved" || !r.releaseDate) continue;
+    const prev = latest.get(r.productId);
+    if (!prev || (prev.releaseDate ?? "") < r.releaseDate) latest.set(r.productId, r);
+  }
+  return listedProducts(c)
+    .flatMap((p) => (latest.has(p.id) ? [{ product: p, release: latest.get(p.id)! }] : []))
+    .sort((a, b) => (b.release.releaseDate ?? "").localeCompare(a.release.releaseDate ?? ""));
+}
+
+/** Being built, tested or planned, with no approved current release. */
+export function upcomingProducts(c: Catalogue): Product[] {
+  return listedProducts(c).filter(
+    (p) => !p.supersededBy && !currentRelease(c, p) && ["in-development", "testing", "planning"].includes(p.developmentStatus),
+  );
+}
+
+/** Products with an Unleashed tier or a jailbreak-package edition. */
+export function unleashedProducts(c: Catalogue): Product[] {
+  return listedProducts(c).filter((p) => !p.supersededBy && p.editions.some((e) => e.tier === "unleashed" || e.channel === "jailbreak-package"));
+}
+
+export function productsInCategory(c: Catalogue, category: Product["category"]): Product[] {
+  return listedProducts(c).filter((p) => !p.supersededBy && p.category === category);
+}

@@ -8,6 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { validateCatalogue } from "../src/domain/catalogue";
+import { resolveStorefront } from "../src/storefront/resolve";
 
 const root = resolve(import.meta.dirname, "..");
 const dir = resolve(root, process.argv[2] ?? process.env.HCG_CATALOGUE_DIR ?? "catalogue");
@@ -24,6 +25,11 @@ try {
 
 const result = validateCatalogue(products, releases);
 const errors = result.ok ? [] : [...result.errors];
+
+// Storefront presentation (catalogue/storefront.json): may only reference listed products.
+if (result.ok && existsSync(join(dir, "storefront.json"))) {
+  errors.push(...resolveStorefront(result.catalogue, read("storefront.json")).warnings);
+}
 
 if (result.ok) {
   for (const p of result.catalogue.products) {

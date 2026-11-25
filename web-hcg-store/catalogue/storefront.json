@@ -1,0 +1,10 @@
+{
+  "$comment": "HCG Store storefront presentation, reviewed like the catalogue. Featured products and hero rotation only reference listed products; anything else is ignored (validate:catalogue reports it). It sets no price, release or availability: those always come from the catalogue and the Store server.",
+  "schemaVersion": 1,
+  "hero": {
+    "spotlight": ["hcg-executable-maker", "hcg-terminal", "hcg-server", "hcg-sentinel", "hcg-clarity"],
+    "rotateSeconds": 7
+  },
+  "featured": ["hcg-executable-maker", "hcg-terminal", "hcg-server", "hcg-clarity"],
+  "sections": ["new-releases", "recently-updated", "featured", "categories", "upcoming", "ecosystem", "developer-tools", "security", "infrastructure", "productivity", "unleashed", "news", "campaigns"]
+}

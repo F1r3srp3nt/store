@@ -1,18 +1,30 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { DOWNLOADS_NOT_AVAILABLE } from "../account/api";
 import { CatalogueGate } from "../app/catalogue-context";
 import { storefrontStatus } from "../components/Badges";
-import { HeroBanner } from "../components/HeroBanner";
+import { CinematicHero } from "../components/home/CinematicHero";
+import { EcosystemExplorer } from "../components/home/EcosystemExplorer";
+import { NewsAnnouncements, PromotionSlot } from "../components/home/Placements";
 import { IconArrowRight, IconExternal, IconLock, IconSearch, IconShield, IconTerminal } from "../components/Icons";
 import { PageMeta } from "../components/PageMeta";
 import { ProductCard } from "../components/ProductCard";
 import { ProductMark } from "../components/ProductArt";
 import { hcgRepoProductUrl, runtimeConfig } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
-import { availability, inCollection, listedProducts } from "../domain/model";
+import {
+  availability,
+  inCollection,
+  listedProducts,
+  newReleases,
+  productsInCategory,
+  recentlyUpdated,
+  unleashedProducts,
+  upcomingProducts,
+} from "../domain/model";
 import type { Product } from "../domain/schema";
-import { CATEGORIES, EDITION_CHANNELS, PLATFORMS, PLATFORM_IDS } from "../domain/taxonomy";
+import { CATEGORIES, EDITION_CHANNELS, PLATFORMS, PLATFORM_IDS, type CategoryId } from "../domain/taxonomy";
+import { resolveStorefront, type SectionId } from "../storefront/config";
 
 export function HomePage() {
   return (
@@ -27,43 +39,45 @@ export function HomePage() {
 const STATUS_ORDER = ["Released", "Testing", "In development", "Planned", "Maintained", "Paused", "Status not stated"];
 
 function Home({ catalogue }: { catalogue: Catalogue }) {
+  const store = resolveStorefront(catalogue);
   const products = listedProducts(catalogue);
-  const featured = inCollection(catalogue, "featured");
-  const jailbreak = inCollection(catalogue, "jailbreak");
+  const featured = store.featured.length ? store.featured : inCollection(catalogue, "featured");
+  const spotlight = store.spotlight.length ? store.spotlight : featured;
   const all = [...products].sort((a, b) => {
     const sa = STATUS_ORDER.indexOf(storefrontStatus(a.developmentStatus, availability(catalogue, a)).label);
     const sb = STATUS_ORDER.indexOf(storefrontStatus(b.developmentStatus, availability(catalogue, b)).label);
     return sa - sb || a.name.localeCompare(b.name, "en");
   });
 
-  return (
-    <>
-      <section className="hero" aria-labelledby="hero-title">
-        <div className="page-width hero__inner">
-          <HeroBanner />
-          <div className="hero__bar">
-            <div className="hero__copy">
-              <h1 id="hero-title" className="hero__title">
-                HCG Store
-              </h1>
-              <p className="hero__lead">Apps, jailbreak tools and developer software from Hakmi Capital Group, each shown with its real status.</p>
-            </div>
-            <div className="hero__actions">
-              <Link to="/apps" className="button button--primary">
-                Browse Products <IconArrowRight />
-              </Link>
-              <a href={runtimeConfig.repoBaseUrl} className="button button--ghost">
-                HCG Repo <IconExternal />
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <Discover products={products} />
-
-      {featured.length > 0 && (
-        <section className="section page-width" aria-labelledby="featured-title">
+  const sections: Record<SectionId, () => ReactNode> = {
+    "new-releases": () => {
+      const items = newReleases(catalogue);
+      return items.length ? (
+        <Shelf id="new-title" kicker="Approved in HCG Store" title="New releases" more={{ to: "/apps?availability=released", label: "All releases" }}>
+          {items.map(({ product }) => (
+            <ProductCard key={product.id} catalogue={catalogue} product={product} />
+          ))}
+        </Shelf>
+      ) : null;
+    },
+    "recently-updated": () => {
+      const items = recentlyUpdated(catalogue);
+      return items.length ? (
+        <section className="section page-width" aria-labelledby="updated-title" data-reveal>
+          <SectionHead id="updated-title" kicker="Release history" title="Recently updated" />
+          <ul className="compact-list">
+            {items.map(({ product }) => (
+              <li key={product.id}>
+                <ProductCard catalogue={catalogue} product={product} variant="compact" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null;
+    },
+    featured: () =>
+      featured.length ? (
+        <section className="section page-width" aria-labelledby="featured-title" data-reveal>
           <SectionHead id="featured-title" kicker="Selected by HCG" title="Featured products" more={{ to: "/apps", label: "All products" }} />
           <div className="featured">
             {featured.map((p, i) => (
@@ -71,11 +85,54 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
             ))}
           </div>
         </section>
-      )}
+      ) : null,
+    categories: () => <Discover products={products} />,
+    upcoming: () => {
+      const items = upcomingProducts(catalogue);
+      return items.length ? (
+        <Shelf id="upcoming-title" kicker="Being built, tested or planned" title="Upcoming technology" intro="In development at HCG. Nothing here is released yet; each page says exactly where it stands.">
+          {items.map((p) => (
+            <ProductCard key={p.id} catalogue={catalogue} product={p} />
+          ))}
+        </Shelf>
+      ) : null;
+    },
+    ecosystem: () => (
+      <section id="ecosystem" className="section page-width ecosystem" aria-labelledby="eco-title" data-reveal>
+        <SectionHead
+          id="eco-title"
+          kicker="HCG ecosystem"
+          title="How HCG products connect"
+          intro="Integrations each product's own data states. Solid lines are available today; dashed lines are planned."
+        />
+        <EcosystemExplorer catalogue={catalogue} />
+      </section>
+    ),
+    // The four areas share one tabbed section, placed where the first of them appears in the configuration.
+    "developer-tools": () => areaSection("developer-tools"),
+    security: () => areaSection("security"),
+    infrastructure: () => areaSection("infrastructure"),
+    productivity: () => areaSection("productivity"),
+    unleashed: () => {
+      const items = unleashedProducts(catalogue);
+      const jb = items.length ? items : inCollection(catalogue, "jailbreak");
+      return jb.length ? <JailbreakCollection products={jb} /> : null;
+    },
+    news: () => <NewsAnnouncements />,
+    campaigns: () => <PromotionSlot slot="home-campaign" heading="From HCG" />,
+  };
 
-      {jailbreak.length > 0 && <JailbreakCollection products={jailbreak} />}
+  const areaOrder = store.sections.filter((x): x is AreaId => (AREA_IDS as readonly string[]).includes(x));
+  const areaSection = (id: AreaId) => (id === areaOrder[0] ? <AreaTabs catalogue={catalogue} order={areaOrder} /> : null);
 
-      <section className="section page-width" aria-labelledby="all-title">
+  return (
+    <>
+      <CinematicHero catalogue={catalogue} spotlight={spotlight} rotateSeconds={store.rotateSeconds} />
+      {store.sections.map((id) => (
+        <SectionSlot key={id}>{sections[id]()}</SectionSlot>
+      ))}
+
+      <section className="section page-width" aria-labelledby="all-title" data-reveal>
         <SectionHead id="all-title" kicker="Catalogue" title="All products" intro="Every HCG product listed in the store, with its platforms and current status." />
         <ul className="product-rows">
           {all.map((p) => (
@@ -90,6 +147,83 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
     </>
   );
 }
+
+function SectionSlot({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
+/** A horizontal, snap-scrolling shelf of cards: dense on phones, a grid-like row on desktop. */
+function Shelf({ id, kicker, title, intro, more, children }: { id: string; kicker: string; title: string; intro?: string; more?: { to: string; label: string }; children: ReactNode }) {
+  return (
+    <section className="section page-width shelf" aria-labelledby={id} data-reveal>
+      <SectionHead id={id} kicker={kicker} title={title} intro={intro} more={more} />
+      <div className="shelf__track" role="list">
+        {Array.isArray(children)
+          ? children.map((c, i) => (
+              <div role="listitem" className="shelf__item" key={i}>
+                {c}
+              </div>
+            ))
+          : children}
+      </div>
+    </section>
+  );
+}
+
+const AREA_IDS = ["developer-tools", "security", "infrastructure", "productivity"] as const;
+type AreaId = (typeof AREA_IDS)[number];
+const AREAS: Record<AreaId, { title: string; kicker: string }> = {
+  "developer-tools": { title: "Developer tools", kicker: "Build, ship, operate" },
+  security: { title: "Security instruments", kicker: "Authorised testing" },
+  infrastructure: { title: "Infrastructure", kicker: "Devices, storage, services" },
+  productivity: { title: "Productivity", kicker: "Plan, focus, create" },
+};
+
+/** Developer tools, security instruments, infrastructure and productivity as tabs over one shelf. Empty areas get no tab. */
+function AreaTabs({ catalogue, order }: { catalogue: Catalogue; order: AreaId[] }) {
+  const areas = order.map((id) => ({ id, ...AREAS[id], items: productsInCategory(catalogue, id) })).filter((a) => a.items.length > 0);
+  const [active, setActive] = useState(0);
+  const baseId = useId();
+  if (!areas.length) return null;
+  const a = areas[Math.min(active, areas.length - 1)]!;
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const next = (active + (e.key === "ArrowRight" ? 1 : areas.length - 1)) % areas.length;
+    setActive(next);
+    document.getElementById(`${baseId}-tab-${next}`)?.focus();
+  };
+  return (
+    <section className="section page-width areas" aria-labelledby={`${baseId}-title`} data-reveal>
+      <SectionHead id={`${baseId}-title`} kicker="Explore by area" title="Instruments for every layer" more={{ to: `/apps?category=${a.id}`, label: `All in ${CATEGORIES[a.id].label}` }} />
+      <div className="areas__tabs" role="tablist" aria-label="Areas" onKeyDown={onKey}>
+        {areas.map((x, i) => (
+          <button
+            key={x.id}
+            id={`${baseId}-tab-${i}`}
+            type="button"
+            role="tab"
+            aria-selected={i === active}
+            aria-controls={`${baseId}-panel`}
+            tabIndex={i === active ? 0 : -1}
+            className="areas__tab"
+            onClick={() => setActive(i)}
+          >
+            {x.title} <span className="chip__count">{x.items.length}</span>
+          </button>
+        ))}
+      </div>
+      <div id={`${baseId}-panel`} role="tabpanel" aria-labelledby={`${baseId}-tab-${active}`} className="shelf__track areas__panel">
+        {a.items.map((p) => (
+          <div className="shelf__item" key={p.id}>
+            <ProductCard catalogue={catalogue} product={p} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 
 function SectionHead({ id, kicker, title, intro, more }: { id: string; kicker: string; title: string; intro?: string; more?: { to: string; label: string } }) {
   return (
@@ -110,7 +244,7 @@ function SectionHead({ id, kicker, title, intro, more }: { id: string; kicker: s
   );
 }
 
-/** Search plus category and platform shortcuts into the Browse page (filters live in the URL). */
+/** Search, a category grid and platform shortcuts into the Browse page (filters live in the URL). */
 function Discover({ products }: { products: Product[] }) {
   const navigate = useNavigate();
   const id = useId();
@@ -119,44 +253,56 @@ function Discover({ products }: { products: Product[] }) {
     e.preventDefault();
     navigate(q.trim() ? `/apps?q=${encodeURIComponent(q.trim())}` : "/apps");
   };
-  const categories = Object.entries(CATEGORIES)
-    .map(([key, c]) => ({ key, label: c.label, count: products.filter((p) => p.category === key).length }))
-    .filter((c) => c.count > 0);
+  const categories = (Object.keys(CATEGORIES) as CategoryId[])
+    .map((key) => ({ key, label: CATEGORIES[key].label, items: products.filter((p) => p.category === key && !p.supersededBy) }))
+    .filter((c) => c.items.length > 0);
   const platforms = PLATFORM_IDS.map((pid) => ({ pid, count: products.filter((p) => p.platforms.some((x) => x.platform === pid)).length })).filter((x) => x.count > 0);
 
   return (
-    <section className="discover page-width" aria-labelledby="discover-title">
-      <h2 id="discover-title" className="visually-hidden">
-        Find a product
-      </h2>
+    <section className="discover page-width" aria-labelledby="discover-title" data-reveal>
+      <div className="section__head">
+        <div>
+          <p className="eyebrow">Discover</p>
+          <h2 id="discover-title" className="section__title">
+            Browse by category
+          </h2>
+        </div>
+      </div>
       <form role="search" className="discover__search" onSubmit={submit}>
         <label htmlFor={id} className="visually-hidden">
           Search products
         </label>
         <IconSearch className="discover__search-icon" />
-        <input id={id} type="search" placeholder="Search products, features or platforms" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
+        <input id={id} type="search" placeholder="Search products" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
         <button type="submit" className="button button--ghost button--small">
           Search
         </button>
       </form>
-      <div className="discover__groups">
-        <nav aria-label="Categories" className="chip-row">
-          <span className="chip-row__label">Categories</span>
-          {categories.map((c) => (
-            <Link key={c.key} to={`/apps?category=${c.key}`} className="chip">
-              {c.label} <span className="chip__count">{c.count}</span>
+      <ul className="category-grid" aria-label="Categories">
+        {categories.map((c) => (
+          <li key={c.key}>
+            <Link to={`/apps?category=${c.key}`} className="category-tile holo-border">
+              <span className="category-tile__icons" aria-hidden="true">
+                {c.items.slice(0, 3).map((p) => (
+                  <ProductMark key={p.id} product={p} size="sm" />
+                ))}
+              </span>
+              <span className="category-tile__label">{c.label}</span>
+              <span className="category-tile__count">
+                {c.items.length} {c.items.length === 1 ? "product" : "products"}
+              </span>
             </Link>
-          ))}
-        </nav>
-        <nav aria-label="Platforms" className="chip-row">
-          <span className="chip-row__label">Platforms</span>
-          {platforms.map(({ pid, count }) => (
-            <Link key={pid} to={`/apps?platform=${pid}`} className="chip">
-              {PLATFORMS[pid].label} <span className="chip__count">{count}</span>
-            </Link>
-          ))}
-        </nav>
-      </div>
+          </li>
+        ))}
+      </ul>
+      <nav aria-label="Platforms" className="chip-row chip-row--wrap">
+        <span className="chip-row__label">Platforms</span>
+        {platforms.map(({ pid, count }) => (
+          <Link key={pid} to={`/apps?platform=${pid}`} className="chip">
+            {PLATFORMS[pid].label} <span className="chip__count">{count}</span>
+          </Link>
+        ))}
+      </nav>
     </section>
   );
 }
@@ -164,7 +310,7 @@ function Discover({ products }: { products: Product[] }) {
 /** Jailbreak and Unleashed editions, each linked to its HCG Repo product page. */
 function JailbreakCollection({ products }: { products: Product[] }) {
   return (
-    <section className="jailbreak circuit-bg" aria-labelledby="jailbreak-title">
+    <section className="jailbreak circuit-bg" aria-labelledby="jailbreak-title" data-reveal>
       <div className="page-width">
         <div className="jailbreak__intro">
           <p className="eyebrow eyebrow--accent">
@@ -220,7 +366,7 @@ function JailbreakCollection({ products }: { products: Product[] }) {
 function Guidance() {
   const staticSite = runtimeConfig.accountService === "none";
   return (
-    <section className="page-width guidance-band" aria-labelledby="guidance-title">
+    <section className="page-width guidance-band" aria-labelledby="guidance-title" data-reveal>
       <h2 id="guidance-title" className="section-kicker">
         Accounts, purchases and delivery
       </h2>

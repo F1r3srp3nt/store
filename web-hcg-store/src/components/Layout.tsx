@@ -1,68 +1,147 @@
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { runtimeConfig } from "../config/runtime";
 import { assetUrl } from "../lib/format";
 import { useAccount } from "../account/account-context";
 import { signInUrl } from "../account/api";
 import { useCatalogueState } from "../app/catalogue-context";
-import { IconClose, IconExternal, IconMenu, IconSearch, IconUser } from "./Icons";
+import { listedProducts } from "../domain/model";
+import { CATEGORIES, PLATFORMS, PLATFORM_IDS, type CategoryId } from "../domain/taxonomy";
+import { AmbientBackground } from "../theme/AmbientBackground";
+import { ThemeProvider } from "../theme/ThemeContext";
+import { ThemeChoices, ThemeMenu } from "../theme/ThemeMenu";
+import { IconChevronDown, IconClose, IconExternal, IconGrid, IconMenu, IconNew, IconOrbit, IconSearch, IconUser } from "./Icons";
 import { RouteFocus } from "./RouteFocus";
 
-const NAV = [
-  { to: "/", label: "Store", end: true },
-  { to: "/apps", label: "Browse", end: false },
-  { to: "/account", label: "Account", end: false },
-];
 const FOOTER_NAV = [
-  { to: "/", label: "Store" },
-  { to: "/apps", label: "Browse all products" },
+  { to: "/", label: "Discover" },
+  { to: "/apps", label: "All products" },
+  { to: "/apps?availability=released", label: "New releases" },
   { to: "/getting-started", label: "Getting started" },
+  { to: "/library", label: "My Library" },
   { to: "/account", label: "Account & Connections" },
 ];
 
-/** Primary navigation, including the external HCG Repo link after "Browse". */
-function NavItems({ linkClass }: { linkClass: string }) {
+/** Categories and platforms that have at least one listed product, with counts (never empty entries). */
+function useFacets() {
+  const state = useCatalogueState();
+  if (state.status !== "ready") return { categories: [], platforms: [] };
+  const products = listedProducts(state.catalogue);
+  const categories = (Object.keys(CATEGORIES) as CategoryId[])
+    .map((key) => ({ key, label: CATEGORIES[key].label, count: products.filter((p) => p.category === key).length }))
+    .filter((c) => c.count > 0);
+  const platforms = PLATFORM_IDS.map((key) => ({ key, label: PLATFORMS[key].label, count: products.filter((p) => p.platforms.some((x) => x.platform === key)).length })).filter(
+    (x) => x.count > 0,
+  );
+  return { categories, platforms };
+}
+
+/** A header disclosure menu (Categories, Platforms). Links only; closes on navigation, Escape and outside clicks. */
+function NavDisclosure({ label, items }: { label: string; items: { to: string; label: string; count: number }[] }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const wrap = useRef<HTMLLIElement>(null);
+  const location = useLocation();
+  useEffect(() => setOpen(false), [location.pathname, location.search]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onDown = (e: PointerEvent) => !wrap.current?.contains(e.target as Node) && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+  // Rendered even before the catalogue has loaded, so the navigation does not shift when it arrives.
   return (
-    <>
-      {NAV.slice(0, 2).map((n) => (
-        <li key={n.to}>
-          <NavLink to={n.to} end={n.end} className={linkClass}>
-            {n.label}
-          </NavLink>
-        </li>
-      ))}
-      <li>
-        <a href={runtimeConfig.repoBaseUrl} className={linkClass}>
-          HCG Repo <IconExternal className="nav-external" />
-        </a>
-      </li>
-      {NAV.slice(2).map((n) => (
-        <li key={n.to}>
-          <NavLink to={n.to} end={n.end} className={linkClass}>
-            {n.label}
-          </NavLink>
-        </li>
-      ))}
-    </>
+    <li ref={wrap} className="nav-disclosure">
+      <button type="button" className="site-nav__link nav-disclosure__button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}>
+        {label} <IconChevronDown className="nav-disclosure__chevron" />
+      </button>
+      <div id={id} className="nav-disclosure__panel" hidden={!open}>
+        <ul>
+          {items.map((i) => (
+            <li key={i.to}>
+              <Link to={i.to} className="nav-disclosure__link">
+                <span>{i.label}</span> <span className="chip__count">{i.count}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </li>
   );
 }
 
+/**
+ * Scroll entrances: elements marked data-reveal fade in once when they enter the viewport. Without
+ * IntersectionObserver (or with effects off / reduced motion, see effects.css) everything is simply visible.
+ */
+function useRevealObserver() {
+  const location = useLocation();
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const root = document.documentElement;
+    root.classList.add("reveal-ready");
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            (e.target as HTMLElement).dataset.revealed = "";
+            io.unobserve(e.target);
+          }
+        }
+      },
+      { rootMargin: "0px 0px -6% 0px", threshold: 0.05 },
+    );
+    const scan = () => document.querySelectorAll<HTMLElement>("[data-reveal]:not([data-revealed])").forEach((el) => io.observe(el));
+    scan();
+    const mo = new MutationObserver(scan);
+    const main = document.getElementById("main");
+    if (main) mo.observe(main, { childList: true, subtree: true });
+    return () => {
+      io.disconnect();
+      mo.disconnect();
+    };
+  }, [location.pathname]);
+}
+
 export function Layout() {
+  return (
+    <ThemeProvider>
+      <Shell />
+    </ThemeProvider>
+  );
+}
+
+function Shell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const menuId = useId();
-  useEffect(() => setMenuOpen(false), [location.pathname]);
+  const { categories, platforms } = useFacets();
+  useRevealObserver();
+  // NavLink ignores the query string, so the catalogue's own sections are matched here.
+  const section =
+    location.pathname === "/apps" ? (new URLSearchParams(location.search).get("availability") === "released" ? "releases" : "products") : null;
+  useEffect(() => setMenuOpen(false), [location.pathname, location.search]);
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.documentElement.classList.add("sheet-open");
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.documentElement.classList.remove("sheet-open");
+    };
   }, [menuOpen]);
 
   const { deployment } = runtimeConfig;
 
   return (
     <>
+      <AmbientBackground />
       <a className="skip-link" href="#main">
         Skip to content
       </a>
@@ -88,30 +167,102 @@ export function Layout() {
 
           <nav className="site-nav" aria-label="Primary">
             <ul>
-              <NavItems linkClass="site-nav__link" />
+              <li>
+                <NavLink to="/" end className="site-nav__link">
+                  Discover
+                </NavLink>
+              </li>
+              <li>
+                <Link to="/apps" className={`site-nav__link${section === "products" ? " active" : ""}`} aria-current={section === "products" ? "page" : undefined}>
+                  Products
+                </Link>
+              </li>
+              <NavDisclosure label="Categories" items={categories.map((c) => ({ to: `/apps?category=${c.key}`, label: c.label, count: c.count }))} />
+              <NavDisclosure label="Platforms" items={platforms.map((p) => ({ to: `/apps?platform=${p.key}`, label: p.label, count: p.count }))} />
+              <li>
+                <Link
+                  to="/apps?availability=released"
+                  className={`site-nav__link site-nav__link--wide${section === "releases" ? " active" : ""}`}
+                  aria-current={section === "releases" ? "page" : undefined}
+                >
+                  New releases
+                </Link>
+              </li>
+              <li>
+                <a href={runtimeConfig.repoBaseUrl} className="site-nav__link">
+                  HCG Repo <IconExternal className="nav-external" />
+                </a>
+              </li>
+              <li>
+                <NavLink to="/account" className="site-nav__link site-nav__link--wide">
+                  Account
+                </NavLink>
+              </li>
             </ul>
           </nav>
 
-          <HeaderSearch />
-          <AccountChip />
-
-          <button
-            type="button"
-            className="menu-toggle"
-            aria-expanded={menuOpen}
-            aria-controls={menuId}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            {menuOpen ? <IconClose /> : <IconMenu />}
-            <span className="visually-hidden">{menuOpen ? "Close menu" : "Open menu"}</span>
-          </button>
+          <div className="site-header__tools">
+            <HeaderSearch />
+            <ThemeMenu />
+            <AccountChip />
+            <button
+              type="button"
+              className="menu-toggle tool-button"
+              aria-expanded={menuOpen}
+              aria-controls={menuId}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              {menuOpen ? <IconClose /> : <IconMenu />}
+              <span className="visually-hidden">{menuOpen ? "Close menu" : "Open menu"}</span>
+            </button>
+          </div>
         </div>
-        <div id={menuId} className="mobile-menu" hidden={!menuOpen}>
+      </header>
+      <div id={menuId} className="mobile-sheet" hidden={!menuOpen}>
+        <div className="mobile-sheet__inner">
           <HeaderSearch mobile />
-          <AccountChip mobile />
           <nav aria-label="Primary (mobile)">
-            <ul>
-              <NavItems linkClass="mobile-menu__link" />
+            <ul className="mobile-tiles">
+              <MobileTile to="/" end icon={<IconOrbit />} label="Discover" />
+              <MobileTile to="/apps" icon={<IconGrid />} label="Products" active={section === "products"} />
+              <MobileTile to="/apps?availability=released" icon={<IconNew />} label="New releases" active={section === "releases"} />
+              <li>
+                <a href={runtimeConfig.repoBaseUrl} className="mobile-tile">
+                  <IconExternal /> <span>HCG Repo</span>
+                </a>
+              </li>
+              <MobileTile to="/library" icon={<IconUser />} label="My Library" />
+              <MobileTile to="/account" icon={<IconUser />} label="Account" />
+            </ul>
+            {categories.length > 0 && (
+              <div className="mobile-sheet__group">
+                <p className="mobile-sheet__label">Categories</p>
+                <ul className="chip-wrap">
+                  {categories.map((c) => (
+                    <li key={c.key}>
+                      <Link to={`/apps?category=${c.key}`} className="chip">
+                        {c.label} <span className="chip__count">{c.count}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {platforms.length > 0 && (
+              <div className="mobile-sheet__group">
+                <p className="mobile-sheet__label">Platforms</p>
+                <ul className="chip-wrap">
+                  {platforms.map((p) => (
+                    <li key={p.key}>
+                      <Link to={`/apps?platform=${p.key}`} className="chip">
+                        {p.label} <span className="chip__count">{p.count}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <ul className="mobile-sheet__links">
               <li>
                 <NavLink to="/getting-started" className="mobile-menu__link">
                   Getting started
@@ -119,8 +270,12 @@ export function Layout() {
               </li>
             </ul>
           </nav>
+          <AccountChip mobile />
+          <div className="mobile-sheet__group">
+            <ThemeChoices compact />
+          </div>
         </div>
-      </header>
+      </div>
 
       <RouteFocus targetId="main" />
       <main id="main" tabIndex={-1} className="site-main">
@@ -128,6 +283,22 @@ export function Layout() {
       </main>
       <SiteFooter />
     </>
+  );
+}
+
+function MobileTile({ to, label, icon, end = false, active }: { to: string; label: string; icon: ReactNode; end?: boolean; active?: boolean }) {
+  return (
+    <li>
+      {active === undefined ? (
+        <NavLink to={to} end={end} className="mobile-tile">
+          {icon} <span>{label}</span>
+        </NavLink>
+      ) : (
+        <Link to={to} className={`mobile-tile${active ? " active" : ""}`} aria-current={active ? "page" : undefined}>
+          {icon} <span>{label}</span>
+        </Link>
+      )}
+    </li>
   );
 }
 
@@ -147,7 +318,7 @@ function HeaderSearch({ mobile = false }: { mobile?: boolean }) {
         Search apps
       </label>
       <IconSearch className="header-search__icon" />
-      <input id={id} type="search" placeholder="Search apps" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
+      <input id={id} type="search" placeholder={mobile ? "Search HCG Store" : "Search"} value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
     </form>
   );
 }
@@ -193,7 +364,7 @@ function SiteFooter() {
         <nav aria-label="Footer">
           <ul className="site-footer__links">
             {FOOTER_NAV.map((n) => (
-              <li key={n.to}>
+              <li key={n.to + n.label}>
                 <Link to={n.to}>{n.label}</Link>
               </li>
             ))}

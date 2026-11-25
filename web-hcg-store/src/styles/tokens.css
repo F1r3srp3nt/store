@@ -1,22 +1,49 @@
 /*
- * HCG Store design tokens. Premium dark surface: near-black obsidian, smoked glass, brushed metal,
- * fine cyan edges. Cyan is reserved for edges, focus and active states (not large fills); violet
- * only where a product's identity uses it.
+ * HCG Store design tokens (v3: themeable). Every colour the site uses comes from the channel tokens at the top of
+ * :root, so a theme (themes.css, `html[data-theme="…"]`) only redefines those channels and a few gradients; no
+ * component is duplicated per theme. Default theme: HCG Sovereign (obsidian, titanium, electric cyan, sapphire).
  *
  * Contrast (WCAG 2.2, against --surface-1 #0d1016 and the page background #05070a):
  *   --text #f4f6f9 ≈ 17.6:1 · --text-muted #b2bccb ≈ 10.4:1 · --text-faint #8c97a8 ≈ 6.4:1
  *   --cyan #45e1f5 on #05070a ≈ 12.6:1 (used for links and small labels)
+ * Each theme in themes.css keeps text ≥ 4.5:1 and links ≥ 4.5:1 on its own surfaces.
  */
 :root {
   color-scheme: dark;
+
+  /* ---- Theme channels (space-separated RGB, used as rgb(var(--x-rgb) / alpha)) ---- */
+  --accent-rgb: 69 225 245; /* electric cyan: edges, focus, links, energy */
+  --accent-2-rgb: 77 141 255; /* sapphire: secondary light, gradients */
+  --accent-3-rgb: 169 150 255; /* tertiary glow */
+  --hairline-rgb: 206 220 236; /* silver hairlines */
+  --hi-rgb: 255 255 255; /* specular highlights */
+  --surface-rgb: 18 22 30; /* glass and panels */
+  --deep-rgb: 5 7 10; /* the deepest background */
+  --shadow-rgb: 0 0 0;
+  --mint-rgb: 94 234 212;
+  --amber-rgb: 255 198 107;
+  --rose-rgb: 255 138 155;
+
+  /* Atmosphere (background engine) */
+  --atmos-1: rgb(var(--accent-rgb) / 0.07);
+  --atmos-2: rgb(var(--accent-2-rgb) / 0.06);
+  --atmos-3: rgb(var(--accent-3-rgb) / 0.035);
+  --bg-top: #080a0f;
+  --grid-rgb: var(--accent-rgb);
+  --grid-alpha: 0.05;
+  --circuit-alpha: 0.07;
+  --emblem-alpha: 0.035;
+  --particle-rgb: var(--accent-rgb);
+  --energy-rgb: var(--accent-rgb);
+  --theme-color: #05070c;
 
   /* Surfaces */
   --obsidian: #05070a;
   --surface-0: #080a0f;
   --surface-1: #0d1016;
   --surface-2: #131720;
-  --glass: rgba(18, 22, 30, 0.72);
-  --glass-strong: rgba(12, 15, 21, 0.9);
+  --glass: rgb(var(--surface-rgb) / 0.72);
+  --glass-strong: rgb(var(--surface-rgb) / 0.9);
   /* Legacy aliases used by existing components (now neutral graphite, not navy). */
   --navy-950: #07090d;
   --navy-900: #0d1016;
@@ -24,29 +51,29 @@
   --navy-800: #171c26;
 
   /* Lines: silver hairlines; cyan only for edges that matter. */
-  --line: rgba(206, 220, 236, 0.075);
-  --line-strong: rgba(206, 220, 236, 0.15);
-  --edge-cyan: rgba(69, 225, 245, 0.42);
-  --grid-line: rgba(160, 200, 230, 0.025);
+  --line: rgb(var(--hairline-rgb) / 0.075);
+  --line-strong: rgb(var(--hairline-rgb) / 0.15);
+  --edge-cyan: rgb(var(--accent-rgb) / 0.42);
+  --grid-line: rgb(var(--hairline-rgb) / 0.025);
 
   /* Accents */
-  --cyan: #45e1f5;
+  --cyan: rgb(var(--accent-rgb));
   --cyan-600: #1fb3cc;
-  --cyan-soft: rgba(69, 225, 245, 0.09);
-  --cyan-glow: rgba(69, 225, 245, 0.28);
+  --cyan-soft: rgb(var(--accent-rgb) / 0.09);
+  --cyan-glow: rgb(var(--accent-rgb) / 0.28);
   --violet: #a996ff;
   --violet-soft: rgba(169, 150, 255, 0.1);
   --amber: #ffc978;
-  --amber-soft: rgba(255, 201, 120, 0.1);
+  --amber-soft: rgb(var(--amber-rgb) / 0.1);
   --mint: #6ee7d2;
-  --mint-soft: rgba(110, 231, 210, 0.1);
+  --mint-soft: rgb(var(--mint-rgb) / 0.1);
   --rose: #ff8fa0;
-  --rose-soft: rgba(255, 143, 160, 0.1);
+  --rose-soft: rgb(var(--rose-rgb) / 0.1);
 
   /* Metal */
   --metal: linear-gradient(180deg, #f7f9fc 0%, #d3dae4 42%, #9aa6b6 54%, #e4e9f0 100%);
   --metal-button: linear-gradient(180deg, #f2f5f9 0%, #d7dde6 48%, #b9c2ce 100%);
-  --metal-edge: linear-gradient(135deg, rgba(235, 242, 250, 0.35), rgba(140, 155, 175, 0.06) 42%, rgba(69, 225, 245, 0.28));
+  --metal-edge: linear-gradient(135deg, rgb(var(--hi-rgb) / 0.32), rgb(var(--hairline-rgb) / 0.05) 42%, rgb(var(--accent-rgb) / 0.28));
 
   /* Text */
   --text: #f4f6f9;
@@ -72,7 +99,11 @@
   --t: 240ms;
 
   --focus-ring: 0 0 0 2px var(--obsidian), 0 0 0 4px var(--cyan);
-  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 22px 50px -28px rgba(0, 0, 0, 0.9);
+  --button-text: #070a0f; /* text on metal buttons */
+  --accent-ink: #031018; /* text on accent-filled buttons */
+  --accent-light: color-mix(in srgb, var(--cyan) 55%, white);
+  --link-hover: color-mix(in srgb, var(--cyan) 60%, white);
+  --shadow-panel: 0 1px 0 rgb(var(--hi-rgb) / 0.035) inset, 0 22px 50px -28px rgb(var(--shadow-rgb) / 0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -80,4 +111,10 @@
     --t-fast: 0ms;
     --t: 0ms;
   }
+}
+
+/* Decorative effects switched off by the visitor (theme menu): the same as reduced motion for decoration. */
+:root[data-effects="off"] {
+  --t-fast: 0ms;
+  --t: 0ms;
 }

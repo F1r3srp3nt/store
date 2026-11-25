@@ -1,0 +1,7 @@
+{
+  "$comment": "TEST FIXTURE storefront configuration. Empty lists fall back to the catalogue's own collections.",
+  "schemaVersion": 1,
+  "hero": { "spotlight": [], "rotateSeconds": 7 },
+  "featured": [],
+  "sections": ["new-releases", "recently-updated", "featured", "categories", "upcoming", "ecosystem", "developer-tools", "security", "infrastructure", "productivity", "unleashed", "news", "campaigns"]
+}

@@ -138,7 +138,14 @@ export const ProductArtworkSchema = z.strictObject({
   icon: ArtworkImageSchema.nullable().default(null),
   cover: ArtworkImageSchema.nullable().default(null),
   /** Accent used for the product's branded fallback and highlights (restrained). */
-  accent: z.enum(["cyan", "violet", "silver", "mint", "amber"]).default("cyan"),
+  accent: z.enum(["cyan", "violet", "silver", "mint", "amber", "crimson"]).default("cyan"),
+  /**
+   * The product page's visual atmosphere (v3), a presentation choice derived from the product's approved branding.
+   * Decorative only: it never changes metadata, prices, controls or availability.
+   */
+  atmosphere: z
+    .enum(["default", "infrastructure", "security", "fabrication", "rpg", "terminal", "signal", "media", "markets", "crimson"])
+    .default("default"),
   /**
    * "app": a full-bleed app icon, shown with the platform's rounded mask.
    * "framed": the artwork draws its own frame, so it is shown whole (no mask, no extra ring).
@@ -186,7 +193,7 @@ export const ProductSchema = z.strictObject({
   plannedFeatures: z.array(text).default([]),
   /** Requirements as declared by the build configuration (OS versions, jailbreak layout, …). */
   requirements: z.array(text).default([]),
-  artwork: ProductArtworkSchema.default({ icon: null, cover: null, accent: "cyan", iconStyle: "app" }),
+  artwork: ProductArtworkSchema.default({ icon: null, cover: null, accent: "cyan", atmosphere: "default", iconStyle: "app" }),
   /** Curated storefront collections. Content decision, kept here rather than in components. */
   collections: z.array(z.enum(["featured", "jailbreak", "developer-tools"])).default([]),
   /**
@@ -210,6 +217,14 @@ export const ProductSchema = z.strictObject({
   support: z.array(publicLink).default([]),
   /** Other HCG products that work with this one (catalogue IDs). */
   relatedProducts: z.array(kebab).default([]),
+  /**
+   * Integrations the product's own data states (v3 ecosystem explorer). `with` is a catalogue product ID or an HCG
+   * system ("hcg-connect", "hcg-repo"). "available" is allowed only when both sides have an approved current release
+   * (checked by validateCatalogue); everything else is "planned".
+   */
+  integrations: z
+    .array(z.strictObject({ with: kebab, status: z.enum(["available", "planned"]), note: text }))
+    .default([]),
 });
 
 export const ArtifactSchema = z

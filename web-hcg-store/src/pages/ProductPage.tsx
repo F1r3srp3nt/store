@@ -11,7 +11,7 @@ import {
 } from "../components/Icons";
 import { MediaImage } from "../components/MediaImage";
 import { PageMeta } from "../components/PageMeta";
-import { ProductBanner, ProductMark } from "../components/ProductArt";
+import { ACCENT_RGB, ProductBanner, ProductMark } from "../components/ProductArt";
 import { ReleasePanel } from "../components/Release";
 import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
@@ -59,7 +59,12 @@ function ProductDetail({
   return (
     <>
       <PageMeta title={product.name} description={product.summary} />
-      <div className="page-width page-pad">
+      {/* The product's atmosphere is decoration behind the page; it never changes controls, prices or availability. */}
+      <div
+        className="page-width page-pad product-atmos"
+        data-atmosphere={product.artwork.atmosphere}
+        style={{ ["--card-accent-rgb" as string]: ACCENT_RGB[product.artwork.accent] }}
+      >
         <nav aria-label="Breadcrumb" className="breadcrumb">
           <ol>
             <li>

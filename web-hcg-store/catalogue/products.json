@@ -81,7 +81,8 @@
           "avif": true
         },
         "accent": "violet",
-        "iconStyle": "framed"
+        "iconStyle": "framed",
+        "atmosphere": "rpg"
       },
       "currentFeatures": [
         "Quest engine with realms, XP ledger and levels (automated tests)",
@@ -96,7 +97,14 @@
       "requirements": [
         "macOS 14.0 or later"
       ],
-      "family": "hcg-lifeos"
+      "family": "hcg-lifeos",
+      "integrations": [
+        {
+          "with": "hcg-connect",
+          "status": "planned",
+          "note": "HCG Connect sign-in and sync: the app side is built; the HCG website side is not deployed."
+        }
+      ]
     },
     {
       "id": "hcg-mail",
@@ -362,7 +370,8 @@
           "avif": true
         },
         "accent": "amber",
-        "iconStyle": "framed"
+        "iconStyle": "framed",
+        "atmosphere": "markets"
       },
       "currentFeatures": [
         "Simulated market engine and simulated account",
@@ -375,6 +384,13 @@
       ],
       "requirements": [
         "macOS 15 or later on Apple Silicon"
+      ],
+      "integrations": [
+        {
+          "with": "hcg-connect",
+          "status": "planned",
+          "note": "HCG Connect sign-in."
+        }
       ]
     },
     {
@@ -475,7 +491,8 @@
           ],
           "avif": true
         },
-        "accent": "silver"
+        "accent": "silver",
+        "atmosphere": "media"
       },
       "currentFeatures": [
         "Core library (HCGNewsKit) implemented and covered by automated tests"
@@ -645,7 +662,8 @@
           "avif": true
         },
         "accent": "cyan",
-        "iconStyle": "framed"
+        "iconStyle": "framed",
+        "atmosphere": "fabrication"
       },
       "currentFeatures": [
         "Imports a ZIP or folder and inspects it without executing any of its code",
@@ -673,7 +691,7 @@
         "HCG Server (working title) connects computers you own. A macOS management app and a host agent that runs independently of the window pair your devices, keep storage to folders you approve and move files between them with verified, resumable transfers.",
         "Services can be assigned to a device and handed over manually, with eligibility checks that name what blocks a handover. Automatic takeover is deliberately unavailable."
       ],
-      "category": "developer-tools",
+      "category": "infrastructure",
       "tags": [
         "devices",
         "storage",
@@ -730,7 +748,8 @@
           ],
           "avif": true
         },
-        "accent": "cyan"
+        "accent": "cyan",
+        "atmosphere": "infrastructure"
       },
       "currentFeatures": [
         "Device identity: a persistent device ID with an ECDSA P-256 key pair kept in the macOS login Keychain",
@@ -750,6 +769,13 @@
       ],
       "relatedProducts": [
         "hcg-executable-maker"
+      ],
+      "integrations": [
+        {
+          "with": "hcg-executable-maker",
+          "status": "planned",
+          "note": "Packaged with HCG Executable Maker’s packaging contract, which is not released yet."
+        }
       ]
     },
     {
@@ -1052,7 +1078,8 @@
             }
           ]
         },
-        "accent": "cyan"
+        "accent": "cyan",
+        "atmosphere": "terminal"
       },
       "currentFeatures": [
         "SSH connections with host-key verification, connection test and reconnect",
@@ -1069,6 +1096,13 @@
       "requirements": [
         "iOS or iPadOS 17.0 or later",
         "Unleashed: a supported jailbroken device; installed as a package from HCG Repo"
+      ],
+      "integrations": [
+        {
+          "with": "hcg-repo",
+          "status": "planned",
+          "note": "HCG Terminal Unleashed is installed as a package from HCG Repo."
+        }
       ]
     },
     {
@@ -1208,7 +1242,8 @@
           ],
           "avif": true
         },
-        "accent": "violet"
+        "accent": "violet",
+        "atmosphere": "signal"
       },
       "currentFeatures": [
         "Searchable shortcuts, workspaces and recent actions, with presets for Command, Developer, Studio and Infrastructure",
@@ -1225,6 +1260,23 @@
       "requirements": [
         "App: iOS or iPadOS 14.0 or later",
         "Jailbreak package: rootless jailbreak on iOS 15.0 or later, with mobilesubstrate or ElleKit and PreferenceLoader"
+      ],
+      "integrations": [
+        {
+          "with": "hcg-terminal",
+          "status": "planned",
+          "note": "Deep links to HCG Terminal."
+        },
+        {
+          "with": "hcg-news",
+          "status": "planned",
+          "note": "Deep links to HCG News."
+        },
+        {
+          "with": "hcg-repo",
+          "status": "planned",
+          "note": "Jailbreak edition packaged for HCG Repo."
+        }
       ]
     },
     {
@@ -1325,7 +1377,8 @@
             }
           ]
         },
-        "accent": "mint"
+        "accent": "mint",
+        "atmosphere": "security"
       },
       "currentFeatures": [
         "Check My Network: DNS, HTTPS, captive-portal, proxy and Wi-Fi checks",
@@ -1342,6 +1395,13 @@
       "requirements": [
         "iPhone or iPad with iOS or iPadOS 14.7 or later (iOS 15.0 or later for the HCGSentinelModern build)",
         "Development-signed install with Xcode or Apple Configurator; no jailbreak package"
+      ],
+      "integrations": [
+        {
+          "with": "hcg-server",
+          "status": "planned",
+          "note": "Security Lab execution on a paired HCG Server."
+        }
       ]
     },
     {
@@ -1518,6 +1578,13 @@
       "requirements": [
         "Desktop: macOS 12.0 or later on Apple Silicon (arm64)",
         "Local web app: runs on your own computer"
+      ],
+      "integrations": [
+        {
+          "with": "hcg-connect",
+          "status": "planned",
+          "note": "HCG Connect accounts."
+        }
       ]
     },
     {
