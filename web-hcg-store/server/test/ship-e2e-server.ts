@@ -11,6 +11,7 @@
  *   POST /revoke-all {sub}                     HCG revokes everything for a person
  *   POST /token      {sub}                     an access token HCG Connect issued to the desktop client for <sub>
  *   POST /approve    {releaseId, eligibility, confirm, approver}   an approver signs in to the Store in a browser and approves
+ *   POST /publish    {releaseId, confirm, publisher, supersede?}   a person (not the creator) publishes an approved public release
  *   POST /review     {releaseId, reviewer}     a person signs in to the Store in a browser, opens the draft's review page
  *                                              and presses "Download to review" for each verified file (SHA-256 of the bytes)
  */
@@ -128,6 +129,12 @@ const control = createServer(async (req, res) => {
       const page = await c.get(`/publishing/releases/${b.releaseId}`);
       const r = await c.post(`/api/v1/publishing/releases/${b.releaseId}/approve`, { eligibility: b.eligibility, confirm: b.confirm });
       return out(r.status, { reviewPageStatus: page.status, reviewPage: await page.text(), result: await r.json() });
+    }
+    if (req.url === "/publish") {
+      // Publication is a separate, explicit step after approval, in a browser.
+      const c = await browserSignIn(b.publisher!);
+      const r = await c.post(`/api/v1/publishing/releases/${b.releaseId}/publish`, { confirm: b.confirm, supersede: String(b.supersede) === "true" });
+      return out(r.status, { result: await r.json() });
     }
     out(404, {});
   } catch (e) {

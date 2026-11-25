@@ -4,6 +4,9 @@
  * review: a person HCG allows to approve the product, other than the creator, typing the version, recorded in the
  * hash-chained audit. Generating the catalogue from these records adds no second review.
  *
+ * Only releases a person also PUBLISHED (the explicit step after approval) are exported, including those later
+ * superseded or withdrawn; an approved but unpublished release is not.
+ *
  * The export never contains a file location, a download URL, an account ID or a token. It is refused when the audit
  * chain does not verify.
  */
@@ -38,9 +41,14 @@ export interface ReleaseRecord {
   build: string;
   channel: string;
   distribution: string;
+  /** "approved" (published, possibly superseded since) or "withdrawn", as the catalogue knows them. */
   status: "approved" | "withdrawn";
+  /** The Store's own lifecycle state. */
+  lifecycle?: "published" | "superseded" | "withdrawn";
   approvedAt: number;
-  /** The approver chose, at approval, to make this the product's current release in the catalogue. */
+  /** Absent in exports made before the publication step existed. */
+  publishedAt?: number;
+  /** The person publishing (or approving) chose to make this the product's current release in the catalogue. */
   current: boolean;
   /** Hash of the `release.approved` audit entry (the review record). */
   approvalAudit: string;
@@ -74,13 +82,14 @@ export function auditChainIntact(db: ReadDb): boolean {
 export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExport {
   const releases = db
     .prepare(
-      `SELECT id, product_id, edition_id, version, build, channel, distribution, status, approved_at, updated_at, withdrawn_reason, release_notes
-       FROM pub_releases WHERE approved_eligibility = 'public' AND status IN ('approved', 'withdrawn') AND product_source = 'catalogue'
-       ORDER BY approved_at, id`,
+      `SELECT id, product_id, edition_id, version, build, channel, distribution, status, approved_at, published_at, updated_at, withdrawn_reason, release_notes
+       FROM pub_releases WHERE approved_eligibility = 'public' AND published_at IS NOT NULL AND status IN ('published', 'superseded', 'withdrawn')
+         AND product_source = 'catalogue'
+       ORDER BY published_at, id`,
     )
     .all() as {
     id: string; product_id: string; edition_id: string | null; version: string; build: string; channel: string; distribution: string;
-    status: "approved" | "withdrawn"; approved_at: number; updated_at: number; withdrawn_reason: string | null; release_notes: string;
+    status: "published" | "superseded" | "withdrawn"; approved_at: number; published_at: number; updated_at: number; withdrawn_reason: string | null; release_notes: string;
   }[];
   const records: ReleaseRecord[] = [];
   for (const r of releases) {
@@ -90,13 +99,18 @@ export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExp
     if (!approval) continue; // no review record: never exported
     const detail = JSON.parse(approval.detail) as { eligibility?: string; current?: boolean };
     if (detail.eligibility !== "public") continue;
+    const publication = db
+      .prepare("SELECT detail FROM pub_audit WHERE action = 'release.published' AND release_id = ? ORDER BY seq DESC LIMIT 1")
+      .get(r.id) as { detail: string } | undefined;
+    if (!publication) continue; // never published: not exported
+    const published = JSON.parse(publication.detail) as { current?: boolean };
     const artifacts = (
       db
         .prepare(
-          `SELECT id, platform, format, file_name, architectures, minimum_os, size_bytes, sha256, signing_reported
-           FROM pub_artifacts WHERE release_id = ? AND status = 'verified' ORDER BY created_at, id`,
+          `SELECT id, platform, format, file_name, architectures, minimum_os, size_bytes, sha256, signing_reported, provenance
+           FROM pub_artifacts WHERE release_id = ? AND status = 'verified' AND format NOT IN ('aab') ORDER BY created_at, id`,
         )
-        .all(r.id) as { id: string; platform: string; format: string; file_name: string; architectures: string; minimum_os: string | null; size_bytes: number; sha256: string; signing_reported: string }[]
+        .all(r.id) as { id: string; platform: string; format: string; file_name: string; architectures: string; minimum_os: string | null; size_bytes: number; sha256: string; signing_reported: string; provenance: string | null }[]
     ).map((a) => ({
       id: a.id,
       platform: a.platform,
@@ -107,6 +121,7 @@ export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExp
       sizeBytes: a.size_bytes,
       sha256: a.sha256,
       signingReported: JSON.parse(a.signing_reported) as ReleaseRecordArtifact["signingReported"],
+      provenance: a.provenance ? (({ sourceCommit, buildProvider, toolchain }) => ({ sourceCommit, buildProvider, toolchain }))(JSON.parse(a.provenance) as { sourceCommit: string | null; buildProvider: string | null; toolchain: string | null }) : null,
     }));
     records.push({
       storeReleaseId: r.id,
@@ -116,9 +131,11 @@ export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExp
       build: r.build,
       channel: r.channel,
       distribution: r.distribution,
-      status: r.status,
+      status: r.status === "withdrawn" ? "withdrawn" : "approved",
+      lifecycle: r.status,
       approvedAt: r.approved_at,
-      current: detail.current === true,
+      publishedAt: r.published_at,
+      current: published.current === true && r.status === "published",
       approvalAudit: approval.hash,
       withdrawnAt: r.status === "withdrawn" ? r.updated_at : null,
       withdrawnReason: r.status === "withdrawn" ? r.withdrawn_reason : null,

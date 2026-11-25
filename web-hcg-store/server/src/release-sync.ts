@@ -74,7 +74,7 @@ export function syncReleases(existing: Release[], products: SyncProduct[], expor
       channel: ((live[0] ?? first).channel) as Release["channel"],
       status: live.length ? "approved" : "withdrawn",
       withdrawnReason: live.length ? null : records.map((r) => r.withdrawnReason ?? "Withdrawn in HCG Store.").join(" "),
-      releaseDate: new Date((live[0] ?? first).approvedAt).toISOString().slice(0, 10),
+      releaseDate: new Date((live[0] ?? first).publishedAt ?? (live[0] ?? first).approvedAt).toISOString().slice(0, 10),
       releaseNotes: [...new Set(records.flatMap((r) => r.releaseNotes))],
       knownLimitations: [],
       artifacts: (live.length ? live : []).flatMap((r) =>
