@@ -55,7 +55,9 @@ change adds; nothing that worked was replaced.
    details gets the existing draft back (`200`, `reused: true`); different details → `409 draft_exists` naming the draft;
    a submitted/approved/withdrawn release → `409 version_exists`.
 3. **Each file**: declared (name, platform, format, size, SHA-256, architectures, minimum OS, the uploader's signature
-   and notarisation result, Debian control fields) → **scoped upload URL** (HMAC, one file, one person, 15 min) →
+   and notarisation result, Debian control fields, and **build provenance**: source commit, build provider — `local`,
+   `github-actions` or `hcg-server-build-host` — toolchain and the uploader's own validation report; optionally the
+   file it `replaces`) → **scoped upload URL** (HMAC, one file, one person, 15 min) →
    chunks with `Content-Range`, resumable at the last confirmed byte (`GET` the URL for the offset; expired URLs are
    renewed without losing bytes) → **complete**: the Store recomputes SHA-256, checks the format and archive safety,
    then moves the file to `releases/<product>/<release>/<sha-prefix>/<file>` (mode 0444). Rejected files are deleted
@@ -64,10 +66,35 @@ change adds; nothing that worked was replaced.
    label, with **Download to review** for people HCG allows to publish or approve the product (short-lived grant,
    re-checked at use, audited as `approver-review`). Customers get 404, anonymous visitors 401. Uploading never makes
    a file public.
-5. **Submit** locks the draft. **Approval is manual**: only in a browser session in HCG Store, by someone with the
-   approver permission, typing the version; **public** additionally needs a different person than the creator and a
-   catalogue product with a central ID. Desktop tokens cannot approve.
-6. **Withdraw** (rollback): delivery stops on the next request, including links already issued; files and audit stay.
+5. **Submit** needs release notes and, on every verified file, the source commit, build provider and toolchain
+   (`409 provenance_required` names the files; drafts without them still work, so older Maker versions can upload). The
+   source repository is never asked for: a private repository stays private. **Approval is manual**: only in a browser
+   session in HCG Store, by someone with the approver permission, typing the version; **public** additionally needs a
+   different person than the creator and a catalogue product with a central ID. Desktop tokens cannot approve.
+6. **Publish** (public releases only) is a separate, explicit step after approval, on the review page or the Release
+   Manager: browser session, approver permission, a person other than the creator, typed version. The publisher may
+   choose to **supersede** the edition's currently published releases. Nothing is published automatically, and nothing
+   is delivered to customers, listed for HCG Repo/Sileo or exported to the catalogue before publication. Internal-testing
+   releases are delivered to testers once approved.
+7. **Changing files invalidates approval.** Adding, replacing or removing a file of a submitted or approved (not yet
+   published) release takes it back to draft, clears the approval and records `release.approval-invalidated`; it must be
+   submitted and approved again. Published, superseded and withdrawn releases accept no file changes; verified files
+   themselves are immutable (database triggers) and a replaced file is kept, outside the release.
+8. **Withdraw** (rollback): delivery stops on the next request, including links already issued; files and audit stay.
+
+### 3b. Release Manager
+
+Stages (`stage` on every release, derived, never stored): draft → validation pending (an upload in progress) →
+validation failed (only rejected files) / artifacts uploaded → awaiting approval → approved → **published** →
+superseded; withdrawn from any stage. `/release-manager` (signed in) lists every release of every product the account
+may publish or approve (`GET /api/v1/publishing/manager`), grouped by product as a version history, and offers:
+- **Review, approve or publish**: the review page; approval and publication are never done from the list.
+- **Verify checksums** (`POST …/releases/:id/verify-checksums`): re-hashes the stored files against their recorded
+  SHA-256 (audited); a mismatch answers `409` with the files named.
+- **Compare** (`GET /api/v1/publishing/compare?from=&to=`): changed fields, release notes added/removed, and files
+  added, removed, changed (size and SHA-256, provenance) or identical, matched by platform, format and architectures.
+
+Superseded releases stay in the history and the catalogue, but are no longer delivered (`410 superseded`).
 
 ### 3a. Release review and catalogue records
 
@@ -76,8 +103,9 @@ The manual approval in HCG Store **is** the release review. There is no second, 
   other than the creator (`separation_of_duties`) and a product with a central ID;
 - each step is in the append-only, hash-chained publishing audit (database triggers forbid update and delete).
 
-Delivery follows the approval at once: approved public files are served through the gated download paths, and a
-withdrawal stops them, with or without a catalogue change.
+Delivery follows **publication** (the explicit step after approval): published public files are served through the
+gated download paths, and a withdrawal stops them, with or without a catalogue change. Only published releases (also
+those later superseded or withdrawn) are exported to the catalogue.
 
 `catalogue/releases.json` is still needed for the public storefront's release pages (version, notes, files and
 checksums, never a URL). It is **generated** from the approval records:
@@ -86,7 +114,8 @@ checksums, never a URL). It is **generated** from the approval records:
   and rewrites only the generated entries (`source.kind: "hcg-store-approval"`, each with the approval's audit hash).
   Hand-written entries are kept. `--check` only reports whether the catalogue is behind.
 - Releases of the same product and version (several editions or builds) become one catalogue release.
-- `currentReleaseId` changes only when the approver ticked **make current** at approval (recorded in the audit),
+- `currentReleaseId` changes only when the person publishing chose **make current** (at publication, or at approval
+  when publication did not say; recorded in the audit),
   never because a version is newer, and is cleared when that release is withdrawn.
 - Signing facts are labelled as reported by the uploading tool, not verified by the Store.
 - Committing the regenerated files publishes what was already approved; the commit is not a review.
@@ -97,7 +126,12 @@ created either feature, **no eligible approver exists today**, so no release can
 production. The founder must have HCG grant `store.release.approve` to at least one person other than the publisher.
 
 Supported files: Windows EXE/MSI/MSIX/ZIP, macOS app ZIP/DMG/PKG, iOS/iPadOS IPA (and jailbreak DEB), Linux
-DEB/RPM/AppImage. Checks: allow-listed extension per platform; magic bytes (MZ/PE, OLE, UDIF `koly`, `xar!`, RPM lead,
+DEB/RPM/AppImage, Android APK and App Bundle (AAB). An **APK** must contain `AndroidManifest.xml` and `classes.dex`; its
+signature structure (v1 `META-INF/*.RSA|DSA|EC` or the v2+ APK Signing Block) is reported as present, never verified;
+an unsigned APK blocks public approval. An **App Bundle** must contain `base/manifest/AndroidManifest.xml`; it is for
+authorised distribution (such as Google Play) only: publishers and approvers can download it to review, customers never
+(`403 staff_only`), and it is left out of Sileo, HCG Repo listings and the catalogue export. IPAs are likewise never
+assumed to install directly: their label follows the provisioning profile. Checks: allow-listed extension per platform; magic bytes (MZ/PE, OLE, UDIF `koly`, `xar!`, RPM lead,
 ELF+AppImage type 2, ar+`debian-binary`); ZIP/IPA/MSIX entries (absolute paths, `..`, backslashes, drive letters,
 control characters, symlinks, encryption, expansion ratio, total size); IPA must contain `Payload/<app>.app/Info.plist`
 only (plus Apple's Symbols/SwiftSupport); MSIX needs `AppxManifest.xml`; macOS ZIP needs a top-level `.app` with

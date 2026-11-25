@@ -18,6 +18,7 @@ type ServerStub = null | {
   session: { configured: boolean; signedIn: boolean; user?: { sub: string; email: string; name: string } };
   access?: (slug: string) => EditionAccess[];
   library?: unknown;
+  manager?: unknown;
 };
 let server: ServerStub = null;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -34,6 +35,7 @@ beforeEach(() => {
         return json({ status: "ok", mode: "test", hcgConnect: "configured", entitlementAuthority: "test-ledger", payments: "test-mode", protectedDownloads: "disabled" });
       const m = /\/api\/v1\/products\/([a-z0-9-]+)\/access$/.exec(path);
       if (m) return json({ productId: m[1], signedIn: server.session.signedIn, editions: server.access?.(m[1]!) ?? [] });
+      if (path.endsWith("/api/v1/publishing/manager")) return server.manager ? json(server.manager) : json({ error: { code: "publishing_disabled", message: "Publishing is not enabled on this Store." } }, 404);
       if (path.endsWith("/api/v1/library")) return server.library ? json(server.library) : json({ error: { code: "sign_in_required", message: "Sign in" } }, 401);
       return json({ error: { code: "not_found", message: "Not found." } }, 404);
     }),
@@ -435,5 +437,43 @@ describe("store pages with release data (test fixture)", () => {
     renderAt("/apps/fixture-pocket-relay", fixtureCatalogue());
     await screen.findByRole("heading", { level: 1, name: "Fixture Pocket Relay" });
     expect(screen.getByText(/Downloading an .ipa file does not install it/)).toBeInTheDocument();
+  });
+});
+
+describe("Release Manager", () => {
+  const signedIn = { configured: true, signedIn: true, user: { sub: "u", email: "u@example.test", name: "U" } };
+  const rel = (over: Record<string, unknown>) => ({
+    id: "rel-0000000000000001", productId: "hcg-terminal", productTitle: "HCG Terminal", productSource: "catalogue", editionId: "standard",
+    version: "1.0.0", build: "1", channel: "beta", status: "approved", stage: "approved", approvedEligibility: "public", requestedEligibility: "public",
+    distribution: "paid", createdAt: 1, submittedAt: 2, approvedAt: Date.UTC(2026, 10, 20), publishedAt: null, supersededBy: null, withdrawnReason: null,
+    files: 2, reviewUrl: "https://store.example/publishing/releases/rel-0000000000000001", mayApprove: true, mayPublish: false, ...over,
+  });
+
+  it("asks signed-out visitors to sign in and says when publishing is off", async () => {
+    server = { session: { configured: true, signedIn: false } };
+    renderAt("/release-manager");
+    expect(await screen.findByRole("heading", { name: /Sign in to manage releases/ })).toBeInTheDocument();
+    cleanup();
+    server = { session: signedIn };
+    renderAt("/release-manager");
+    expect(await screen.findByText("Publishing is not enabled on this Store yet.")).toBeInTheDocument();
+  });
+
+  it("groups releases by product with their stage, and approves or publishes nothing itself", async () => {
+    server = { session: signedIn, manager: { auditIntact: true, releases: [rel({}), rel({ id: "rel-0000000000000002", version: "0.9.0", stage: "superseded", status: "superseded", mayApprove: false })] } };
+    const { container } = renderAt("/release-manager");
+    expect(await screen.findByRole("heading", { level: 2, name: "HCG Terminal" })).toBeInTheDocument();
+    expect([...container.querySelectorAll(".rm-release .badge")].map((b) => b.textContent)).toEqual(["Approved, not published", "Superseded"]);
+    expect(screen.getByRole("link", { name: "Review, approve or publish" })).toHaveAttribute("href", "https://store.example/publishing/releases/rel-0000000000000001");
+    expect(screen.getByRole("button", { name: "Compare with 0.9.0 (1)" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(approve|publish)$/i })).toBeNull();
+    expect(container.textContent).not.toMatch(/downloads?\s+\d|installed/i);
+  });
+
+  it("warns when the audit chain does not verify, and explains an empty list without implying a purchase grants rights", async () => {
+    server = { session: signedIn, manager: { auditIntact: false, releases: [] } };
+    renderAt("/release-manager");
+    expect(await screen.findByText(/audit chain does not verify/)).toBeInTheDocument();
+    expect(screen.getByText(/Buying a product never grants either/)).toBeInTheDocument();
   });
 });

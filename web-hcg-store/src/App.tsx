@@ -8,6 +8,7 @@ import { BrowsePage } from "./pages/BrowsePage";
 import { CheckoutReturnPage } from "./pages/CheckoutReturnPage";
 import { GettingStartedPage } from "./pages/GettingStartedPage";
 import { HomePage } from "./pages/HomePage";
+import { ReleaseManagerPage } from "./pages/ReleaseManagerPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProductPage } from "./pages/ProductPage";
@@ -25,6 +26,7 @@ export function AppRoutes() {
         <Route path="getting-started" element={<GettingStartedPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="library" element={<LibraryPage />} />
+        <Route path="release-manager" element={<ReleaseManagerPage />} />
         <Route path="checkout/return" element={<CheckoutReturnPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

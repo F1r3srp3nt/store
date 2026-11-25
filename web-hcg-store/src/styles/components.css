@@ -1196,3 +1196,13 @@
   gap: 8px;
   margin-top: 12px;
 }
+
+/* Release Manager (Ship to Store) */
+.rm-filter { margin: 0 0 1rem; }
+.rm-filter select { margin-left: 0.5rem; max-width: 100%; }
+.rm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.rm-release { border-top: 1px solid var(--line-strong); padding-top: 1rem; min-width: 0; }
+.rm-release__head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; }
+.rm-release__head h3 { margin: 0; overflow-wrap: anywhere; }
+.rm-release__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.rm-compare { margin-top: 0.75rem; overflow-wrap: anywhere; }
