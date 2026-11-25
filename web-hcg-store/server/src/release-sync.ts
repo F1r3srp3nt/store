@@ -89,6 +89,9 @@ export function syncReleases(existing: Release[], products: SyncProduct[], expor
           minimumOs: a.minimumOs,
           signing: signing(a.signingReported),
           editionId: r.editionId,
+          sourceCommit: a.provenance?.sourceCommit ?? null,
+          buildProvider: (a.provenance?.buildProvider ?? null) as Release["artifacts"][number]["buildProvider"],
+          toolchain: a.provenance?.toolchain ?? null,
         })),
       ),
       source: {

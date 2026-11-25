@@ -26,6 +26,8 @@ export interface ReleaseRecordArtifact {
   sizeBytes: number;
   sha256: string;
   signingReported: { status: string; evidence: string | null; tool: string | null };
+  /** Build provenance reported at upload (source commit, build provider, toolchain); null for older uploads. */
+  provenance?: { sourceCommit: string | null; buildProvider: string | null; toolchain: string | null } | null;
 }
 
 export interface ReleaseRecord {

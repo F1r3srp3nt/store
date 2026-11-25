@@ -112,6 +112,18 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
       else if (successor.supersededBy) errors.push(`Product "${product.id}" is superseded by "${successor.id}", which is itself superseded.`);
       if (product.collections.length) errors.push(`Superseded product "${product.id}" must not be in storefront collections.`);
     }
+    for (const rel of product.relatedProducts) {
+      if (rel === product.id) errors.push(`Product "${product.id}" lists itself as related.`);
+      else if (!byId.has(rel)) errors.push(`Product "${product.id}" lists unknown related product "${rel}".`);
+      else if (byId.get(rel)!.visibility === "draft") errors.push(`Product "${product.id}" links to draft product "${rel}", which has no page.`);
+    }
+    if (new Set(product.relatedProducts).size !== product.relatedProducts.length) errors.push(`Product "${product.id}" lists a related product twice.`);
+    if (product.visibility === "draft") {
+      if (product.currentReleaseId) errors.push(`Draft product "${product.id}" cannot have a current release.`);
+      if (product.collections.length) errors.push(`Draft product "${product.id}" cannot be in storefront collections.`);
+      if (releases.some((x) => x.productId === product.id)) errors.push(`Draft product "${product.id}" cannot have releases.`);
+      if (product.hcgRepo.length) errors.push(`Draft product "${product.id}" cannot link to HCG Repo.`);
+    }
     if (product.registry.status === "central" && !product.registry.centralId) {
       errors.push(`Product "${product.id}" is marked central but has no centralId.`);
     }

@@ -41,7 +41,7 @@ describe("search and filters (shipped catalogue)", () => {
   });
 
   it("filters by category", () => {
-    expect(ids(c, q({ category: "developer-tools" })).sort()).toEqual(["hcg-executable-maker", "hcg-terminal"]);
+    expect(ids(c, q({ category: "developer-tools" })).sort()).toEqual(["hcg-executable-maker", "hcg-server", "hcg-terminal"]);
     expect(ids(c, q({ category: "security" }))).toEqual(["hcg-sentinel"]);
   });
 

@@ -15,7 +15,11 @@ const REQUESTED_NAMES = [
   "HCG Nexus",
   "HCG Sentinel",
   "HCG Clarity",
+  "HCG Server",
 ]
+
+/** Products HCG has named but not described: unlisted drafts with no details (catalogue v2). */
+const DRAFT_NAMES = ["HCG ADS", "HCG System Tester", "HCG Signal Contractor", "HCG LifeOS Companion", "HCG Representation"];
 
 describe("shipped catalogue", () => {
   const c = realCatalogue();
@@ -26,7 +30,8 @@ describe("shipped catalogue", () => {
   });
 
   it("lists exactly the requested products — no umbrella, storefront or third-party entries", () => {
-    expect(c.products.map((p) => p.name).sort()).toEqual([...REQUESTED_NAMES].sort());
+    expect(c.products.filter((p) => p.visibility === "listed").map((p) => p.name).sort()).toEqual([...REQUESTED_NAMES].sort());
+    expect(c.products.filter((p) => p.visibility === "draft").map((p) => p.name).sort()).toEqual([...DRAFT_NAMES].sort());
     const names = c.products.map((p) => p.name.toLowerCase()).join("|");
     expect(names).not.toMatch(/development tools|hcg store|appstore|unimatch/);
   });
@@ -80,6 +85,75 @@ describe("shipped catalogue", () => {
 
   it("does not expose private repository names in public data", () => {
     expect(JSON.stringify(raw.realProducts)).not.toMatch(/F1r3srp3nt\/HCG-LifeOS|F1r3srp3nt\/hcg-cardx|"note":"private"/i);
+  });
+});
+
+describe("catalogue v2", () => {
+  const c = realCatalogue();
+
+  it("keeps drafts unlisted and free of invented details", () => {
+    for (const p of c.products.filter((x) => x.visibility === "draft")) {
+      expect(p.developmentStatus, p.id).toBe("unknown");
+      expect(p.registry.centralId, p.id).toBeNull();
+      expect([p.editions, p.platforms, p.currentFeatures, p.media, p.trailers, p.hcgRepo, p.collections].every((a) => a.length === 0), p.id).toBe(true);
+      expect(p.currentReleaseId, p.id).toBeNull();
+    }
+  });
+
+  it("separates edition tier, pricing model, channel and development status, and sets them only where stated", () => {
+    const ed = (pid: string, eid: string) => c.products.find((p) => p.id === pid)!.editions.find((e) => e.id === eid)!;
+    expect(ed("hcg-terminal", "standard")).toMatchObject({ tier: "standard", pricingModel: "not-set", access: "unknown", channel: "app-store" });
+    expect(ed("hcg-terminal", "unleashed")).toMatchObject({ tier: "unleashed", access: "hcg-account", channel: "jailbreak-package" });
+    expect(ed("hcg-nexus", "jailbreak")).toMatchObject({ tier: null, pricingModel: "paid", access: "licence" });
+    // A pricing model is not a price: no offer exists for any product.
+    expect(c.products.find((p) => p.id === "hcg-nexus")!.currentReleaseId).toBeNull();
+  });
+
+  it("lists HCG Server as in development with no release", () => {
+    const s = c.products.find((p) => p.id === "hcg-server")!;
+    expect(s).toMatchObject({ visibility: "listed", developmentStatus: "in-development", currentReleaseId: null });
+    expect(s.platforms).toMatchObject([{ platform: "macos", support: "in-development", minimumOs: null }]);
+    expect(s.registry.references).toEqual([]); // the development repository is private
+  });
+
+  const base = () => ({ p: clone(raw.fixtureProducts), r: clone(raw.fixtureReleases) });
+  const errorsOf = (p: unknown, r: unknown) => {
+    const v = validateCatalogue(p, r);
+    return v.ok ? [] : v.errors.join("\n");
+  };
+
+  it("rejects drafts with releases, collections or HCG Repo links, and related products that are drafts, missing or self", () => {
+    const { p, r } = base();
+    const [a, b, d] = p.products as Record<string, unknown>[];
+    a!.visibility = "draft";
+    a!.collections = ["featured"];
+    (b as { relatedProducts: string[] }).relatedProducts = [a!.id as string, "nope", b!.id as string];
+    (d as { relatedProducts: string[] }).relatedProducts = [b!.id as string, b!.id as string];
+    const e = errorsOf(p, r);
+    expect(e).toMatch(/draft/i);
+    expect(e).toMatch(/nope/);
+    expect(e).toMatch(/itself/);
+    expect(e).toMatch(/related product twice/);
+  });
+
+  it("accepts only public https documentation and support links", () => {
+    for (const url of ["http://example.com/docs", "https://user:pw@example.com", "https://localhost/x", "https://10.0.0.2/x", "https://docs.corp.internal/x", "https://mac.local/x"]) {
+      const { p, r } = base();
+      (p.products[0] as Record<string, unknown>).documentation = [{ label: "Docs", url }];
+      expect(errorsOf(p, r), url).toMatch(/public https URL/);
+    }
+    const { p, r } = base();
+    (p.products[0] as Record<string, unknown>).support = [{ label: "Help", url: "https://example.com/help" }];
+    expect(validateCatalogue(p, r).ok).toBe(true);
+  });
+
+  it("requires provenance and a kind on trailers, and a relative path", () => {
+    const { p, r } = base();
+    (p.products[0] as Record<string, unknown>).trailers = [{ src: "https://cdn.example.com/a.mp4", title: "Trailer", kind: "recording", provenance: "x" }];
+    expect(errorsOf(p, r)).toMatch(/relative path/);
+    const ok = base();
+    (ok.p.products[0] as Record<string, unknown>).trailers = [{ src: "media/x/trailer.mp4", title: "Trailer", kind: "concept" }];
+    expect(errorsOf(ok.p, ok.r)).toMatch(/provenance/);
   });
 });
 

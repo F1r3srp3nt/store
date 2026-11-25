@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,7 +93,7 @@ describe("store pages with the shipped catalogue", () => {
       "https://repo.hakmicapitalgroup.com/products/hcg-nexus/",
     ]);
     const all = screen.getByRole("heading", { name: "All products" }).closest("section")!;
-    expect(within(all).getAllByRole("listitem")).toHaveLength(10); // RePrompter is now part of Clarity
+    expect(within(all).getAllByRole("listitem")).toHaveLength(11); // RePrompter is now part of Clarity; drafts are never listed
     expect(within(all).queryByText("HCG RePrompter")).toBeNull();
     expect(screen.getAllByText("Downloads are not available yet.", { exact: false }).length).toBeGreaterThan(0);
     // No counters, no internal labels, no download links.
@@ -132,6 +132,22 @@ describe("store pages with the shipped catalogue", () => {
     expect(screen.getAllByText("Downloads are not available yet.").length).toBeGreaterThan(0);
     expect(screen.getByText(/Development activity does not mean a downloadable build exists/)).toBeInTheDocument();
     expectNoFabrication(container);
+  });
+
+  it("catalogue v2: shows edition tier and access where stated, related products, and gives drafts no page", async () => {
+    const { container } = renderAt("/apps/hcg-terminal");
+    await screen.findByRole("heading", { level: 1, name: "HCG Terminal" });
+    expect(screen.getByText("Unleashed")).toBeInTheDocument();
+    expect(screen.getByText("Sign-in with an HCG account")).toBeInTheDocument();
+    expectNoFabrication(container);
+    cleanup();
+    renderAt("/apps/hcg-server");
+    await screen.findByRole("heading", { level: 1, name: "HCG Server" });
+    expect(screen.getByRole("link", { name: "HCG Executable Maker" })).toHaveAttribute("href", "/apps/hcg-executable-maker");
+    cleanup();
+    renderAt("/apps/hcg-ads");
+    expect(await screen.findByText(/not found|doesn.t exist|could not find/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "HCG ADS" })).toBeNull();
   });
 
   it("labels real screenshots and keeps planned features apart from current ones", async () => {
@@ -179,9 +195,9 @@ describe("store pages with the shipped catalogue", () => {
 
   it("home and browse cards show each product's banner, lazy-loaded, with the name as text", async () => {
     const { container } = renderAt("/apps");
-    await screen.findByText("10 products");
+    await screen.findByText("11 products");
     const cards = [...container.querySelectorAll("article.product-card")];
-    expect(cards).toHaveLength(10);
+    expect(cards).toHaveLength(11);
     for (const card of cards) {
       const id = card.getAttribute("data-product-id");
       const img = card.querySelector(".product-cover img")!;
@@ -227,17 +243,17 @@ describe("store pages with the shipped catalogue", () => {
   it("browse filters work and sync with the URL", async () => {
     const user = userEvent.setup();
     renderAt("/apps?platform=ios");
-    expect(await screen.findByText("6 of 10 products match")).toBeInTheDocument();
+    expect(await screen.findByText("6 of 11 products match")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "HCG CardX" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "iOS" }));
-    expect(screen.getByText("10 products")).toBeInTheDocument();
+    expect(screen.getByText("11 products")).toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search" }), "imap");
-    expect(screen.getByText("1 of 10 products match")).toBeInTheDocument();
+    expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
     await user.click(screen.getByRole("radio", { name: "Release approved" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
-    expect(screen.getByText("10 products")).toBeInTheDocument();
+    expect(screen.getByText("11 products")).toBeInTheDocument();
   });
 
   it("getting started never tells people to disable security and explains IPA installs", async () => {

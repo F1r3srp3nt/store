@@ -61,13 +61,20 @@ export function hcgRepoLinks(product: Product, editionId?: string | null) {
   return product.hcgRepo.filter((l) => editionId === undefined || l.editionId === null || l.editionId === editionId);
 }
 
-/** Products shown in listings: everything except products merged into another one. */
+/** Products shown in listings: everything except products merged into another one and draft entries. */
 export function listedProducts(c: Catalogue): Product[] {
-  return c.products.filter((p) => !p.supersededBy);
+  return c.products.filter((p) => !p.supersededBy && p.visibility !== "draft");
 }
 
 export function successorOf(c: Catalogue, product: Product): Product | null {
   return product.supersededBy ? (c.products.find((p) => p.id === product.supersededBy) ?? null) : null;
+}
+
+/** Related products the catalogue names, in its order; drafts and merged products are left out. */
+export function relatedProductsOf(c: Catalogue, product: Product): Product[] {
+  return product.relatedProducts
+    .map((id) => c.products.find((p) => p.id === id))
+    .filter((p): p is Product => !!p && p.visibility !== "draft" && !p.supersededBy);
 }
 
 export function inCollection(c: Catalogue, collection: Product["collections"][number]): Product[] {

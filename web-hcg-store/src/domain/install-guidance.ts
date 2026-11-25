@@ -68,6 +68,15 @@ export function installGuidance(format: ArtifactFormat, platform?: PlatformId): 
         steps: ["HCG Store does not yet provide Android installation guidance. Wait for an HCG-approved distribution route."],
         cautions: [DO_NOT_BYPASS],
       };
+    case "aab":
+      return {
+        title: "Android App Bundle (.aab)",
+        steps: [
+          "An App Bundle is not installed directly on a phone. It is a publishing format that an authorised store or distribution service turns into installable packages.",
+          "HCG Store keeps it for authorised distribution only.",
+        ],
+        cautions: [DO_NOT_BYPASS],
+      };
     case "appimage":
     case "deb":
     case "rpm":

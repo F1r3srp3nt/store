@@ -15,7 +15,7 @@ import { ProductBanner, ProductMark } from "../components/ProductArt";
 import { ReleasePanel } from "../components/Release";
 import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
-import { availability, findProductBySlug, successorOf } from "../domain/model";
+import { availability, findProductBySlug, relatedProductsOf, successorOf } from "../domain/model";
 import type { Product } from "../domain/schema";
 import {
   CATEGORIES,
@@ -23,6 +23,7 @@ import {
   PLATFORMS,
   PLATFORM_SUPPORT,
 } from "../domain/taxonomy";
+import { assetUrl } from "../lib/format";
 import { NotFoundContent } from "./NotFoundPage";
 
 export function ProductPage() {
@@ -30,7 +31,9 @@ export function ProductPage() {
   return (
     <CatalogueGate>
       {(c) => {
-        const product = findProductBySlug(c, slug);
+        const found = findProductBySlug(c, slug);
+        // Draft entries (named by HCG, not yet described) have no page.
+        const product = found && found.visibility !== "draft" ? found : undefined;
         return product ? (
           <ProductDetail catalogue={c} product={product} />
         ) : (
@@ -141,6 +144,34 @@ function ProductDetail({
 
         <div className="product-layout">
           <div className="product-main">
+            {product.trailers.length > 0 && (
+              <section aria-labelledby="trailer-title" className="product-gallery">
+                <h2 id="trailer-title" className="visually-hidden">
+                  Videos
+                </h2>
+                {product.trailers.map((t) => (
+                  <figure key={t.src} className="gallery-strip__item">
+                    <video
+                      className="product-trailer"
+                      src={assetUrl(t.src)}
+                      poster={t.poster ? assetUrl(t.poster) : undefined}
+                      controls
+                      preload="none"
+                      playsInline
+                    />
+                    <figcaption>
+                      {t.kind === "concept" && (
+                        <span className="art-tag art-tag--concept">
+                          Concept video
+                        </span>
+                      )}{" "}
+                      {t.title}
+                    </figcaption>
+                  </figure>
+                ))}
+              </section>
+            )}
+
             {(screenshots.length > 0 || concepts.length > 0) && (
               <section
                 aria-labelledby="gallery-title"
@@ -262,6 +293,16 @@ function ProductDetail({
                   Supported platforms have not been announced yet.
                 </p>
               )}
+              {product.hardwareRequirements.length > 0 && (
+                <>
+                  <h3 className="feature-heading">Hardware</h3>
+                  <ul className="feature-list feature-list--plain">
+                    {product.hardwareRequirements.map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
               {product.requirements.length > 0 && (
                 <>
                   <h3 className="feature-heading">Requirements</h3>
@@ -273,6 +314,8 @@ function ProductDetail({
                 </>
               )}
             </section>
+
+            <ProductResources catalogue={catalogue} product={product} />
 
             <section aria-labelledby="dev-title" className="panel panel--quiet">
               <h2 id="dev-title">Development status</h2>
@@ -293,5 +336,55 @@ function ProductDetail({
         </div>
       </div>
     </>
+  );
+}
+
+/** Documentation, support and related HCG products, only where the catalogue states them. */
+function ProductResources({
+  catalogue,
+  product,
+}: {
+  catalogue: Catalogue;
+  product: Product;
+}) {
+  const related = relatedProductsOf(catalogue, product);
+  if (!product.documentation.length && !product.support.length && !related.length) return null;
+  return (
+    <section aria-labelledby="resources-title" className="panel">
+      <h2 id="resources-title">Documentation and support</h2>
+      {[
+        ["Documentation", product.documentation],
+        ["Support", product.support],
+      ].map(([label, links]) =>
+        (links as Product["documentation"]).length ? (
+          <div key={label as string}>
+            <h3 className="feature-heading">{label as string}</h3>
+            <ul className="feature-list feature-list--plain">
+              {(links as Product["documentation"]).map((l) => (
+                <li key={l.url}>
+                  <a className="text-link" href={l.url} rel="noopener">
+                    {l.label} <IconExternal />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null,
+      )}
+      {related.length > 0 && (
+        <>
+          <h3 className="feature-heading">Works with</h3>
+          <ul className="feature-list feature-list--plain">
+            {related.map((r) => (
+              <li key={r.id}>
+                <Link className="text-link" to={`/apps/${r.slug}`}>
+                  {r.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }

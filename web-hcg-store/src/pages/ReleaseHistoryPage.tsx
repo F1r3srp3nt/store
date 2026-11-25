@@ -11,7 +11,9 @@ export function ReleaseHistoryPage() {
   return (
     <CatalogueGate>
       {(c) => {
-        const product = findProductBySlug(c, slug);
+        const found = findProductBySlug(c, slug);
+        // Draft entries (named by HCG, not yet described) have no page.
+        const product = found && found.visibility !== "draft" ? found : undefined;
         if (!product) return <NotFoundContent what="product" />;
         const history = releaseHistory(c, product);
         return (

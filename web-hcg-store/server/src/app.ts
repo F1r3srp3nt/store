@@ -218,7 +218,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
    * other protected action is still decided by HCG's /check at the moment it is requested.
    */
   async function myApps(session: Session) {
-    const known = registry.catalogue.products.filter((p) => !p.supersededBy);
+    const known = registry.catalogue.products.filter((p) => !p.supersededBy && p.visibility !== "draft");
     const candidates = known.map((p) => p.registry.centralId).filter((c): c is string => !!c);
     const acc = await authority.accountAccess({ sub: session.sub, accessToken: session.accessToken }, candidates);
     const purchasedOffers = new Set(ledger.purchasesFor(session.sub).filter((p) => p.status === "active").map((p) => p.offer_id));
