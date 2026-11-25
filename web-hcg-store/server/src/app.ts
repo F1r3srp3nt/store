@@ -295,24 +295,44 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     };
   }
 
+  /**
+   * My Library: what the account holds (licensed by HCG, or free with an HCG account), each edition's explicit current
+   * release from the catalogue, its HCG Repo link, subscriptions, purchases, invoices (none exist yet) and the Sileo
+   * connections made with this account. Nothing here says an app is installed: the Store has no device evidence.
+   */
   async function library(session: Session) {
-    const owned: { productId: string; slug: string; name: string; editionId: string | null; editionName: string | null; state: string }[] = [];
+    type Entry = {
+      productId: string; slug: string; name: string; editionId: string | null; editionName: string | null; state: string;
+      acquisition: "licensed" | "free"; licence: string; tier: string | null; pricingModel: string;
+      currentRelease: { id: string; version: string; channel: string; releaseDate: string | null } | null;
+      hcgRepoKey: string | null; channel: string | null;
+    };
+    const owned: Entry[] = [];
     let unavailable = false;
     for (const product of registry.catalogue.products) {
-      if (!product.registry.centralId) continue;
+      if (product.visibility === "draft") continue;
       for (const editionId of editionIdsOf(product)) {
+        if (!product.registry.centralId && !(registry.published?.freePublicFor(product.id, editionId) ?? []).length) continue;
         const a = await decideAccess(accessDeps, product, editionId, session);
         if (a.state === "unavailable") unavailable = true;
-        if (a.owned) {
-          owned.push({
-            productId: product.id,
-            slug: product.slug,
-            name: product.name,
-            editionId,
-            editionName: product.editions.find((e) => e.id === editionId)?.name ?? null,
-            state: a.downloadsAvailable ? "downloads-available" : "downloads-not-available",
-          });
-        }
+        if (!a.owned && a.state !== "free") continue;
+        const edition = product.editions.find((e) => e.id === editionId) ?? null;
+        const rel = product.currentReleaseId ? registry.catalogue.releases.find((r) => r.id === product.currentReleaseId && r.status === "approved") : undefined;
+        owned.push({
+          productId: product.id,
+          slug: product.slug,
+          name: product.name,
+          editionId,
+          editionName: edition?.name ?? null,
+          state: a.downloadsAvailable ? "downloads-available" : "downloads-not-available",
+          acquisition: a.owned ? "licensed" : "free",
+          licence: a.owned ? "Active HCG licence" : "Free with your HCG account",
+          tier: edition?.tier ?? null,
+          pricingModel: edition?.pricingModel ?? "not-set",
+          currentRelease: rel ? { id: rel.id, version: rel.version, channel: rel.channel, releaseDate: rel.releaseDate } : null,
+          hcgRepoKey: product.hcgRepo.find((l) => l.editionId === editionId || (l.editionId === null && product.editions.length <= 1))?.key ?? null,
+          channel: edition?.channel ?? null,
+        });
       }
     }
     const purchases = ledger.purchasesFor(session.sub).map((p) => {
@@ -332,7 +352,18 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         testOnly: offer?.testOnly ?? false,
       };
     });
-    return { owned, purchases, ownershipUnavailable: unavailable, downloadsMessage: cfg.protectedDownloads ? null : DOWNLOADS_NOT_AVAILABLE };
+    const devices = (db.prepare("SELECT created_at FROM repo_tokens WHERE sub = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 20").all(session.sub) as { created_at: number }[])
+      .map((d) => ({ kind: "sileo", label: "Sileo (HCG Repo)", connectedAt: d.created_at }));
+    return {
+      owned,
+      purchases,
+      subscriptions: purchases.filter((p) => p.kind === "subscription"),
+      invoices: { available: false, items: [] as unknown[], message: "HCG Store has not issued any invoices. Live payments are not switched on." },
+      devices,
+      devicesNote: "A connected package manager is not an installation. HCG Store does not know which apps are installed on your devices, so it shows no install or update status.",
+      ownershipUnavailable: unavailable,
+      downloadsMessage: cfg.protectedDownloads ? null : DOWNLOADS_NOT_AVAILABLE,
+    };
   }
 
   // ---------------------------------------------------------------- downloads

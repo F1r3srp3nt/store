@@ -1206,3 +1206,13 @@
 .rm-release__head h3 { margin: 0; overflow-wrap: anywhere; }
 .rm-release__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
 .rm-compare { margin-top: 0.75rem; overflow-wrap: anywhere; }
+
+/* My Library v2: licence, edition and current release facts under each product. */
+.library-item__facts {
+  flex-basis: 100%;
+  margin: 0;
+  min-width: 0;
+}
+.library-item__repo {
+  flex-basis: 100%;
+}

@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAccount } from "../account/account-context";
 import { DOWNLOADS_NOT_AVAILABLE, formatPrice, signInUrl, StoreApiError, storeApi, type Library } from "../account/api";
-import { IconCheck, IconInfo, IconLock } from "../components/Icons";
+import { IconCheck, IconExternal, IconInfo, IconLock } from "../components/Icons";
+import { hcgRepoProductUrl } from "../config/runtime";
+import { EDITION_TIERS, type EditionTier } from "../domain/taxonomy";
 import { PageMeta } from "../components/PageMeta";
 import { ProductMark } from "../components/ProductArt";
 import { useCatalogueState } from "../app/catalogue-context";
@@ -94,19 +96,44 @@ function LibraryContent({ data }: { data: Library }) {
         </p>
       )}
       <section className="panel" aria-labelledby="owned-title">
-        <h2 id="owned-title">Owned products</h2>
+        <h2 id="owned-title">Your products</h2>
         {data.owned.length ? (
           <ul className="library-list">
             {data.owned.map((o) => (
               <li key={`${o.productId}:${o.editionId ?? ""}`} className="library-item">
                 <OwnedProductMark productId={o.productId} />
                 <span className="badge badge--owned">
-                  <IconCheck /> Owned
+                  <IconCheck /> {o.acquisition === "free" ? "Free" : "Owned"}
                 </span>
                 <Link to={`/apps/${o.slug}${o.editionId ? `?edition=${encodeURIComponent(o.editionId)}` : ""}`} className="library-item__name">
                   {o.editionName ?? o.name}
                 </Link>
                 <span className="library-item__state">{o.state === "downloads-available" ? "Downloads available on the product page" : DOWNLOADS_NOT_AVAILABLE}</span>
+                <dl className="kv kv--compact library-item__facts">
+                  {o.licence && (
+                    <div>
+                      <dt>Licence</dt>
+                      <dd>{o.licence}</dd>
+                    </div>
+                  )}
+                  {o.tier && o.tier in EDITION_TIERS && (
+                    <div>
+                      <dt>Edition</dt>
+                      <dd>{EDITION_TIERS[o.tier as EditionTier].label}</dd>
+                    </div>
+                  )}
+                  {o.currentRelease !== undefined && (
+                    <div>
+                      <dt>Current release</dt>
+                      <dd>{o.currentRelease ? `${o.currentRelease.version} (${o.currentRelease.channel})` : "Not released yet"}</dd>
+                    </div>
+                  )}
+                </dl>
+                {o.hcgRepoKey && (
+                  <a className="text-link library-item__repo" href={hcgRepoProductUrl(o.hcgRepoKey)}>
+                    Install with Sileo via HCG Repo <IconExternal />
+                  </a>
+                )}
               </li>
             ))}
           </ul>
@@ -114,6 +141,24 @@ function LibraryContent({ data }: { data: Library }) {
           <p className="muted">Your HCG account does not own any products yet.</p>
         )}
       </section>
+
+      {data.subscriptions && (
+        <section className="panel" aria-labelledby="subs-title">
+          <h2 id="subs-title">Subscriptions</h2>
+          {data.subscriptions.length ? (
+            <ul className="plain-list">
+              {data.subscriptions.map((p) => (
+                <li key={p.id}>
+                  {p.title}: {PURCHASE_STATUS[p.status] ?? p.status}
+                  {p.currentPeriodEnd ? ` · current period ends ${new Date(p.currentPeriodEnd).toLocaleDateString("en-GB", { dateStyle: "medium" })}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No active subscriptions.</p>
+          )}
+        </section>
+      )}
 
       <section className="panel" aria-labelledby="purchases-title">
         <h2 id="purchases-title">Purchase history</h2>
@@ -148,6 +193,31 @@ function LibraryContent({ data }: { data: Library }) {
           <p className="muted">No purchases yet.</p>
         )}
       </section>
+
+      {data.invoices && (
+        <section className="panel panel--quiet" aria-labelledby="invoices-title">
+          <h2 id="invoices-title">Invoices</h2>
+          <p className="muted">{data.invoices.available ? "" : data.invoices.message}</p>
+        </section>
+      )}
+
+      {data.devices && (
+        <section className="panel panel--quiet" aria-labelledby="devices-title">
+          <h2 id="devices-title">Connected devices</h2>
+          {data.devices.length ? (
+            <ul className="plain-list">
+              {data.devices.map((d, i) => (
+                <li key={i}>
+                  {d.label}, connected {new Date(d.connectedAt).toLocaleDateString("en-GB", { dateStyle: "medium" })}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No package manager is connected to your HCG account.</p>
+          )}
+          {data.devicesNote && <p className="fine">{data.devicesNote}</p>}
+        </section>
+      )}
     </>
   );
 }

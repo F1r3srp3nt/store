@@ -177,6 +177,19 @@ function EditionCard({
             )}
           </dl>
           {edition.note && <p className="fine">{edition.note}</p>}
+          {edition.channel === "jailbreak-package" && repo && (
+            <div className="edition__repo">
+              <h4 className="feature-heading">Installing from HCG Repo</h4>
+              <ol className="plain-list">
+                <li>Needs a jailbroken iPhone or iPad. It does not install on ordinary devices.</li>
+                <li>
+                  In Sileo, add HCG Repo (the source address is on the <a className="text-link" href={hcgRepoProductUrl(repo.key)}>HCG Repo page</a>).
+                </li>
+                <li>Sign in with your HCG account when Sileo asks; HCG Store decides access.</li>
+                <li>Install the package. Sileo, not HCG Store, offers its updates.</li>
+              </ol>
+            </div>
+          )}
         </>
       )}
 

@@ -76,6 +76,26 @@ provisionally from the product names, and cross-checked against what was availab
 
 ---
 
+## Catalogue v2 fields
+
+Kept separate on purpose; none implies another:
+- **Edition tier** (`tier`): Standard, Professional, Founder Beta, Developer, Unleashed, or `null` when HCG has not said.
+- **Pricing model** (`pricingModel`): free, paid, subscription or `not-set`. A pricing model is not a price; prices exist
+  only as approved server offers (`server/data/offers.json`).
+- **Access** (`access`): none, HCG account sign-in, HCG licence, or `unknown`. HCG's `/check` still decides every download.
+- **Distribution channel** (`channel`), **development status**, and **release availability** ("Coming soon" until a
+  release is approved and named in `currentReleaseId`).
+
+Product fields: `visibility` (`listed` or `draft`), `family`, `trailers` (self-hosted, with `kind` recording/concept and
+provenance), `hardwareRequirements`, `documentation` and `support` (public https links only), `relatedProducts`
+(catalogue IDs; no drafts, no self, no duplicates). Artifacts may carry `sourceCommit`, `buildProvider` and `toolchain`
+(generated from Store approvals).
+
+**Drafts** are products HCG has named but not described (HCG ADS, System Tester, Signal Contractor, LifeOS Companion,
+Representation). They hold a name and nothing invented: status "not stated", no platforms, editions, features, media,
+releases, collections or HCG Repo links. They are validated but never listed, searched, linked or given a page, and are
+left out of My HCG apps. Publish one by filling in HCG's facts and setting `visibility: "listed"`.
+
 ## Adding a product
 
 1. Append an object to `products` in `catalogue/products.json`:

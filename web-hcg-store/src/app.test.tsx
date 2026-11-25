@@ -314,6 +314,34 @@ describe("account and ownership (stubbed HCG Store server)", () => {
     expect(icons).toEqual(["/media/products/hcg-terminal/icon-256.webp", "/media/products/hcg-lifeos/icon-256.webp"]);
   });
 
+  it("library v2: licence, edition, current release, HCG Repo, subscriptions, invoices and devices, without install claims", async () => {
+    server = {
+      session: { configured: true, signedIn: true, user: ALICE },
+      library: {
+        owned: [
+          { productId: "hcg-terminal", slug: "hcg-terminal", name: "HCG Terminal", editionId: "unleashed", editionName: "HCG Terminal Unleashed", state: "downloads-not-available",
+            acquisition: "licensed", licence: "Active HCG licence", tier: "unleashed", pricingModel: "not-set", currentRelease: null, hcgRepoKey: "hcg-terminal-unleashed", channel: "jailbreak-package" },
+        ],
+        purchases: [],
+        subscriptions: [],
+        invoices: { available: false, items: [], message: "HCG Store has not issued any invoices. Live payments are not switched on." },
+        devices: [{ kind: "sileo", label: "Sileo (HCG Repo)", connectedAt: Date.UTC(2026, 10, 20) }],
+        devicesNote: "A connected package manager is not an installation.",
+        ownershipUnavailable: false,
+        downloadsMessage: "Downloads are not available yet.",
+      },
+    };
+    const { container } = renderAt("/library");
+    expect(await screen.findByText("Active HCG licence")).toBeInTheDocument();
+    expect(screen.getByText("Not released yet")).toBeInTheDocument();
+    expect(screen.getByText("Unleashed")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Install with Sileo via HCG Repo/ })).toBeInTheDocument();
+    expect(screen.getByText("No active subscriptions.")).toBeInTheDocument();
+    expect(screen.getByText(/has not issued any invoices/)).toBeInTheDocument();
+    expect(screen.getByText(/Sileo \(HCG Repo\), connected/)).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/installed on|update available|up to date/i);
+  });
+
   it("asks signed-out visitors to sign in for the library", async () => {
     server = { session: { configured: true, signedIn: false } };
     renderAt("/library");

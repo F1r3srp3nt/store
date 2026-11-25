@@ -71,7 +71,14 @@ export interface EditionAccess {
 }
 
 export interface Library {
-  owned: { productId: string; slug: string; name: string; editionId: string | null; editionName: string | null; state: string }[];
+  owned: {
+    productId: string; slug: string; name: string; editionId: string | null; editionName: string | null; state: string;
+    /** "licensed": HCG reports access (licence, grant or Founder/Owner); "free": a published free release, no ownership. */
+    acquisition?: "licensed" | "free"; licence?: string; tier?: string | null; pricingModel?: string;
+    /** The catalogue's explicit current release; null = not released yet. */
+    currentRelease?: { id: string; version: string; channel: string; releaseDate: string | null } | null;
+    hcgRepoKey?: string | null; channel?: string | null;
+  }[];
   purchases: {
     id: string;
     title: string;
@@ -85,6 +92,10 @@ export interface Library {
     createdAt: number;
     testOnly: boolean;
   }[];
+  subscriptions?: Library["purchases"];
+  invoices?: { available: boolean; items: unknown[]; message: string };
+  devices?: { kind: string; label: string; connectedAt: number }[];
+  devicesNote?: string;
   ownershipUnavailable: boolean;
   downloadsMessage: string | null;
 }

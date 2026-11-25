@@ -298,6 +298,13 @@ describe("7. Store website and app report the same ownership", () => {
     const sileo = await sileoSignIn(ALICE);
     const info = await sileoPost("user_info", { token: sileo.token });
     expect(info.items).toEqual(["com.example.fixture.quasar.unleashed"]);
+    // My Library v2: the Sileo connection is listed as a connection, never as an installation; no invoice is invented.
+    const lib2 = (await (await alice.get("/api/v1/library")).json()) as Record<string, any>;
+    expect(lib2.owned[0]).toMatchObject({ acquisition: "licensed", licence: "Active HCG licence", hcgRepoKey: expect.any(String) });
+    expect(lib2.devices).toEqual([expect.objectContaining({ kind: "sileo", label: "Sileo (HCG Repo)" })]);
+    expect(lib2.devicesNote).toMatch(/not an installation/);
+    expect(lib2.invoices).toMatchObject({ available: false, items: [] });
+    expect(JSON.stringify(lib2)).not.toMatch(/installed"|"installedVersion|updateAvailable/);
     const pkg = await sileoPost("package/com.example.fixture.quasar.unleashed/info", { token: sileo.token });
     expect(pkg).toMatchObject({ purchased: 1 });
 
