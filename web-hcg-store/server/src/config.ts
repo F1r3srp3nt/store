@@ -93,6 +93,8 @@ export interface PublishingSettings {
   maxUploadBytes: number;
   uploadUrlTtlSeconds: number;
   chunkBytes: number;
+  /** Total bytes of release files the Store keeps (all releases, staging included); null = no quota. */
+  storageQuotaBytes: number | null;
 }
 
 /**
@@ -338,6 +340,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
       maxUploadBytes: int("HCG_STORE_UPLOAD_MAX_MB", 4096, 1, 16384) * 1024 * 1024,
       uploadUrlTtlSeconds: int("HCG_STORE_UPLOAD_URL_TTL_SECONDS", 900, 60, 3600),
       chunkBytes: int("HCG_STORE_UPLOAD_CHUNK_MB", 8, 1, 64) * 1024 * 1024,
+      storageQuotaBytes: env.HCG_STORE_STORAGE_QUOTA_MB ? int("HCG_STORE_STORAGE_QUOTA_MB", 0, 1, 10_000_000) * 1024 * 1024 : null,
     },
   };
 }

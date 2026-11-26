@@ -2,6 +2,7 @@
  * Ship to Store: release publishing for HCG Executable Maker (and the Store's own review page).
  *
  *   GET    /api/v1/publishing/whoami                         who is calling; publisher/approver per HCG
+ *   GET    /api/v1/publishing/capabilities                   API version, upload limits, formats, storage use (HCG Store Manager)
  *   GET    /api/v1/publishing/products                       products the caller may publish
  *   POST   /api/v1/publishing/products                       draft product (Store-internal until HCG adds it)
  *   GET    /api/v1/publishing/releases?productId=            releases of a product
@@ -12,6 +13,7 @@
  *   PUT    /publishing-upload/v1/:token                      upload a chunk (Content-Range), resumable
  *   GET    /publishing-upload/v1/:token                      bytes received so far
  *   POST   /api/v1/publishing/artifacts/:id/complete         hash + validate + move to immutable storage
+ *   POST   /api/v1/publishing/artifacts/:id/passport         attach an HCG Release Passport that matches the stored file exactly
  *   DELETE /api/v1/publishing/artifacts/:id                  abort an upload / remove a file from a draft
  *   POST   /api/v1/publishing/releases/:id/submit            submit for manual review
  *   POST   /api/v1/publishing/releases/:id/approve           MANUAL approval in the Store (web session only)
@@ -398,6 +400,11 @@ export function createPublishing(deps: PublishingDeps) {
     }
   }
 
+  /** Bytes of every release file the Store keeps or is receiving (removed and rejected files excluded). */
+  function storageUsed(): number {
+    return (db.prepare("SELECT COALESCE(SUM(size_bytes), 0) AS n FROM pub_artifacts WHERE status NOT IN ('removed', 'rejected')").get() as { n: number }).n;
+  }
+
   async function hashFile(file: string): Promise<string> {
     const h = createHash("sha256");
     for await (const chunk of createReadStream(file)) h.update(chunk as Buffer);
@@ -635,6 +642,17 @@ export function createPublishing(deps: PublishingDeps) {
     if (p === "/api/v1/publishing/whoami" && m === "GET") {
       return send(json(res, 200, { sub: actor.sub, email: actor.email ?? null, via: actor.via, publisherPermission: P.publisherCentralId, approverPermission: P.approverCentralId, maxUploadBytes: P.maxUploadBytes, chunkBytes: P.chunkBytes }));
     }
+    if (p === "/api/v1/publishing/capabilities" && m === "GET") {
+      if (!(await permitted(actor, "publish", STORE_CENTRAL_PRODUCT_ID)) && !(await permitted(actor, "approve", STORE_CENTRAL_PRODUCT_ID)) && !(await permitted(actor, "publication", STORE_CENTRAL_PRODUCT_ID))) {
+        throw new HttpError(403, "not_publisher", "HCG has not granted your account a publishing permission.");
+      }
+      return send(json(res, 200, {
+        apiVersion: 1, maxUploadBytes: P.maxUploadBytes, chunkBytes: P.chunkBytes, uploadUrlTtlSeconds: P.uploadUrlTtlSeconds,
+        formats: ALLOWED, staffOnlyFormats: [...STAFF_ONLY_FORMATS], buildProviders: BUILD_PROVIDER_IDS,
+        storage: { usedBytes: storageUsed(), quotaBytes: P.storageQuotaBytes },
+        approvalAndPublication: "browser-only",
+      }));
+    }
     if (p === "/api/v1/publishing/products" && m === "GET") {
       const all = [
         ...registry.catalogue.products.map((x) => ({ id: x.id, title: x.name, source: "catalogue" as const, editions: x.editions.map((e) => ({ id: e.id, name: e.name, platforms: e.platforms })), centralId: x.registry.centralId, hcgRepo: x.hcgRepo.map((l) => l.key) })),
@@ -735,6 +753,14 @@ export function createPublishing(deps: PublishingDeps) {
           throw new HttpError(400, "bad_replacement", "replaces must name a verified or rejected file of this release.");
         }
         const problems = checkDeclaration({ fileName: input.fileName, platform: input.platform, format: input.format, sizeBytes: input.sizeBytes, maxBytes: P.maxUploadBytes });
+        if (input.buildProvider === "manual-upload" && (input.sourceCommit || input.toolchain)) {
+          problems.push("A manual upload claims no source commit or toolchain. Attach a Release Passport to show build evidence instead.");
+        }
+        if (P.storageQuotaBytes !== null && storageUsed() + input.sizeBytes > P.storageQuotaBytes) {
+          throw new HttpError(409, "quota_exceeded", `HCG Store's storage quota would be exceeded (${storageUsed()} of ${P.storageQuotaBytes} bytes used). Remove unused drafts or ask for more storage.`);
+        }
+        const duplicate = artifactsOf(r.id).find((x) => x.status !== "removed" && x.status !== "rejected" && (x.sha256 ?? x.declared_sha256) === input.sha256 && x.id !== input.replaces);
+        if (duplicate) problems.push(`The same bytes are already in this release as ${duplicate.file_name}.`);
         const destinations = JSON.parse(r.destinations) as string[];
         if (destinations.includes("hcg-repo") && input.format === "deb" && !input.package) problems.push("For HCG Repo, send the package identifier, version and architecture from the control file.");
         if (destinations.includes("hcg-repo") && input.format === "deb" && input.package && !debianVersionMatches(input.package.version, r.version)) {
@@ -782,10 +808,11 @@ export function createPublishing(deps: PublishingDeps) {
         if ((JSON.parse(r.release_notes) as string[]).length === 0) throw new HttpError(409, "release_notes_required", "Add release notes before submitting.");
         const missing = arts.filter((a) => a.status === "verified").filter((a) => {
           const pv = a.provenance ? (JSON.parse(a.provenance) as Provenance) : null;
+          if (pv?.buildProvider === "manual-upload") return false; // honest: no build evidence claimed (shown on the review page)
           return !pv?.sourceCommit || !pv.buildProvider || !pv.toolchain;
         });
         if (missing.length) {
-          throw new HttpError(409, "provenance_required", `Every file needs its source commit, build provider and toolchain before submission: ${missing.map((a) => a.file_name).join(", ")}. Upload it again with them (as a replacement).`);
+          throw new HttpError(409, "provenance_required", `Every file needs its source commit, build provider and toolchain before submission, or must be declared a manual upload (no build evidence): ${missing.map((a) => a.file_name).join(", ")}. Upload it again with them (as a replacement).`);
         }
         transaction(db, () => {
           db.prepare("UPDATE pub_releases SET status = 'submitted', submitted_at = ?, updated_at = ? WHERE id = ?").run(now(), now(), r.id);
@@ -901,6 +928,35 @@ export function createPublishing(deps: PublishingDeps) {
         return send(json(res, 200, { received: up.received_bytes, ...uploadUrl(a.id, actor.sub) }));
       }
       if (action === "/complete" && m === "POST") { await complete(actor, a, res); return true; }
+      if (action === "/passport" && m === "POST") {
+        // Build evidence for a file already verified in a DRAFT: an HCG Release Passport v1 that describes exactly these
+        // bytes (name, size, SHA-256 and SHA-512 of the stored file). It never changes the file; it changes what reviewers
+        // see, so it is accepted only before submission. Nothing in it is trusted beyond the match.
+        await requirePermission(actor, "publish", r.product_id);
+        if (r.status !== "draft") throw new HttpError(409, "not_draft", "Evidence can be attached only while the release is a draft.");
+        if (a.status !== "verified" || !a.storage_key) throw new HttpError(409, "not_verified", "Attach a passport after HCG Store has verified the file.");
+        const body = z.object({
+          format: z.literal("hcg.release-passport"), formatVersion: z.literal(1),
+          source: z.object({ repository: z.string().max(200).nullable().optional(), commit: z.string().regex(/^[a-f0-9]{7,40}$/).nullable().optional() }).passthrough().optional(),
+          build: z.object({ provider: z.string().max(80).nullable().optional(), run_id: z.union([z.number().int(), z.string().regex(/^\d{1,20}$/)]).nullable().optional() }).passthrough().optional(),
+          artifact: z.object({ filename: z.string(), size: z.number().int(), sha256: z.string().regex(/^[a-f0-9]{64}$/), sha512: z.string().regex(/^[a-f0-9]{128}$/) }).passthrough(),
+        }).passthrough().parse(await readJson(req));
+        const file = stagingPath(a.storage_key);
+        const sha512 = await (async () => { const h = createHash("sha512"); for await (const c of createReadStream(file)) h.update(c as Buffer); return h.digest("hex"); })();
+        const wrong: string[] = [];
+        if (body.artifact.filename !== a.file_name) wrong.push(`describes ${body.artifact.filename}, not ${a.file_name}`);
+        if (body.artifact.size !== a.size_bytes) wrong.push("size differs");
+        if (body.artifact.sha256 !== a.sha256) wrong.push("SHA-256 differs");
+        if (body.artifact.sha512 !== sha512) wrong.push("SHA-512 differs");
+        if (wrong.length) throw new HttpError(422, "passport_mismatch", `The Release Passport does not describe this file: ${wrong.join("; ")}.`);
+        const passport = { commit: body.source?.commit ?? null, repository: body.source?.repository ?? null, provider: body.build?.provider ?? null, runId: body.build?.run_id != null ? String(body.build.run_id) : null, sha512 };
+        const prov = { ...(a.provenance ? (JSON.parse(a.provenance) as Provenance) : {}), passport } as Provenance & { passport: typeof passport };
+        transaction(db, () => {
+          db.prepare("UPDATE pub_artifacts SET provenance = ? WHERE id = ?").run(JSON.stringify(prov), a.id);
+          audit(actor.sub, "artifact.passport-attached", r.id, a.id, { passport });
+        });
+        return send(json(res, 200, { artifact: artifactView(artifact(a.id)!) }));
+      }
       if (action === "" && m === "DELETE") {
         if (!OPEN_FOR_FILES.has(r.status)) throw new HttpError(409, "release_locked", "Files can be removed only before a release is published. Withdraw the release instead.");
         if (a.status === "verified") {
@@ -943,6 +999,17 @@ export function createPublishing(deps: PublishingDeps) {
     return deps.streamArtifact(res, a.storage_key!, a.file_name, a.content_type);
   }
 
+  /** How a file says it was built, exactly as reported; a manual upload claims nothing. */
+  function provenanceLabel(pv: (Provenance & { passport?: { commit: string | null; provider: string | null; runId: string | null } }) | null): string {
+    const e = escapeHtml;
+    if (!pv) return "—";
+    const parts: string[] = [];
+    if (pv.buildProvider === "manual-upload") parts.push('<span class="warn">Manual upload: no build evidence</span>');
+    else if (pv.buildProvider) parts.push(`${e(pv.buildProvider)}${pv.sourceCommit ? ` @ <code>${e(pv.sourceCommit.slice(0, 12))}</code>` : ""}`);
+    if (pv.passport) parts.push(`Release Passport matched${pv.passport.provider ? ` (${e(pv.passport.provider)}${pv.passport.runId ? ` run ${e(pv.passport.runId)}` : ""}${pv.passport.commit ? `, ${e(pv.passport.commit.slice(0, 12))}` : ""})` : ""}`);
+    return parts.join("<br>") || "—";
+  }
+
   function reviewPage(res: ServerResponse, r: ReturnType<typeof releaseView>, canApprove: boolean, canPublishRelease = false, canSubmit = false) {
     const e = escapeHtml;
     const submit = canSubmit && r.status === "draft" && r.artifacts.some((a) => a.status === "verified")
@@ -953,7 +1020,7 @@ export function createPublishing(deps: PublishingDeps) {
       ? `<div style="border:2px solid #8a4b00;padding:.6rem 1rem;margin:1rem 0"><p><b>Founder-operated release exception.</b> One person may submit, approve and publish this release with exactly these files. This is <b>not</b> an independent review: no second person checks it, and the CI build is not a reviewer.</p><ul>${r.exceptions.map((x) => `<li><code>${e(x.id)}</code> · ${x.revokedAt ? `revoked ${new Date(x.revokedAt).toISOString()} (${e(x.revokedReason ?? "")})` : x.appliesToCurrentFiles ? "applies to the current files" : "<b>does not apply</b>: the files changed"} · files digest <code>${e(x.artifactDigest.slice(0, 16))}…</code> · reason: ${e(x.reason)} · authorised by ${e(x.authorisedBy)}, recorded by ${e(x.performedBy)}</li>`).join("")}</ul></div>`
       : "";
     const kindName: Record<string, string> = { installer: "Installer", "portable-app": "Portable app", "device-build": "iOS device build", "simulator-build": "iOS Simulator build", "jailbreak-package": "Jailbreak package" };
-    const rows = r.artifacts.map((a) => `<tr><td>${e(a.fileName)}</td><td>${e(a.platform)} · ${e(a.format)}</td><td>${e(kindName[a.kind ?? ""] ?? "—")}${a.kindCheckedByStore ? "" : " (declared)"}</td><td>${a.sizeBytes}</td><td><code>${e(a.sha256 ?? a.declaredSha256)}</code></td><td>${e(a.status)}</td><td>${e(a.validation?.signatureStructure ?? "—")} / reported: ${e(a.signingReported.status)}</td><td class="${a.readiness.ordinaryInstall ? "ok" : "warn"}">${e(a.readiness.label)}</td><td>${a.status === "verified" && r.status !== "withdrawn" ? `<button class="dl" data-id="${e(a.id)}">Download to review</button>` : ""}</td></tr>`).join("");
+    const rows = r.artifacts.map((a) => `<tr><td>${e(a.fileName)}</td><td>${e(a.platform)} · ${e(a.format)}</td><td>${e(kindName[a.kind ?? ""] ?? "—")}${a.kindCheckedByStore ? "" : " (declared)"}</td><td>${a.sizeBytes}</td><td><code>${e(a.sha256 ?? a.declaredSha256)}</code></td><td>${e(a.status)}</td><td>${e(a.validation?.signatureStructure ?? "—")} / reported: ${e(a.signingReported.status)}</td><td class="${a.readiness.ordinaryInstall ? "ok" : "warn"}">${e(a.readiness.label)}</td><td>${provenanceLabel(a.provenance)}</td><td>${a.status === "verified" && r.status !== "withdrawn" ? `<button class="dl" data-id="${e(a.id)}">Download to review</button>` : ""}</td></tr>`).join("");
     const download = `<script>document.querySelectorAll('button.dl').forEach(b=>b.onclick=async()=>{const r=await fetch('/api/v1/publishing/artifacts/'+b.dataset.id+'/download-url',{method:'POST'});const j=await r.json();if(r.ok)location.href=j.url;else alert(j.message);});</script>`;
     const approve = canApprove && ["submitted", "approved"].includes(r.status)
       ? `<form id="approve"><p>Manual approval. Requested: <b>${e(r.requestedEligibility)}</b>.</p><select name="eligibility"><option>private</option><option>internal-testing</option><option>public</option></select>
@@ -971,7 +1038,7 @@ export function createPublishing(deps: PublishingDeps) {
       ${r.knownLimitations.length ? `<h2>Known limitations</h2><ul>${r.knownLimitations.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
       ${r.withdrawnReason ? `<p>Withdrawn: ${e(r.withdrawnReason)}</p>` : ""}
       <h2>Compatibility</h2><pre>${e(JSON.stringify(r.compatibility, null, 2))}</pre>
-      <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Kind</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th><th>Installation</th><th></th></tr>${rows}</table>
+      <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Kind</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th><th>Installation</th><th>Provenance (reported)</th><th></th></tr>${rows}</table>
       <p>Signature and notarisation results are reported by the uploading tool; HCG Store checks hashes, formats and archive safety only. A draft is visible only to the people HCG allows to publish or approve this product; uploading never makes a file public.</p>${download}
       ${submit}
       ${approve}

@@ -190,6 +190,7 @@ The Store-held package contract with HCG Repo (HCG Repo `docs/STORE_RELEASES.md`
 | `HCG_STORE_PROTECTED_DOWNLOADS` | `disabled` (default) · `free-testing-only`: only files of releases published as public and free, during an open free testing window (needs `HCG_STORE_FREE_TESTING_APPROVED=founder-approved` in production) · `enabled`: also licensed and paid downloads (needs `HCG_STORE_LAUNCH_APPROVED=founder-approved`) |
 | `HCG_STORE_ARTIFACT_STORAGE_DIR` | Private directory on the data volume (`/data/artifacts`), outside the static root |
 | `HCG_STORE_UPLOAD_MAX_MB` (4096), `HCG_STORE_UPLOAD_CHUNK_MB` (8), `HCG_STORE_UPLOAD_URL_TTL_SECONDS` (900) | Limits |
+| `HCG_STORE_STORAGE_QUOTA_MB` | Optional. Total size of release files the Store keeps (staging included); a declaration that would exceed it is refused with `quota_exceeded`. Unset: no quota |
 
 No storage administrator key exists anywhere: files are written by the Store process into its private directory.
 
@@ -226,3 +227,22 @@ Customer delivery of approved files stays behind the separate launch conditions 
   from the app's New Build result): `tools/ci/ship-to-store-e2e.sh` in the Maker repository (26 checks) against
   `server/test/ship-e2e-server.ts` (TEST only; its `/review` control signs a person in through the browser flow and
   presses *Download to review*).
+
+## HCG Store Manager (administration client)
+
+HCG Store Manager (native macOS) uses this same publishing API. There is no second upload path or database.
+
+- **`GET /api/v1/publishing/capabilities`** returns the API version, upload limits, formats, build providers, storage
+  use and quota. Only people HCG lets submit, approve or publish can call it.
+- **Uploads** use the same declared, scoped, short-lived, resumable chunk uploads. HCG Store hashes and validates every
+  complete file itself, and refuses the same bytes twice in one release.
+- **Manual uploads** declare `buildProvider: "manual-upload"` and claim no source commit or toolchain; a declaration
+  that claims either is refused. They can be submitted, and the review page shows them as "Manual upload: no build
+  evidence".
+- **`POST /api/v1/publishing/artifacts/:id/passport`** attaches an HCG Release Passport v1 to a verified file of a
+  **draft**. It is accepted only when the passport's name, size, SHA-256 and SHA-512 match the stored bytes; otherwise
+  the answer is `passport_mismatch`. The passport is shown as evidence next to the declared provenance and never
+  rewrites it.
+- **Approval and publication** stay browser-only, on the review page; the app opens that page.
+- **Tokens:** HCG Store accepts the app's tokens only after HCG issues it a client ID and that ID is added to
+  `HCG_STORE_PUBLISHING_CLIENT_IDS`.
