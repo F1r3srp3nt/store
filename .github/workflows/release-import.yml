@@ -77,6 +77,24 @@ jobs:
             ${{ runner.temp }}/import/report.json
             ${{ runner.temp }}/import/draft
           retention-days: 30
+      - name: When the source run's artifacts expire
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ steps.req.outputs.repo }}/actions/runs/${{ steps.req.outputs.run }}/artifacts" \
+            --jq '.artifacts[] | "\(.name)  created \(.created_at)  expires \(.expires_at)  expired=\(.expired)"' | tee -a "$GITHUB_STEP_SUMMARY" || true
+      # A verified copy of the exact files, draft and passports, kept in this repository's Actions storage for the
+      # longest retention GitHub allows, so the production import does not depend on the source run's artifacts
+      # still existing. The production import verifies every byte again whichever copy it uses (deploy-fly.yml).
+      - name: Preserved copy (exact bytes, same names)
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-${{ steps.req.outputs.files }}
+          path: |
+            ${{ runner.temp }}/import/files
+            ${{ runner.temp }}/import/draft
+          retention-days: 90
+          compression-level: 0
 
       # ---- Rehearsal: the real files through the real Store code in TEST mode (never production) ----
       - uses: actions/setup-node@v4

@@ -20,6 +20,7 @@ import { featureEdition, TestLedgerAuthority } from "../src/entitlements";
 import { listWindows, openWindow, terminateWindow } from "../src/free-windows";
 import { HcgConnectClient } from "../src/hcg-connect";
 import { loadRegistry } from "../src/registry";
+import { artifactSetDigest, grantFounderException } from "../src/release-exceptions";
 import { exportReleaseRecords } from "../src/release-records";
 import { syncReleases } from "../src/release-sync";
 import type { Release } from "../../src/domain/schema";
@@ -97,7 +98,8 @@ if (mode === "import") {
   const request = JSON.parse(readFileSync(arg("--request")!, "utf8"));
   const dir = resolve(arg("--dir")!);
   const s = await startStore(join(root, "catalogue"), "");
-  // HCG's central grants, stood in for by the TEST ledger: the founder may approve and, separately, publish.
+  // HCG's central grants, stood in for by the TEST ledger: the founder may submit, approve and, separately, publish.
+  s.authority.grant(FOUNDER.sub, "hcg.store", featureEdition("store.publish"), "hcg-erp (TEST)", null);
   s.authority.grant(FOUNDER.sub, "hcg.store", featureEdition("store.release.approve"), "hcg-erp (TEST)", null);
   s.authority.grant(FOUNDER.sub, "hcg.store", featureEdition("store.release.publish"), "hcg-erp (TEST)", null);
 
@@ -113,25 +115,33 @@ if (mode === "import") {
     requestedEligibility: request.requestedEligibility, knownLimitations: request.knownLimitations,
     authorisedBy: "founder (rehearsal)", performedBy: "release-import workflow (rehearsal)",
   });
-  step("import: submitted private draft, creator is the CI build", r.status === "submitted" && r.approvedEligibility === null && r.createdBy.startsWith("import:"), { id: r.id, createdBy: r.createdBy });
+  step("import: private draft, creator recorded as the CI build, nothing submitted", r.status === "draft" && r.approvedEligibility === null && r.createdBy.startsWith("import:"), { id: r.id, createdBy: r.createdBy });
   for (const a of r.artifacts) step(`import: ${a.fileName} verified, unchanged`, a.status === "verified" && a.sha256 === draft.artifacts.find((x: { fileName: string }) => x.fileName === a.fileName).sha256, a.sha256);
 
   const tester = await s.signIn(TESTER);
   const access = async (c: Client) => ((await (await c.get(`/api/v1/products/${draft.release.productId}/access`)).json()) as { editions: { editionId: string; state: string; artifacts: { id: string; fileName: string }[]; freeTesting: unknown; offers: unknown[] }[] }).editions.find((e) => e.editionId === draft.release.editionId)!;
+  // The 30-day testing period is prepared now and starts at the moment of publication.
+  const w = openWindow(s.db, { productId: draft.release.productId, editionId: draft.release.editionId, releaseId: r.id, period: { anchor: "publication", durationMs: 30 * 86_400_000, publishedAt: null }, authorisedBy: "founder (rehearsal)", performedBy: "operator (rehearsal)" }, Date.now());
+  step("30-day testing period prepared, waiting for publication", w.state === "awaiting-publication", { id: w.id, durationDays: 30 });
   step("before approval: nothing delivered to a tester", (await access(tester)).artifacts.length === 0);
+  step("an ordinary account cannot submit", (await tester.post(`/api/v1/publishing/releases/${r.id}/submit`, {})).status === 403);
   step("an ordinary account cannot approve", (await tester.post(`/api/v1/publishing/releases/${r.id}/approve`, { eligibility: "public", confirm: draft.release.version })).status === 403);
 
   const founder = await s.signIn(FOUNDER);
+  step("founder submits (store.publish, browser)", (await founder.post(`/api/v1/publishing/releases/${r.id}/submit`, {})).status === 200);
+  const refused = await founder.post(`/api/v1/publishing/releases/${r.id}/approve`, { eligibility: "public", confirm: draft.release.version });
+  step("without an exception the submitter cannot approve (the CI build is not a second person)", refused.status === 403 && ((await refused.json()) as { error: { code: string } }).error.code === "separation_of_duties");
+  const ex = grantFounderException(s.db, { releaseId: r.id, subject: FOUNDER.sub, reason: "First Windows public prerelease of HCG Mail (rehearsal)", authorisedBy: "founder (rehearsal)", performedBy: "operator (rehearsal)" }, Date.now());
+  step("founder-operated exception recorded for this release and these exact files", ex.artifactDigest === artifactSetDigest(s.db, r.id), { id: ex.id, filesDigest: ex.artifactDigest });
   const approved = await founder.post(`/api/v1/publishing/releases/${r.id}/approve`, { eligibility: "public", confirm: draft.release.version, current: true });
   step("founder approves (browser, typed version, public)", approved.status === 200);
   step("approved but not published: still nothing delivered", (await access(tester)).artifacts.length === 0);
   step("an ordinary account cannot publish", (await tester.post(`/api/v1/publishing/releases/${r.id}/publish`, { confirm: draft.release.version })).status === 403);
   const published = await founder.post(`/api/v1/publishing/releases/${r.id}/publish`, { confirm: draft.release.version, current: true });
   step("founder publishes (separate permission)", published.status === 200);
-  step("published, no free window: not free, not for sale", (await access(tester)).state === "not-for-sale");
-
-  const now = Date.now();
-  const w = openWindow(s.db, { productId: draft.release.productId, editionId: draft.release.editionId, releaseId: r.id, startsAt: now, endsAt: now + 30 * 86_400_000, authorisedBy: "founder (rehearsal)", performedBy: "operator (rehearsal)" }, now);
+  const publishedAt = ((await published.json()) as { publishedAt: number }).publishedAt;
+  const started = listWindows(s.db, Date.now()).find((x) => x.id === w.id)!;
+  step("testing period started at publication and lasts 30 days", started.state === "open" && started.startsAt === publishedAt && started.endsAt === publishedAt + 30 * 86_400_000, { startsAt: started.startsAt, endsAt: started.endsAt });
   const open = await access(tester);
   step("window open: free for any signed-in account, no offer, no checkout", open.state === "free" && open.offers.length === 0 && open.artifacts.length === draft.artifacts.length, { state: open.state, files: open.artifacts.length, freeTesting: open.freeTesting });
   const delivered: { fileName: string; bytes: number; sha256: string }[] = [];
@@ -147,7 +157,7 @@ if (mode === "import") {
   // Termination and re-opening (to leave the preview in the open state).
   terminateWindow(s.db, w.id, "Rehearsal: manual termination check.", { authorisedBy: "founder (rehearsal)", performedBy: "operator (rehearsal)" }, Date.now());
   step("terminated: delivery stops at once", (await access(tester)).artifacts.length === 0 && (await tester.get(`/api/v1/downloads/${open.artifacts[0]!.id}`)).status === 403);
-  const w2 = openWindow(s.db, { productId: draft.release.productId, editionId: draft.release.editionId, releaseId: r.id, startsAt: Date.now(), endsAt: Date.now() + 30 * 86_400_000, authorisedBy: "founder (rehearsal)", performedBy: "operator (rehearsal)" }, Date.now());
+  const w2 = openWindow(s.db, { productId: draft.release.productId, editionId: draft.release.editionId, releaseId: r.id, period: { anchor: "fixed", startsAt: Date.now(), endsAt: Date.now() + 30 * 86_400_000 }, authorisedBy: "founder (rehearsal)", performedBy: "operator (rehearsal)" }, Date.now());
   step("re-opened for the preview", listWindows(s.db, Date.now()).some((x) => x.id === w2.id && x.state === "open"));
   step("no purchase, payment or licence record created", (s.db.prepare("SELECT count(*) AS n FROM purchases").get() as { n: number }).n === 0);
 
@@ -171,6 +181,7 @@ if (mode === "import") {
 } else if (mode === "serve") {
   const s = await startStore(join(work, "catalogue"), resolve(arg("--static")!));
   // Same TEST identities and grants as the import phase (the database is the same).
+  s.authority.grant(FOUNDER.sub, "hcg.store", featureEdition("store.publish"), "hcg-erp (TEST)", null);
   s.authority.grant(FOUNDER.sub, "hcg.store", featureEdition("store.release.approve"), "hcg-erp (TEST)", null);
   s.authority.grant(FOUNDER.sub, "hcg.store", featureEdition("store.release.publish"), "hcg-erp (TEST)", null);
   writeFileSync(join(work, "serve.json"), JSON.stringify({ origin: s.origin, issuer: s.idp.issuer }));

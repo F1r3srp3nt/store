@@ -342,7 +342,7 @@ describe("Ship to Store", () => {
     const anyone = await desktop(BUYER);
     // Free and public, but no free testing window is open (and the edition is not permanently free): not delivered.
     expect((await anyone.call("POST", `/api/v1/publishing/artifacts/${up.id}/download-url`)).body.error.code).toBe("free_period_closed");
-    openWindow(h.db, { productId: PRODUCT, editionId: "standard", releaseId: null, startsAt: h.clock.now() - 1000, endsAt: h.clock.now() + 86_400_000, authorisedBy: "founder (test)", performedBy: "operator (test)" }, h.clock.now());
+    openWindow(h.db, { productId: PRODUCT, editionId: "standard", releaseId: null, period: { anchor: "fixed", startsAt: h.clock.now() - 1000, endsAt: h.clock.now() + 86_400_000 }, authorisedBy: "founder (test)", performedBy: "operator (test)" }, h.clock.now());
     const link = await anyone.call("POST", `/api/v1/publishing/artifacts/${up.id}/download-url`);
     expect(link.status).toBe(200); // free + public during a window: any signed-in HCG account
     expect((await fetch(h.origin + `/api/v1/publishing/artifacts/${up.id}/download-url`, { method: "POST" })).status).toBe(401); // signed out
@@ -445,7 +445,7 @@ describe("Ship to Store", () => {
     expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/publish`, { confirm: "2.0.1" })).status).toBe(200);
 
     // 2. Public + free: any signed-in account, without owning it, while a free testing window is open; signed out still 401.
-    openWindow(h.db, { productId: "fixture-quasar-shell", editionId: "unleashed", releaseId: null, startsAt: h.clock.now() - 1000, endsAt: h.clock.now() + 86_400_000, authorisedBy: "founder (test)", performedBy: "operator (test)" }, h.clock.now());
+    openWindow(h.db, { productId: "fixture-quasar-shell", editionId: "unleashed", releaseId: null, period: { anchor: "fixed", startsAt: h.clock.now() - 1000, endsAt: h.clock.now() + 86_400_000 }, authorisedBy: "founder (test)", performedBy: "operator (test)" }, h.clock.now());
     const access = (await (await stranger.get("/api/v1/products/fixture-quasar-shell/access")).json()) as { editions: { editionId: string; state: string; owned: boolean; artifacts: { id: string }[] }[] };
     const unleashed = access.editions.find((e) => e.editionId === "unleashed")!;
     expect([unleashed.state, unleashed.owned, unleashed.artifacts.map((x) => x.id)]).toEqual(["free", false, [fileId]]);

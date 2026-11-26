@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart, profile, import-release, free-window]
+        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -52,7 +52,7 @@ on:
         required: false
         default: ""
       operator_args:
-        description: 'import-release: {"request":"<file in release-imports/>","authorised_by":"…"} · free-window: {"command":"open|extend|terminate|list","product":"…","edition":"…","release":"rel-…","starts":"now|ISO","ends":"ISO","id":"fw-…","reason":"…","authorised_by":"…"}'
+        description: 'import-release: {"request":"<file in release-imports/>","authorised_by":"…","preserved_run":"<optional release-import run ID>"} · free-window: {"command":"open|extend|terminate|list","product":"…","edition":"…","release":"rel-…","starts":"now|ISO|publication","ends":"ISO","days":"30","id":"fw-…","reason":"…","authorised_by":"…"} · release-exception: {"command":"grant|revoke|list","release":"rel-…","session_ref":"<12 hex>","digest":"<optional files digest>","id":"rx-…","reason":"…","authorised_by":"…"}'
         required: false
         default: "{}"
 
@@ -62,6 +62,8 @@ concurrency:
 
 permissions:
   contents: read
+  # import-release with preserved_run downloads this repository's own verified copy of the files.
+  actions: read
 
 env:
   DOMAIN: store.hakmicapitalgroup.com
@@ -198,15 +200,23 @@ jobs:
         env:
           ARGS: ${{ inputs.operator_args }}
         run: |
-          REQ=$(jq -r '.request // ""' <<<"$ARGS"); AB=$(jq -r '.authorised_by // ""' <<<"$ARGS")
+          REQ=$(jq -r '.request // ""' <<<"$ARGS"); AB=$(jq -r '.authorised_by // ""' <<<"$ARGS"); PR=$(jq -r '.preserved_run // ""' <<<"$ARGS")
           [[ "$REQ" =~ ^[a-z0-9.-]+\.json$ && -f "release-imports/$REQ" ]] || { echo "::error::operator_args.request must name a file in web-hcg-store/release-imports/"; exit 1; }
           [ -n "$AB" ] || { echo "::error::operator_args.authorised_by is required"; exit 1; }
+          [[ "$PR" =~ ^[0-9]*$ ]] || { echo "::error::operator_args.preserved_run must be a run ID of this repository's release-import workflow"; exit 1; }
           echo "request=release-imports/$REQ" >> "$GITHUB_OUTPUT"
-          echo "repo=$(jq -r .source.repository "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
-          echo "run=$(jq -r .source.runId "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
-          echo "files=$(jq -r .source.filesArtifact "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
-          echo "draft=$(jq -r .source.draftArtifact "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
-      - if: inputs.mode == 'import-release'
+          FILES=$(jq -r .source.filesArtifact "release-imports/$REQ")
+          if [ -n "$PR" ]; then
+            # The verified copy the release-import workflow kept (exact bytes); verified again below.
+            echo "repo=$GITHUB_REPOSITORY" >> "$GITHUB_OUTPUT"; echo "run=$PR" >> "$GITHUB_OUTPUT"
+            echo "files=verified-$FILES" >> "$GITHUB_OUTPUT"; echo "draft=verified-$FILES" >> "$GITHUB_OUTPUT"; echo "preserved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "repo=$(jq -r .source.repository "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+            echo "run=$(jq -r .source.runId "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+            echo "files=$FILES" >> "$GITHUB_OUTPUT"
+            echo "draft=$(jq -r .source.draftArtifact "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+          fi
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.preserved != 'true'
         uses: actions/download-artifact@v4
         with:
           repository: ${{ steps.imp.outputs.repo }}
@@ -214,7 +224,15 @@ jobs:
           name: ${{ steps.imp.outputs.files }}
           path: ${{ runner.temp }}/import/files
           github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
-      - if: inputs.mode == 'import-release'
+      # The preserved copy holds files/ and draft/ side by side.
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.preserved == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.imp.outputs.run }}
+          name: ${{ steps.imp.outputs.files }}
+          path: ${{ runner.temp }}/import
+          github-token: ${{ github.token }}
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.preserved != 'true'
         uses: actions/download-artifact@v4
         with:
           repository: ${{ steps.imp.outputs.repo }}
@@ -260,7 +278,7 @@ jobs:
           b() { printf %s "$1" | base64 -w0; }
           j() { jq -r --arg k "$1" '.[$k] // ""' <<<"$ARGS"; }
           CMD=$(j command); safe='^[A-Za-z0-9:._+-]*$'
-          for k in product edition release starts ends id; do [[ "$(j $k)" =~ $safe ]] || { echo "::error::operator_args.$k has unexpected characters"; exit 1; }; done
+          for k in product edition release starts ends days id; do [[ "$(j $k)" =~ $safe ]] || { echo "::error::operator_args.$k has unexpected characters"; exit 1; }; done
           [[ "$CMD" =~ ^(open|extend|terminate|list)$ ]] || { echo "::error::operator_args.command must be open, extend, terminate or list"; exit 1; }
           if [ "$CMD" != list ] && [ -z "$(j authorised_by)" ]; then echo "::error::operator_args.authorised_by is required"; exit 1; fi
           PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=free-window)"
@@ -270,10 +288,38 @@ jobs:
           [ -n "$(j release)" ] && A="$A --release $(j release)"
           [ -n "$(j starts)" ] && A="$A --starts $(j starts)"
           [ -n "$(j ends)" ] && A="$A --ends $(j ends)"
+          [ -n "$(j days)" ] && A="$A --days $(j days)"
           [ -n "$(j id)" ] && A="$A --id $(j id)"
           A="$A --reason-b64 $(b "$(j reason)") --authorised-by-b64 $(b "$(j authorised_by)") --performed-by-b64 $(b "$PB")"
           out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/free-window.mjs $A" | grep '^{' | tail -1)
           { echo "## Free testing window"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$out" | jq -e 'has("error") | not' >/dev/null
+      # ---- release-exception: record (or revoke) a founder-operated exception for ONE release and ONE exact set of
+      # files (release-exceptions.ts). The account is named by a verified sign-in's 12-hex reference from
+      # mode=evidence; no account ID appears here or in the log. ----
+      - name: Founder-operated release exception (not an independent review; never a permission)
+        if: inputs.mode == 'release-exception'
+        env:
+          ARGS: ${{ inputs.operator_args }}
+        run: |
+          b() { printf %s "$1" | base64 -w0; }
+          j() { jq -r --arg k "$1" '.[$k] // ""' <<<"$ARGS"; }
+          CMD=$(j command)
+          [[ "$CMD" =~ ^(grant|revoke|list)$ ]] || { echo "::error::operator_args.command must be grant, revoke or list"; exit 1; }
+          [[ "$(j release)" =~ ^(rel-[0-9a-f]{16})?$ ]] || { echo "::error::operator_args.release must be a release ID (rel-…)"; exit 1; }
+          [[ "$(j session_ref)" =~ ^([0-9a-f]{12})?$ ]] || { echo "::error::operator_args.session_ref must be 12 lowercase hex characters"; exit 1; }
+          [[ "$(j digest)" =~ ^([0-9a-f]{64})?$ ]] || { echo "::error::operator_args.digest must be 64 hex characters"; exit 1; }
+          [[ "$(j id)" =~ ^(rx-[0-9a-f]{12})?$ ]] || { echo "::error::operator_args.id must be an exception ID (rx-…)"; exit 1; }
+          if [ "$CMD" != list ] && [ -z "$(j authorised_by)" ]; then echo "::error::operator_args.authorised_by is required"; exit 1; fi
+          PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=release-exception)"
+          A="$CMD"
+          [ -n "$(j release)" ] && A="$A --release $(j release)"
+          [ -n "$(j session_ref)" ] && A="$A --session-ref $(j session_ref)"
+          [ -n "$(j digest)" ] && A="$A --digest $(j digest)"
+          [ -n "$(j id)" ] && A="$A --id $(j id)"
+          A="$A --reason-b64 $(b "$(j reason)") --authorised-by-b64 $(b "$(j authorised_by)") --performed-by-b64 $(b "$PB")"
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/release-exception.mjs $A" | grep '^{' | tail -1)
+          { echo "## Release exception"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$out" | jq -e 'has("error") | not' >/dev/null
       - name: Restart the Machine
         if: inputs.mode == 'restart'

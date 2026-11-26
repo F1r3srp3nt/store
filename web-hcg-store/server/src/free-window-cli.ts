@@ -4,7 +4,10 @@
  *
  *   node server-dist/free-window.mjs open --product hcg-mail --edition windows-desktop [--release rel-…]
  *        --starts <iso|now> --ends <iso> --authorised-by-b64 <b64> --performed-by-b64 <b64>
- *   node server-dist/free-window.mjs extend --id fw-… --ends <iso> --authorised-by-b64 … --performed-by-b64 …
+ *   node server-dist/free-window.mjs open --product hcg-mail --edition windows-desktop --release rel-…
+ *        --starts publication --days 30 --authorised-by-b64 <b64> --performed-by-b64 <b64>
+ *        (starts when that release is published, or at its publication time if it already is; lasts 30 days)
+ *   node server-dist/free-window.mjs extend --id fw-… (--ends <iso> | --days <total days from the start>) --authorised-by-b64 … --performed-by-b64 …
  *   node server-dist/free-window.mjs terminate --id fw-… --reason-b64 <b64> --authorised-by-b64 … --performed-by-b64 …
  *   node server-dist/free-window.mjs list [--product hcg-mail]
  *
@@ -12,7 +15,7 @@
  */
 import { parseStoreConfig } from "./config";
 import { openDatabase } from "./db";
-import { extendWindow, FreeWindowError, listWindows, openWindow, terminateWindow } from "./free-windows";
+import { extendWindow, FreeWindowError, listWindows, openWindow, terminateWindow, type WindowPeriod } from "./free-windows";
 import { findProduct, loadRegistry } from "./registry";
 
 const arg = (name: string) => {
@@ -26,6 +29,12 @@ const time = (name: string, now: number) => {
   const t = v ? Date.parse(v) : NaN;
   if (!Number.isFinite(t)) throw new FreeWindowError(`${name} must be an ISO 8601 time or "now".`);
   return t;
+};
+
+const days = (name: string) => {
+  const v = Number(arg(name));
+  if (!Number.isInteger(v) || v < 1) throw new FreeWindowError(`${name} must be a whole number of days.`);
+  return v * 24 * 3600 * 1000;
 };
 
 const cfg = parseStoreConfig(process.env);
@@ -43,15 +52,22 @@ try {
     if (!product || product.visibility === "draft") throw new FreeWindowError("Unknown product.");
     if (product.editions.length ? !product.editions.some((e) => e.id === editionId) : editionId !== null) throw new FreeWindowError("Unknown edition.");
     const releaseId = arg("--release") ?? null;
+    let publishedAt: number | null = null;
     if (releaseId) {
-      const r = db.prepare("SELECT product_id, edition_id, distribution FROM pub_releases WHERE id = ?").get(releaseId) as { product_id: string; edition_id: string | null; distribution: string } | undefined;
+      const r = db.prepare("SELECT product_id, edition_id, distribution, status, published_at FROM pub_releases WHERE id = ?").get(releaseId) as { product_id: string; edition_id: string | null; distribution: string; status: string; published_at: number | null } | undefined;
       if (!r || r.product_id !== product.id || r.edition_id !== editionId) throw new FreeWindowError("The release is not a release of this product edition.");
       if (r.distribution !== "free") throw new FreeWindowError("Only a release distributed as free can be in a free testing window.");
+      if (["withdrawn", "superseded"].includes(r.status)) throw new FreeWindowError(`The release is ${r.status}.`);
+      publishedAt = r.published_at;
     }
-    const w = openWindow(db, { productId: product.id, editionId, releaseId, startsAt: time("--starts", now), endsAt: time("--ends", now), ...who }, now);
+    const period: WindowPeriod = arg("--starts") === "publication"
+      ? { anchor: "publication", durationMs: days("--days"), publishedAt }
+      : { anchor: "fixed", startsAt: time("--starts", now), endsAt: time("--ends", now) };
+    const w = openWindow(db, { productId: product.id, editionId, releaseId, period, ...who }, now);
     process.stdout.write(JSON.stringify({ opened: show(w) }) + "\n");
   } else if (cmd === "extend") {
-    process.stdout.write(JSON.stringify({ extended: show(extendWindow(db, arg("--id") ?? "", time("--ends", now), who, now)) }) + "\n");
+    const change = arg("--days") !== undefined ? { durationMs: days("--days") } : { endsAt: time("--ends", now) };
+    process.stdout.write(JSON.stringify({ extended: show(extendWindow(db, arg("--id") ?? "", change, who, now)) }) + "\n");
   } else if (cmd === "terminate") {
     process.stdout.write(JSON.stringify({ terminated: show(terminateWindow(db, arg("--id") ?? "", b64("--reason-b64"), who, now)) }) + "\n");
   } else if (cmd === "list") {

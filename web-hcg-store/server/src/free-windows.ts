@@ -19,16 +19,23 @@ export interface FreeWindow {
   productId: string;
   editionId: string | null;
   releaseId: string | null;
-  startsAt: number;
-  endsAt: number;
+  /** Null while a window anchored to publication waits for its release to be published. */
+  startsAt: number | null;
+  endsAt: number | null;
+  anchor: "fixed" | "publication";
+  /** For a publication-anchored window: how long it lasts from publication. */
+  durationMs: number | null;
   terminatedAt: number | null;
   terminatedReason: string | null;
-  state: "scheduled" | "open" | "ended" | "terminated";
+  state: "awaiting-publication" | "scheduled" | "open" | "ended" | "terminated";
 }
 
 export class FreeWindowError extends Error {}
 
-type Row = { id: string; product_id: string; edition_id: string | null; release_id: string | null; starts_at: number; ends_at: number; terminated_at: number | null; terminated_reason: string | null };
+type Row = {
+  id: string; product_id: string; edition_id: string | null; release_id: string | null; starts_at: number | null; ends_at: number | null;
+  anchor: "fixed" | "publication"; duration_ms: number | null; terminated_at: number | null; terminated_reason: string | null;
+};
 
 const view = (r: Row, now: number): FreeWindow => ({
   id: r.id,
@@ -37,9 +44,13 @@ const view = (r: Row, now: number): FreeWindow => ({
   releaseId: r.release_id,
   startsAt: r.starts_at,
   endsAt: r.ends_at,
+  anchor: r.anchor,
+  durationMs: r.duration_ms,
   terminatedAt: r.terminated_at,
   terminatedReason: r.terminated_reason,
-  state: r.terminated_at !== null ? "terminated" : now < r.starts_at ? "scheduled" : now < r.ends_at ? "open" : "ended",
+  state: r.terminated_at !== null ? "terminated"
+    : r.starts_at === null || r.ends_at === null ? "awaiting-publication"
+    : now < r.starts_at ? "scheduled" : now < r.ends_at ? "open" : "ended",
 });
 
 export function listWindows(db: Db, now: number, productId?: string): FreeWindow[] {
@@ -52,7 +63,7 @@ export function listWindows(db: Db, now: number, productId?: string): FreeWindow
 /** The window open right now for this edition (and release, when the window names one), if any. */
 export function openWindowFor(db: Db, productId: string, editionId: string | null, now: number): FreeWindow | null {
   const r = db
-    .prepare("SELECT * FROM free_windows WHERE product_id = ? AND edition_id IS ? AND terminated_at IS NULL AND starts_at <= ? AND ends_at > ? ORDER BY starts_at DESC LIMIT 1")
+    .prepare("SELECT * FROM free_windows WHERE product_id = ? AND edition_id IS ? AND terminated_at IS NULL AND starts_at IS NOT NULL AND starts_at <= ? AND ends_at > ? ORDER BY starts_at DESC LIMIT 1")
     .get(productId, editionId, now, now) as Row | undefined;
   return r ? view(r, now) : null;
 }
@@ -63,38 +74,78 @@ function event(db: Db, windowId: string, action: string, detail: object, who: { 
     .run(now, windowId, action, JSON.stringify(detail), who.authorisedBy.trim().slice(0, 200), who.performedBy.trim().slice(0, 200));
 }
 
+export type WindowPeriod =
+  | { anchor: "fixed"; startsAt: number; endsAt: number }
+  /**
+   * Starts when the named release is published and lasts `durationMs`. If the release is already published
+   * (`publishedAt`), it starts at that publication time.
+   */
+  | { anchor: "publication"; durationMs: number; publishedAt: number | null };
+
 export function openWindow(
   db: Db,
-  w: { productId: string; editionId: string | null; releaseId: string | null; startsAt: number; endsAt: number; authorisedBy: string; performedBy: string },
+  w: { productId: string; editionId: string | null; releaseId: string | null; period: WindowPeriod; authorisedBy: string; performedBy: string },
   now: number,
 ): FreeWindow {
-  if (!(w.endsAt > w.startsAt)) throw new FreeWindowError("The window must end after it starts.");
-  if (w.endsAt <= now) throw new FreeWindowError("The window must end in the future.");
-  if (w.endsAt - w.startsAt > MAX_WINDOW_DAYS * DAY) throw new FreeWindowError(`A window lasts at most ${MAX_WINDOW_DAYS} days; extend it later if needed.`);
-  const clash = db
-    .prepare("SELECT id FROM free_windows WHERE product_id = ? AND edition_id IS ? AND terminated_at IS NULL AND ends_at > ? AND starts_at < ?")
-    .get(w.productId, w.editionId, w.startsAt, w.endsAt) as { id: string } | undefined;
+  let startsAt: number | null;
+  let endsAt: number | null;
+  let durationMs: number | null = null;
+  if (w.period.anchor === "fixed") {
+    ({ startsAt, endsAt } = w.period);
+  } else {
+    if (!w.releaseId) throw new FreeWindowError("A window that starts at publication names the release.");
+    durationMs = w.period.durationMs;
+    if (!(durationMs > 0)) throw new FreeWindowError("The window must last a positive time.");
+    if (durationMs > MAX_WINDOW_DAYS * DAY) throw new FreeWindowError(`A window lasts at most ${MAX_WINDOW_DAYS} days; extend it later if needed.`);
+    startsAt = w.period.publishedAt;
+    endsAt = startsAt === null ? null : startsAt + durationMs;
+  }
+  if (startsAt !== null && endsAt !== null) {
+    if (!(endsAt > startsAt)) throw new FreeWindowError("The window must end after it starts.");
+    if (endsAt <= now) throw new FreeWindowError("The window must end in the future.");
+    if (endsAt - startsAt > MAX_WINDOW_DAYS * DAY) throw new FreeWindowError(`A window lasts at most ${MAX_WINDOW_DAYS} days; extend it later if needed.`);
+  }
+  // A window waiting for publication clashes with any window not yet over; a dated one with those overlapping it
+  // (and with any window still waiting for publication, whose dates are not known yet).
+  const clash = (startsAt === null
+    ? db.prepare("SELECT id FROM free_windows WHERE product_id = ? AND edition_id IS ? AND terminated_at IS NULL AND (ends_at IS NULL OR ends_at > ?)").get(w.productId, w.editionId, now)
+    : db.prepare("SELECT id FROM free_windows WHERE product_id = ? AND edition_id IS ? AND terminated_at IS NULL AND (ends_at IS NULL OR (ends_at > ? AND starts_at < ?))").get(w.productId, w.editionId, startsAt, endsAt)) as { id: string } | undefined;
   if (clash) throw new FreeWindowError(`Window ${clash.id} already covers part of this period; extend or terminate it instead.`);
   const id = `fw-${randomBytes(6).toString("hex")}`;
   transaction(db, () => {
-    db.prepare("INSERT INTO free_windows (id, product_id, edition_id, release_id, starts_at, ends_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(id, w.productId, w.editionId, w.releaseId, w.startsAt, w.endsAt, now);
-    event(db, id, "window.opened", { productId: w.productId, editionId: w.editionId, releaseId: w.releaseId, startsAt: w.startsAt, endsAt: w.endsAt }, w, now);
+    db.prepare("INSERT INTO free_windows (id, product_id, edition_id, release_id, starts_at, ends_at, anchor, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, w.productId, w.editionId, w.releaseId, startsAt, endsAt, w.period.anchor, durationMs, now);
+    event(db, id, startsAt === null ? "window.prepared" : "window.opened", { productId: w.productId, editionId: w.editionId, releaseId: w.releaseId, anchor: w.period.anchor, startsAt, endsAt, durationMs }, w, now);
   });
   return view(db.prepare("SELECT * FROM free_windows WHERE id = ?").get(id) as Row, now);
 }
 
-export function extendWindow(db: Db, id: string, endsAt: number, who: { authorisedBy: string; performedBy: string }, now: number): FreeWindow {
+/**
+ * Extends a window: a later end for a window that has started, or a longer duration for one still waiting for its
+ * release to be published.
+ */
+export function extendWindow(db: Db, id: string, change: { endsAt: number } | { durationMs: number }, who: { authorisedBy: string; performedBy: string }, now: number): FreeWindow {
   const r = db.prepare("SELECT * FROM free_windows WHERE id = ?").get(id) as Row | undefined;
   if (!r) throw new FreeWindowError("No such window.");
   const v = view(r, now);
   if (v.state === "terminated" || v.state === "ended") throw new FreeWindowError(`The window has ${v.state === "terminated" ? "been terminated" : "ended"}; open a new one instead.`);
-  if (!(endsAt > r.ends_at)) throw new FreeWindowError("An extension must end later than the current end.");
-  if (endsAt - r.starts_at > MAX_WINDOW_DAYS * DAY) throw new FreeWindowError(`A window lasts at most ${MAX_WINDOW_DAYS} days.`);
-  transaction(db, () => {
-    db.prepare("UPDATE free_windows SET ends_at = ? WHERE id = ?").run(endsAt, id);
-    event(db, id, "window.extended", { previousEndsAt: r.ends_at, endsAt }, who, now);
-  });
+  if (r.starts_at === null) {
+    if (!("durationMs" in change)) throw new FreeWindowError("This window has not started (its release is not published yet); give a longer duration in days.");
+    if (!(change.durationMs > (r.duration_ms ?? 0))) throw new FreeWindowError("An extension must be longer than the current duration.");
+    if (change.durationMs > MAX_WINDOW_DAYS * DAY) throw new FreeWindowError(`A window lasts at most ${MAX_WINDOW_DAYS} days.`);
+    transaction(db, () => {
+      db.prepare("UPDATE free_windows SET duration_ms = ? WHERE id = ?").run(change.durationMs, id);
+      event(db, id, "window.extended", { previousDurationMs: r.duration_ms, durationMs: change.durationMs }, who, now);
+    });
+  } else {
+    const endsAt = "endsAt" in change ? change.endsAt : r.starts_at + change.durationMs;
+    if (!(endsAt > r.ends_at!)) throw new FreeWindowError("An extension must end later than the current end.");
+    if (endsAt - r.starts_at > MAX_WINDOW_DAYS * DAY) throw new FreeWindowError(`A window lasts at most ${MAX_WINDOW_DAYS} days.`);
+    transaction(db, () => {
+      db.prepare("UPDATE free_windows SET ends_at = ? WHERE id = ?").run(endsAt, id);
+      event(db, id, "window.extended", { previousEndsAt: r.ends_at, endsAt }, who, now);
+    });
+  }
   return view(db.prepare("SELECT * FROM free_windows WHERE id = ?").get(id) as Row, now);
 }
 

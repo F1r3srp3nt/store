@@ -6,7 +6,7 @@
  *   node server-dist/release-import.mjs --dir <folder> --request <release-imports/....json>
  *        --authorised-by-b64 <b64> --performed-by-b64 <b64>
  *
- * Result: a SUBMITTED private draft, waiting for a person to approve it and, separately, to publish it in HCG Store.
+ * Result: a private DRAFT, waiting for a person to submit it, approve it and, separately, publish it in HCG Store.
  * Prints one JSON line. Never prints a token, a file path outside the import or an account ID.
  */
 import { readdirSync, readFileSync } from "node:fs";

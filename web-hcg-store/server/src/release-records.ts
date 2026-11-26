@@ -11,6 +11,7 @@
  * chain does not verify.
  */
 import { sha256Hex } from "./crypto";
+import type { Db } from "./db";
 
 /** The subset of node:sqlite this module needs, so the CLI can open the database read-only. */
 interface ReadDb {
@@ -68,6 +69,15 @@ export interface ReleaseRecordsExport {
 }
 
 type AuditRow = { at: number; actor: string; action: string; release_id: string | null; artifact_id: string | null; detail: string; prev_hash: string; hash: string };
+
+/** Appends one entry to the publishing audit chain (hash-linked to the previous entry). Callers hold a transaction. */
+export function appendPubAudit(db: Db, at: number, actor: string, action: string, releaseId: string | null, artifactId: string | null, detail: object): void {
+  const prev = (db.prepare("SELECT hash FROM pub_audit ORDER BY seq DESC LIMIT 1").get() as { hash: string } | undefined)?.hash ?? "0".repeat(64);
+  const body = JSON.stringify(detail);
+  const hash = sha256Hex(`${prev}|${at}|${actor}|${action}|${releaseId ?? ""}|${artifactId ?? ""}|${body}`);
+  db.prepare("INSERT INTO pub_audit (at, actor, action, release_id, artifact_id, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(at, actor, action, releaseId, artifactId, body, prev, hash);
+}
 
 /** Recomputes the publishing audit chain; false when any entry was altered or removed outside the API. */
 export function auditChainIntact(db: ReadDb): boolean {
