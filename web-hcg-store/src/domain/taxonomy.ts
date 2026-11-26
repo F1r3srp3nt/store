@@ -53,7 +53,7 @@ export const DEVELOPMENT_STATUS_IDS = Object.keys(DEVELOPMENT_STATUS) as [Develo
 
 export const RELEASE_CHANNELS = {
   alpha: { label: "Alpha" },
-  beta: { label: "Beta" },
+  beta: { label: "Public beta" },
   stable: { label: "Stable" },
 } as const;
 export type ReleaseChannel = keyof typeof RELEASE_CHANNELS;

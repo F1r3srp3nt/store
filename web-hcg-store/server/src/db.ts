@@ -246,6 +246,58 @@ const MIGRATIONS: string[] = [
    ALTER TABLE pub_releases ADD COLUMN published_at INTEGER;
    ALTER TABLE pub_releases ADD COLUMN published_by TEXT;
    ALTER TABLE pub_releases ADD COLUMN superseded_by TEXT;`,
+  // 9: Free testing windows (free-windows.ts): a free public release is delivered only while a window is open
+  // (unless its edition is permanently free). Windows are opened, extended and terminated only by the operator path,
+  // with who authorised and who performed each change in an append-only log. Releases record their known
+  // limitations and, for an operator import, where they came from. A window can be anchored to a release's
+  // publication (starts when it is published, lasts duration_ms). Founder-operated release exceptions
+  // (release-exceptions.ts): one named person may submit, approve and publish ONE specific release with ONE exact set
+  // of files; recorded with who authorised it, revocable, never deleted.
+  `CREATE TABLE free_windows (
+     id TEXT PRIMARY KEY,
+     product_id TEXT NOT NULL,
+     edition_id TEXT,
+     release_id TEXT,
+     starts_at INTEGER,
+     ends_at INTEGER,
+     anchor TEXT NOT NULL DEFAULT 'fixed',
+     duration_ms INTEGER,
+     terminated_at INTEGER,
+     terminated_reason TEXT,
+     created_at INTEGER NOT NULL
+   );
+   CREATE TABLE free_window_events (
+     seq INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     window_id TEXT NOT NULL,
+     action TEXT NOT NULL,
+     detail TEXT NOT NULL,
+     authorised_by TEXT NOT NULL,
+     performed_by TEXT NOT NULL
+   );
+   CREATE TRIGGER free_window_events_no_update BEFORE UPDATE ON free_window_events BEGIN SELECT RAISE(ABORT, 'free window events are append-only'); END;
+   CREATE TRIGGER free_window_events_no_delete BEFORE DELETE ON free_window_events BEGIN SELECT RAISE(ABORT, 'free window events are append-only'); END;
+   CREATE TABLE release_exceptions (
+     id TEXT PRIMARY KEY,
+     release_id TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     subject TEXT NOT NULL,
+     artifact_digest TEXT NOT NULL,
+     reason TEXT NOT NULL,
+     authorised_by TEXT NOT NULL,
+     performed_by TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     revoked_at INTEGER,
+     revoked_reason TEXT
+   );
+   CREATE TRIGGER release_exceptions_no_delete BEFORE DELETE ON release_exceptions BEGIN SELECT RAISE(ABORT, 'release exceptions are kept'); END;
+   CREATE TRIGGER release_exceptions_only_revoke BEFORE UPDATE ON release_exceptions
+     WHEN NEW.id IS NOT OLD.id OR NEW.release_id IS NOT OLD.release_id OR NEW.kind IS NOT OLD.kind OR NEW.subject IS NOT OLD.subject
+       OR NEW.artifact_digest IS NOT OLD.artifact_digest OR NEW.reason IS NOT OLD.reason OR NEW.authorised_by IS NOT OLD.authorised_by
+       OR NEW.performed_by IS NOT OLD.performed_by OR NEW.created_at IS NOT OLD.created_at OR OLD.revoked_at IS NOT NULL
+     BEGIN SELECT RAISE(ABORT, 'a release exception can only be revoked, once'); END;
+   ALTER TABLE pub_releases ADD COLUMN known_limitations TEXT NOT NULL DEFAULT '[]';
+   ALTER TABLE pub_releases ADD COLUMN imported_from TEXT;`,
 ];
 
 /**
@@ -264,6 +316,8 @@ export function recordAuthEvent(db: Db, at: number, type: string, opts: { sessio
 }
 
 export type Db = DatabaseSync;
+
+export const MIGRATION_COUNT = MIGRATIONS.length;
 
 export function openDatabase(dataDir: string): Db {
   let file = ":memory:";

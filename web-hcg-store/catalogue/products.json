@@ -114,7 +114,7 @@
       "summary": "Use your existing mailbox over encrypted IMAP and SMTP, with passwords in the system's secure store and remote content blocked by default.",
       "description": [
         "HCG Mail connects to existing mailboxes over standard IMAP and SMTP, with encrypted connections, passwords in the operating system's secure credential store and remote content in messages blocked by default.",
-        "The Windows desktop app is the implemented MVP; an iPhone and iPad app shares its code and is not yet device-tested. Microsoft and Google account sign-in is implemented but not yet tested with real accounts."
+        "The Windows desktop app (x64 and ARM64) is in public beta; an iPhone and iPad app shares its code and is not yet device-tested. Microsoft and Google account sign-in exist in the code but are not set up in the Windows beta: use IMAP and SMTP with a password or app password."
       ],
       "category": "communication",
       "tags": [
@@ -123,15 +123,15 @@
         "smtp",
         "privacy"
       ],
-      "developmentStatus": "in-development",
-      "developmentNote": "MVP 0.1.0 is implemented for Windows. Signing, installers and store submissions are not done; real Windows, Mac and iPhone testing is still open.",
+      "developmentStatus": "testing",
+      "developmentNote": "Windows: public beta 0.1.0-beta.1 (x64 and ARM64, installer and portable ZIP) built and checked in CI: installation, start-up, window rendering, restart, Windows Credential Manager and TLS certificate validation passed on GitHub-hosted Windows runners. Signing in to a mailbox, sending and receiving have not been tested on Windows yet. iPhone and iPad: implemented, not yet device-tested.",
       "platforms": [
         {
           "platform": "windows",
           "support": "in-development",
           "architectures": [],
           "minimumOs": null,
-          "note": "Implemented MVP: self-contained x64 build, unsigned."
+          "note": "Public beta 0.1.0-beta.1 for x64 and ARM64, not code-signed. Windows 10 version 1607 or later (x64) or Windows 11 (ARM64)."
         },
         {
           "platform": "ios",
@@ -168,8 +168,9 @@
           "width": 1440,
           "height": 900,
           "alt": "HCG Mail desktop window with folders, a message list of sample messages and an open sample message.",
-          "caption": "Desktop app rendered by its automated UI test with sample messages.",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/classic-reading.png at 13d93a8, rendered by the headless UI test (MainWindowTests). Resized to WebP."
+          "caption": "Desktop app rendered by its automated UI test with sample messages (headless render of the desktop app, not a capture of a particular operating system).",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/classic-reading.png at 13d93a8, rendered by the headless UI test (MainWindowTests). Resized to WebP.",
+          "platform": null
         },
         {
           "kind": "screenshot",
@@ -178,8 +179,9 @@
           "width": 1000,
           "height": 760,
           "alt": "HCG Mail account setup dialog.",
-          "caption": "Account setup dialog, rendered by the automated UI test.",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/account-setup.png at 13d93a8, rendered by the headless UI test (DialogViewModelTests). Resized to WebP."
+          "caption": "Account setup dialog, rendered by the automated UI test (headless render of the desktop app, not a capture of a particular operating system).",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/account-setup.png at 13d93a8, rendered by the headless UI test (DialogViewModelTests). Resized to WebP.",
+          "platform": null
         }
       ],
       "currentReleaseId": null,
@@ -204,16 +206,17 @@
         {
           "id": "windows-desktop",
           "name": "Windows desktop",
-          "summary": "Self-contained Windows x64 desktop app (.NET 10, Avalonia).",
+          "summary": "Self-contained Windows app for x64 and ARM64 (.NET 10, Avalonia): a per-user installer (no administrator rights) or a portable ZIP.",
           "platforms": [
             "windows"
           ],
           "channel": "direct-download",
-          "status": "MVP 0.1.0 implemented. Signing and installers are not done yet.",
+          "status": "Public beta 0.1.0-beta.1. Not code-signed.",
           "identifiers": [],
           "layouts": [],
           "note": null,
-          "centralEditionKey": "windows-desktop"
+          "centralEditionKey": "windows-desktop",
+          "tier": null
         },
         {
           "id": "ios",
@@ -268,20 +271,35 @@
         "accent": "cyan"
       },
       "currentFeatures": [
-        "Receive, read, flag, archive and delete over IMAP (tested against a real Dovecot server)",
-        "Send, reply and forward over SMTP (tested against a real Postfix server)",
+        "Receive, read, flag, archive and delete over IMAP (tested against a real Dovecot server; not yet on Windows)",
+        "Send, reply and forward over SMTP (tested against a real Postfix server; not yet on Windows)",
         "Six-step connection test and Mail Health checks (SPF, DKIM, DMARC)",
         "Safe HTML display with remote images blocked",
-        "Microsoft and Google account sign-in implemented (not yet tested with real accounts)"
+        "Passwords in Windows Credential Manager; TLS with certificate validation (checked on Windows in CI)"
       ],
       "plannedFeatures": [
         "HTML composing",
         "System notifications",
-        "Signed installers and store submissions"
+        "Code-signed installers and store submissions",
+        "Microsoft and Google sign-in in a release build"
       ],
       "requirements": [
-        "Windows x64 (self-contained, unsigned development build)",
+        "Windows 10 version 1607 or later, or Windows 11 (x64); Windows 11 (ARM64)",
+        "No administrator rights and no .NET installation needed (self-contained)",
+        "An email account with IMAP and SMTP access (password or app password)",
         "iPhone and iPad: iOS 16.0 or later (not yet device-tested)"
+      ],
+      "support": [
+        {
+          "label": "Report a bug or give feedback (HCG Mail on GitHub)",
+          "url": "https://github.com/F1r3srp3nt/HCG-Mail/issues"
+        }
+      ],
+      "documentation": [
+        {
+          "label": "HCG Mail for Windows 0.1.0-beta.1 release notes",
+          "url": "https://github.com/F1r3srp3nt/HCG-Mail/blob/8bb1a4f078326da6373962cb81a96f88675bc3f4/Windows-executable-Application/docs/RELEASE_NOTES_0.1.0-beta.1.md"
+        }
       ]
     },
     {
@@ -549,6 +567,40 @@
       "media": [
         {
           "kind": "screenshot",
+          "src": "media/products/hcg-executable-maker/swift-inspect-macos-1381.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/swift-inspect-macos-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1381,
+          "height": 1400,
+          "alt": "HCG Executable Maker New Build wizard on a Mac, inspecting a Swift package: project analysis, required toolchains (Xcode, Swift 6.3.3, macOS SDK, codesign) all satisfied, and findings.",
+          "caption": "New Build, inspecting a Swift package on macOS ARM64 (version 0.2.0).",
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/11-swift-inspect-relay.jpg at 8a10bbb, rendered from the running app on a GitHub-hosted macOS runner (swift-macos CI job). Resized to WebP.",
+          "platform": "macos",
+          "appVersion": "0.2.0"
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-executable-maker/cmake-inspect-linux-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/cmake-inspect-linux-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 1459,
+          "alt": "HCG Executable Maker New Build wizard on Linux, inspecting a CMake project: executable targets and libraries listed, toolchains satisfied, and a confirmation before configuring.",
+          "caption": "New Build, inspecting a C/CMake project on Linux x64 (version 0.3.0 development build).",
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/16-native-cmake-configured.jpg at 8a10bbb, rendered from the running app headless on Linux (ui-driver --native). Resized to WebP.",
+          "platform": "linux",
+          "appVersion": "0.3.0"
+        },
+        {
+          "kind": "screenshot",
           "src": "media/products/hcg-executable-maker/dashboard-1440.webp",
           "variants": [
             {
@@ -560,7 +612,9 @@
           "height": 920,
           "alt": "HCG Executable Maker Command Center dashboard showing build counts, recent builds, host environment and build toolchains.",
           "caption": "Command Center, development build 0.1.0-m0.1 running on Linux x64.",
-          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/01-dashboard.png at commit 8cfaeee, captured from the running app under Xvfb. Converted to WebP."
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/01-dashboard.png at commit 8cfaeee, captured from the running app under Xvfb. Converted to WebP.",
+          "platform": "linux",
+          "appVersion": "0.1.0-m0.1"
         },
         {
           "kind": "screenshot",
@@ -575,7 +629,9 @@
           "height": 900,
           "alt": "HCG Executable Maker Mobile Build Studio showing an imported Android project with build outputs marked unavailable because the Android SDK is missing.",
           "caption": "Mobile Build Studio, development build (milestone 0.5), reporting missing toolchains honestly.",
-          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/10-mobile-build-studio.png at commit 8cfaeee. Resized and converted to WebP."
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/10-mobile-build-studio.png at commit 8cfaeee. Resized and converted to WebP.",
+          "platform": "linux",
+          "appVersion": "0.1.0-m0.1"
         }
       ],
       "currentReleaseId": null,

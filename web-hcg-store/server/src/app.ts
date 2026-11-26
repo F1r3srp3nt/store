@@ -14,9 +14,11 @@
  *   GET  /api/v1/library                       owned products and purchase history
  *   GET  /api/v1/downloads/:artifactId         protected file delivery
  *   GET  /api/v1/repo/products/:key/access     access state for HCG Repo product pages (CORS)
+ *   GET  /api/public/v1/release-resolution/:product   current approved release and how to get it (public, CORS; no URLs to files)
  *   /repo-api/v1/sileo/*                       Sileo payment-provider API (see sileo.ts)
  *   GET  /repo-api/v1/files/:signed            short-lived file URL issued to Sileo
  */
+import { resolveRelease, ResolutionError } from "./release-resolution";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
@@ -362,7 +364,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       devices,
       devicesNote: "A connected package manager is not an installation. HCG Store does not know which apps are installed on your devices, so it shows no install or update status.",
       ownershipUnavailable: unavailable,
-      downloadsMessage: cfg.protectedDownloads ? null : DOWNLOADS_NOT_AVAILABLE,
+      downloadsMessage: cfg.protectedDownloads || cfg.freeDownloads ? null : DOWNLOADS_NOT_AVAILABLE,
     };
   }
 
@@ -373,7 +375,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     const fresh = await freshSession(req);
     if (fresh.unavailable) return errorJson(res, 503, "hcg_unavailable", "Your access could not be checked right now. Try again shortly.");
     if (!fresh.session) return errorJson(res, 401, "sign_in_required", "Sign in with HCG Connect to download.");
-    if (!cfg.protectedDownloads) return errorJson(res, 403, "downloads_not_available", DOWNLOADS_NOT_AVAILABLE);
+    if (!cfg.protectedDownloads && !cfg.freeDownloads) return errorJson(res, 403, "downloads_not_available", DOWNLOADS_NOT_AVAILABLE);
     const artifact = findArtifact(registry, artifactId);
     const product = artifact ? findProduct(registry, artifact.productId) : undefined;
     if (!artifact || !product) return errorJson(res, 404, "not_found", "Not found.");
@@ -539,7 +541,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         hcgConnect: connect ? "configured" : "not-configured",
         entitlementAuthority: authority.kind,
         payments: cfg.paymentProvider === "none" ? "disabled" : `${cfg.paymentProvider}-mode`,
-        protectedDownloads: cfg.protectedDownloads ? "enabled" : "disabled",
+        protectedDownloads: cfg.protectedDownloads ? "enabled" : cfg.freeDownloads ? "free-testing-only" : "disabled",
       });
     }
     if (p === "/api/v1/session" && m === "GET") {
@@ -624,6 +626,18 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         },
         cors,
       );
+    }
+    if ((match = /^\/api\/public\/v1\/release-resolution\/([a-z0-9-]+)$/.exec(p)) && (m === "GET" || m === "OPTIONS")) {
+      // Public, read-only, no cookies: any website may read it (release-resolution.ts).
+      const cors = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS", "access-control-max-age": "86400", vary: "Origin" };
+      if (m === "OPTIONS") return send(res, 204, "", cors);
+      try {
+        const body = resolveRelease({ cfg, registry, live: cfg.publishing.enabled ? publishing : null, now: now() }, match[1]!, { platform: url.searchParams.get("platform"), arch: url.searchParams.get("arch") });
+        return json(res, 200, body, { ...cors, "cache-control": "public, max-age=60" });
+      } catch (e) {
+        if (e instanceof ResolutionError) return errorJson(res, e.status, e.code, e.message, cors);
+        throw e;
+      }
     }
     if (await publishing.route(req, res, url)) return;
     if (p.startsWith("/repo-api/v1/sileo/")) return handleSileo.route(sileoCtx, req, res, url);

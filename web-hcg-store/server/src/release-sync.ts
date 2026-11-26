@@ -76,7 +76,7 @@ export function syncReleases(existing: Release[], products: SyncProduct[], expor
       withdrawnReason: live.length ? null : records.map((r) => r.withdrawnReason ?? "Withdrawn in HCG Store.").join(" "),
       releaseDate: new Date((live[0] ?? first).publishedAt ?? (live[0] ?? first).approvedAt).toISOString().slice(0, 10),
       releaseNotes: [...new Set(records.flatMap((r) => r.releaseNotes))],
-      knownLimitations: [],
+      knownLimitations: [...new Set(records.flatMap((r) => r.knownLimitations ?? []))],
       artifacts: (live.length ? live : []).flatMap((r) =>
         r.artifacts.map((a) => ({
           id: a.id,

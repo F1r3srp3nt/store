@@ -1009,3 +1009,31 @@ html[data-effects="off"] .hero3__symbol {
   min-height: calc(100vh - var(--header-h));
   min-height: calc(100dvh - var(--header-h));
 }
+
+/* Free testing and unsigned-build notices */
+.badge--free {
+  color: rgb(var(--mint-rgb));
+  background: var(--mint-soft);
+  border: 1px solid rgb(var(--mint-rgb) / 0.45);
+}
+.edition__free-until {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+.caution--strong {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--amber-rgb) / 0.5);
+  background: var(--amber-soft);
+  color: var(--text);
+}
+
+/* Long resource and documentation links wrap instead of widening the page. */
+.feature-list--plain .text-link,
+.eco__detail .text-link {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

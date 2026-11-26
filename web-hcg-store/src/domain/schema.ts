@@ -42,6 +42,13 @@ export const MediaSchema = z.strictObject({
   variants: z.array(z.strictObject({ src: relativeAsset, width: z.number().int().positive() })).default([]),
   /** Where the asset came from (repository, path, commit, build). Required for traceability. */
   provenance: text,
+  /**
+   * Screenshots: the operating system the captured build ran on, when it was one (null for a headless render that is
+   * not a capture of a particular platform). Product pages group the gallery by it.
+   */
+  platform: z.enum(PLATFORM_IDS).nullable().default(null),
+  /** Screenshots: the app version shown in the capture, when known. */
+  appVersion: text.nullable().default(null),
 });
 
 export const PlatformEntrySchema = z

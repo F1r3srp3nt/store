@@ -67,6 +67,7 @@ const cfg = parseStoreConfig({
   HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER_CLIENT,
   HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
   HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
+  HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
   HCG_STORE_UPLOAD_CHUNK_MB: "1",
   HCG_STORE_UPLOAD_URL_TTL_SECONDS: process.env.UPLOAD_TTL ?? "900",
 });
@@ -101,7 +102,7 @@ const control = createServer(async (req, res) => {
       // Publishing permissions are HCG's personal grants on hcg.store (store.publish, store.release.approve). Older
       // callers name them hcg.store.publish / hcg.store.approve; any edition they send is ignored.
       const feature = ({ "hcg.store.publish": "store.publish", "hcg.store.approve": "store.release.approve" } as Record<string, string>)[b.central!] ?? b.central!;
-      if (feature === cfg.publishing.publisherCentralId || feature === cfg.publishing.approverCentralId) {
+      if (feature === cfg.publishing.publisherCentralId || feature === cfg.publishing.approverCentralId || feature === cfg.publishing.publicationCentralId) {
         authority.grant(b.sub!, STORE_CENTRAL_PRODUCT_ID, featureEdition(feature), "e2e", null);
       } else authority.grant(b.sub!, b.central!, b.edition ?? "*", "e2e", null);
       return out(200, { ok: true });

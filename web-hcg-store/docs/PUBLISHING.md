@@ -70,9 +70,11 @@ change adds; nothing that worked was replaced.
    (`409 provenance_required` names the files; drafts without them still work, so older Maker versions can upload). The
    source repository is never asked for: a private repository stays private. **Approval is manual**: only in a browser
    session in HCG Store, by someone with the approver permission, typing the version; **public** additionally needs a
-   different person than the creator and a catalogue product with a central ID. Desktop tokens cannot approve.
+   person other than the creator and the submitter (or a founder-operated exception for that exact release; see
+   STORE-OWNER.md) and a catalogue product with a central ID. Desktop tokens cannot approve.
 6. **Publish** (public releases only) is a separate, explicit step after approval, on the review page or the Release
-   Manager: browser session, approver permission, a person other than the creator, typed version. The publisher may
+   Manager: browser session, publication permission (`store.release.publish`), a person other than the creator and the
+   submitter (or the same founder-operated exception), typed version. The publisher may
    choose to **supersede** the edition's currently published releases. Nothing is published automatically, and nothing
    is delivered to customers, listed for HCG Repo/Sileo or exported to the catalogue before publication. Internal-testing
    releases are delivered to testers once approved.
@@ -100,7 +102,8 @@ Superseded releases stay in the history and the catalogue, but are no longer del
 
 The manual approval in HCG Store **is** the release review. There is no second, independent review in git:
 - it needs `store.release.approve` for the product, a browser session, the typed version, and for `public` a person
-  other than the creator (`separation_of_duties`) and a product with a central ID;
+  other than the creator and the submitter (`separation_of_duties`; a CI build is never counted as a person) and a
+  product with a central ID;
 - each step is in the append-only, hash-chained publishing audit (database triggers forbid update and delete).
 
 Delivery follows **publication** (the explicit step after approval): published public files are served through the
@@ -180,9 +183,11 @@ The Store-held package contract with HCG Repo (HCG Repo `docs/STORE_RELEASES.md`
 | Variable | Meaning |
 |---|---|
 | `HCG_STORE_PUBLISHING` | `enabled` / `disabled` (default) |
-| `HCG_STORE_PUBLISHING_CLIENT_IDS` | Comma-separated HCG Connect client IDs allowed to call the publishing API. Production: `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (Executable Maker). Must be issued UUIDs; never the Store's own client or, in production, a development client |
+| `HCG_STORE_PUBLISHING_CLIENT_IDS` | Optional. Comma-separated HCG Connect client IDs allowed to call the publishing API. Production: `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (Executable Maker). Must be issued UUIDs; never the Store's own client or, in production, a development client. Without it, releases arrive only through the operator import |
 | `HCG_STORE_PUBLISHER_CENTRAL_ID` | Central feature checked per product for publishing: `store.publish` |
-| `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central feature checked per product for approval: `store.release.approve` (must differ) |
+| `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central feature checked per product for approval: `store.release.approve` |
+| `HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID` | Central feature checked for publication of an approved release: `store.release.publish`. The three IDs must all differ; all three are required when publishing is enabled |
+| `HCG_STORE_PROTECTED_DOWNLOADS` | `disabled` (default) · `free-testing-only`: only files of releases published as public and free, during an open free testing window (needs `HCG_STORE_FREE_TESTING_APPROVED=founder-approved` in production) · `enabled`: also licensed and paid downloads (needs `HCG_STORE_LAUNCH_APPROVED=founder-approved`) |
 | `HCG_STORE_ARTIFACT_STORAGE_DIR` | Private directory on the data volume (`/data/artifacts`), outside the static root |
 | `HCG_STORE_UPLOAD_MAX_MB` (4096), `HCG_STORE_UPLOAD_CHUNK_MB` (8), `HCG_STORE_UPLOAD_URL_TTL_SECONDS` (900) | Limits |
 

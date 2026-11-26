@@ -11,6 +11,7 @@
  * chain does not verify.
  */
 import { sha256Hex } from "./crypto";
+import type { Db } from "./db";
 
 /** The subset of node:sqlite this module needs, so the CLI can open the database read-only. */
 interface ReadDb {
@@ -55,6 +56,8 @@ export interface ReleaseRecord {
   withdrawnAt: number | null;
   withdrawnReason: string | null;
   releaseNotes: string[];
+  /** Known limitations recorded with the release (absent in older exports). */
+  knownLimitations?: string[];
   artifacts: ReleaseRecordArtifact[];
 }
 
@@ -66,6 +69,15 @@ export interface ReleaseRecordsExport {
 }
 
 type AuditRow = { at: number; actor: string; action: string; release_id: string | null; artifact_id: string | null; detail: string; prev_hash: string; hash: string };
+
+/** Appends one entry to the publishing audit chain (hash-linked to the previous entry). Callers hold a transaction. */
+export function appendPubAudit(db: Db, at: number, actor: string, action: string, releaseId: string | null, artifactId: string | null, detail: object): void {
+  const prev = (db.prepare("SELECT hash FROM pub_audit ORDER BY seq DESC LIMIT 1").get() as { hash: string } | undefined)?.hash ?? "0".repeat(64);
+  const body = JSON.stringify(detail);
+  const hash = sha256Hex(`${prev}|${at}|${actor}|${action}|${releaseId ?? ""}|${artifactId ?? ""}|${body}`);
+  db.prepare("INSERT INTO pub_audit (at, actor, action, release_id, artifact_id, detail, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(at, actor, action, releaseId, artifactId, body, prev, hash);
+}
 
 /** Recomputes the publishing audit chain; false when any entry was altered or removed outside the API. */
 export function auditChainIntact(db: ReadDb): boolean {
@@ -82,14 +94,14 @@ export function auditChainIntact(db: ReadDb): boolean {
 export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExport {
   const releases = db
     .prepare(
-      `SELECT id, product_id, edition_id, version, build, channel, distribution, status, approved_at, published_at, updated_at, withdrawn_reason, release_notes
+      `SELECT id, product_id, edition_id, version, build, channel, distribution, status, approved_at, published_at, updated_at, withdrawn_reason, release_notes, known_limitations
        FROM pub_releases WHERE approved_eligibility = 'public' AND published_at IS NOT NULL AND status IN ('published', 'superseded', 'withdrawn')
          AND product_source = 'catalogue'
        ORDER BY published_at, id`,
     )
     .all() as {
     id: string; product_id: string; edition_id: string | null; version: string; build: string; channel: string; distribution: string;
-    status: "published" | "superseded" | "withdrawn"; approved_at: number; published_at: number; updated_at: number; withdrawn_reason: string | null; release_notes: string;
+    status: "published" | "superseded" | "withdrawn"; approved_at: number; published_at: number; updated_at: number; withdrawn_reason: string | null; release_notes: string; known_limitations: string;
   }[];
   const records: ReleaseRecord[] = [];
   for (const r of releases) {
@@ -140,6 +152,7 @@ export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExp
       withdrawnAt: r.status === "withdrawn" ? r.updated_at : null,
       withdrawnReason: r.status === "withdrawn" ? r.withdrawn_reason : null,
       releaseNotes: JSON.parse(r.release_notes) as string[],
+      knownLimitations: JSON.parse(r.known_limitations ?? "[]") as string[],
       artifacts,
     });
   }

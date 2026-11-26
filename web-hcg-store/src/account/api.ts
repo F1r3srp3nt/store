@@ -68,6 +68,8 @@ export interface EditionAccess {
   downloadsMessage: string;
   artifacts: { id: string; fileName: string; releaseId: string }[];
   message: string | null;
+  /** An open free testing window for this edition (server-side), with its end. Not a price. */
+  freeTesting?: { endsAt: number } | null;
 }
 
 export interface Library {
@@ -106,7 +108,7 @@ export interface Health {
   hcgConnect: "configured" | "not-configured";
   entitlementAuthority: "none" | "test-ledger" | "hcg-ecosystem";
   payments: string;
-  protectedDownloads: "enabled" | "disabled";
+  protectedDownloads: "enabled" | "free-testing-only" | "disabled";
 }
 
 export class StoreApiError extends Error {
@@ -153,7 +155,7 @@ export interface ManagedRelease {
   version: string; build: string; channel: string; status: string; stage: ReleaseStage; approvedEligibility: string | null;
   requestedEligibility: string; distribution: string; createdAt: number; submittedAt: number | null; approvedAt: number | null;
   publishedAt: number | null; supersededBy: string | null; withdrawnReason: string | null; files: number; reviewUrl: string;
-  mayApprove: boolean; mayPublish: boolean;
+  mayApprove: boolean; mayPublish: boolean; mayPublication?: boolean;
 }
 export interface ChecksumReport { ok: boolean; checkedAt: number; files: { id: string; fileName: string; expected: string | null; actual: string | null; ok: boolean }[] }
 export interface ReleaseComparison {

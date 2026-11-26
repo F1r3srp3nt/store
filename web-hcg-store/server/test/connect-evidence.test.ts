@@ -128,13 +128,19 @@ describe("development client guard", () => {
       HCG_STORE_PUBLISHING: "enabled",
       HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
       HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
+      HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
     };
     const ok = parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER });
     expect(ok.publishing).toMatchObject({ enabled: true, clientIds: [MAKER], publisherCentralId: "store.publish", approverCentralId: "store.release.approve" });
-    expect(() => parseStoreConfig(base)).toThrow(/HCG_STORE_PUBLISHING_CLIENT_IDS/);
+    // No desktop client is required: releases can also arrive through the operator import.
+    expect(parseStoreConfig(base).publishing.clientIds).toEqual([]);
+    // Submission, approval and publication are three different central permissions, all required.
+    const { HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: _, ...noPublication } = base;
+    expect(() => parseStoreConfig(noPublication)).toThrow(/HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID/);
+    expect(() => parseStoreConfig({ ...base, HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.approve" })).toThrow(/three different/);
     expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER},${STORE_CLIENT}` })).toThrow(/own sign-in client/);
     expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER},${DEVELOPMENT_CLIENT_IDS[0]}` })).toThrow(/development client/);
     expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: "<maker client>" })).toThrow(/not an issued/);
-    expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER, HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.publish" })).toThrow(/different/);
+    expect(() => parseStoreConfig({ ...base, HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER, HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.publish" })).toThrow(/three different/);
   });
 });

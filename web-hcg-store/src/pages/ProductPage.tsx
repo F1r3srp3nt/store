@@ -11,11 +11,12 @@ import {
 } from "../components/Icons";
 import { MediaImage } from "../components/MediaImage";
 import { PageMeta } from "../components/PageMeta";
+import { ScreenshotGallery } from "../components/ScreenshotGallery";
 import { ACCENT_RGB, ProductBanner, ProductMark } from "../components/ProductArt";
 import { ReleasePanel } from "../components/Release";
 import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
-import { availability, findProductBySlug, relatedProductsOf, successorOf } from "../domain/model";
+import { availability, currentRelease, findProductBySlug, relatedProductsOf, successorOf } from "../domain/model";
 import type { Product } from "../domain/schema";
 import {
   CATEGORIES,
@@ -118,6 +119,7 @@ function ProductDetail({
               <StatusPill
                 status={product.developmentStatus}
                 availability={avail}
+                channel={currentRelease(catalogue, product)?.channel}
               />
               <span className="product-hero__platforms">
                 {product.platforms.length
@@ -185,39 +187,7 @@ function ProductDetail({
                 <h2 id="gallery-title" className="visually-hidden">
                   Screenshots
                 </h2>
-                {screenshots[0] && (
-                  <figure className="gallery-lead">
-                    <div className="product-cover product-cover--shot">
-                      <div className="screen-frame">
-                        <MediaImage
-                          media={screenshots[0]}
-                          sizes="(max-width: 1000px) 92vw, 760px"
-                          // The banner is this page's priority image; without one, the lead screenshot is.
-                          eager={!product.artwork.cover}
-                        />
-                      </div>
-                      <span className="art-label">Screenshot</span>
-                    </div>
-                    <figcaption>{screenshots[0].caption}</figcaption>
-                  </figure>
-                )}
-                {screenshots.length > 1 && (
-                  <ul className="gallery-strip">
-                    {screenshots.slice(1).map((m) => (
-                      <li key={m.src}>
-                        <figure className="gallery-strip__item">
-                          <div className="screen-frame">
-                            <MediaImage
-                              media={m}
-                              sizes="(max-width: 700px) 92vw, 360px"
-                            />
-                          </div>
-                          <figcaption>{m.caption}</figcaption>
-                        </figure>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <ScreenshotGallery screenshots={screenshots} eagerLead={!product.artwork.cover} />
                 {concepts.map((m) => (
                   <figure key={m.src} className="gallery-strip__item">
                     <MediaImage

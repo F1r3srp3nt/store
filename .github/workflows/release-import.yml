@@ -1,0 +1,131 @@
+# HCG Store release import: verification and rehearsal. Read-only towards production.
+#
+# Downloads the files and the HCG Store draft that a product's CI produced (a public repository's Actions run), and
+# checks, without changing any byte: every file's size and SHA-256 against the draft, every Release Passport
+# (hcg.release-passport v1, HCG Repo's schema) against the file (size, SHA-256, SHA-512), and the draft against the
+# import request. Then rehearses the full Release Manager flow in a TEST-mode HCG Store (import, submit, approve,
+# publish, free window, delivery as an ordinary tester, catalogue export) with TEST identities, and uploads the
+# publication preview with screenshots. Nothing is sent to the production Store; no secret is used.
+name: Release import (verify and rehearse)
+
+on:
+  push:
+    branches: [main, claude/stoic-meitner-gqcok1]
+    paths: ["web-hcg-store/release-imports/**", ".github/workflows/release-import.yml"]
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "Import request file under web-hcg-store/release-imports/"
+        required: true
+        default: hcg-mail-windows-0.1.0-beta.1.json
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web-hcg-store
+    env:
+      REQUEST: release-imports/${{ inputs.request || 'hcg-mail-windows-0.1.0-beta.1.json' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the import request
+        id: req
+        run: |
+          echo "repo=$(jq -r .source.repository "$REQUEST")" >> "$GITHUB_OUTPUT"
+          echo "run=$(jq -r .source.runId "$REQUEST")" >> "$GITHUB_OUTPUT"
+          echo "files=$(jq -r .source.filesArtifact "$REQUEST")" >> "$GITHUB_OUTPUT"
+          echo "draft=$(jq -r .source.draftArtifact "$REQUEST")" >> "$GITHUB_OUTPUT"
+      - name: Download the built files (exact bytes from the run)
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ steps.req.outputs.repo }}
+          run-id: ${{ steps.req.outputs.run }}
+          name: ${{ steps.req.outputs.files }}
+          path: ${{ runner.temp }}/import/files
+          github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
+      - name: Download the HCG Store draft and Release Passports
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ steps.req.outputs.repo }}
+          run-id: ${{ steps.req.outputs.run }}
+          name: ${{ steps.req.outputs.draft }}
+          path: ${{ runner.temp }}/import/draft
+          github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
+      - name: HCG Repo passport schema
+        uses: actions/checkout@v4
+        with:
+          repository: F1r3srp3nt/hcg-repo
+          # The commit HCG Mail's workflow validated its passports against.
+          ref: 0c25d955fe37accb9c83cde4632637b6dfcd623c
+          path: hcg-repo
+          sparse-checkout: docs/schemas
+      - name: Verify files, checksums, passports and draft (no byte is changed)
+        run: |
+          pip install --quiet jsonschema==4.23.0
+          python3 scripts/verify-release-import.py --request "$REQUEST" --files "$RUNNER_TEMP/import/files" \
+            --draft "$RUNNER_TEMP/import/draft" --schema ../hcg-repo/docs/schemas/release-passport-v1.schema.json \
+            --out "$RUNNER_TEMP/import/report.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-import-verification
+          path: |
+            ${{ runner.temp }}/import/report.json
+            ${{ runner.temp }}/import/draft
+          retention-days: 30
+      - name: When the source run's artifacts expire
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ steps.req.outputs.repo }}/actions/runs/${{ steps.req.outputs.run }}/artifacts" \
+            --jq '.artifacts[] | "\(.name)  created \(.created_at)  expires \(.expires_at)  expired=\(.expired)"' | tee -a "$GITHUB_STEP_SUMMARY" || true
+      # A verified copy of the exact files, draft and passports, kept in this repository's Actions storage for the
+      # longest retention GitHub allows, so the production import does not depend on the source run's artifacts
+      # still existing. The production import verifies every byte again whichever copy it uses (deploy-fly.yml).
+      - name: Preserved copy (exact bytes, same names)
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-${{ steps.req.outputs.files }}
+          path: |
+            ${{ runner.temp }}/import/files
+            ${{ runner.temp }}/import/draft
+          retention-days: 90
+          compression-level: 0
+
+      # ---- Rehearsal: the real files through the real Store code in TEST mode (never production) ----
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-hcg-store/package-lock.json
+      - run: npm ci
+      - name: Rehearse import, approval, publication, free window and delivery (TEST identities)
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/rehearsal"
+          npx tsx server/test/release-rehearsal.ts import --request "$REQUEST" --dir "$RUNNER_TEMP/import" --work "$RUNNER_TEMP/rehearsal" 2>&1 \
+            | grep -v ExperimentalWarning | tee "$RUNNER_TEMP/rehearsal/rehearsal.log"
+      - name: Build the preview site with the generated catalogue entry
+        run: HCG_CATALOGUE_DIR="$RUNNER_TEMP/rehearsal/catalogue" npx vite build --outDir "$RUNNER_TEMP/preview-dist" --logLevel warn
+      - name: Publication preview screenshots
+        run: |
+          npx playwright install --with-deps chromium >/dev/null
+          npx tsx server/test/release-rehearsal.ts serve --work "$RUNNER_TEMP/rehearsal" --static "$RUNNER_TEMP/preview-dist" --port 4790 --control-port 4791 > "$RUNNER_TEMP/rehearsal/serve.log" 2>&1 &
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:4790/api/v1/health >/dev/null && break; sleep 1; done
+          mkdir -p "$RUNNER_TEMP/rehearsal/screenshots"
+          node scripts/rehearsal-screenshots.cjs http://127.0.0.1:4790 http://127.0.0.1:4791 "$RUNNER_TEMP/rehearsal/screenshots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: publication-preview
+          path: |
+            ${{ runner.temp }}/rehearsal/publication-preview.json
+            ${{ runner.temp }}/rehearsal/rehearsal.log
+            ${{ runner.temp }}/rehearsal/catalogue/releases.json
+            ${{ runner.temp }}/rehearsal/catalogue/products.json
+            ${{ runner.temp }}/rehearsal/screenshots
+          retention-days: 30

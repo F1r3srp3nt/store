@@ -116,7 +116,16 @@ function DeliveryNote({ release }: { release: Release }) {
   );
 }
 
-const DOWNLOADS_NOT_AVAILABLE_HINT = "Owners see their downloads in the panel above when downloads are available.";
+const DOWNLOADS_NOT_AVAILABLE_HINT = "Accounts with access download it under Editions, price and availability when downloads are available.";
+
+/** Plain file-type label: Windows installers and portable ZIPs are named as such. */
+function fileTypeLabel(artifact: Artifact): string {
+  if (artifact.platform === "windows" && artifact.format === "exe") return "Installer (.exe)";
+  if (artifact.platform === "windows" && artifact.format === "msi") return "Installer (.msi)";
+  if (artifact.platform === "windows" && artifact.format === "zip") return "Portable ZIP (no installation)";
+  return ARTIFACT_FORMATS[artifact.format];
+}
+const ARCH_LABELS: Record<string, string> = { x64: "x64", arm64: "ARM64", x86: "x86" };
 
 export function ArtifactCard({ release, artifact, showGuidance = true }: { release: Release; artifact: Artifact; showGuidance?: boolean }) {
   const guidance = installGuidance(artifact.format, artifact.platform);
@@ -125,9 +134,9 @@ export function ArtifactCard({ release, artifact, showGuidance = true }: { relea
       <header className="artifact__head">
         <h4>
           {PLATFORMS[artifact.platform].label}
-          {artifact.architectures.length > 0 && <span className="artifact__arch"> · {artifact.architectures.join(", ")}</span>}
+          {artifact.architectures.length > 0 && <span className="artifact__arch"> · {artifact.architectures.map((a) => ARCH_LABELS[a] ?? a).join(", ")}</span>}
         </h4>
-        <span className="artifact__format">{ARTIFACT_FORMATS[artifact.format]}</span>
+        <span className="artifact__format">{fileTypeLabel(artifact)}</span>
       </header>
       <dl className="kv kv--compact">
         <div>
@@ -136,7 +145,15 @@ export function ArtifactCard({ release, artifact, showGuidance = true }: { relea
         </div>
         <div>
           <dt>Size</dt>
-          <dd>{formatBytes(artifact.sizeBytes) ?? <span className="muted">Not stated</span>}</dd>
+          <dd>
+            {artifact.sizeBytes === null ? (
+              <span className="muted">Not stated</span>
+            ) : (
+              <>
+                {formatBytes(artifact.sizeBytes)} <span className="muted">({artifact.sizeBytes.toLocaleString("en-US")} bytes)</span>
+              </>
+            )}
+          </dd>
         </div>
         <div>
           <dt>Minimum OS</dt>
@@ -183,6 +200,12 @@ export function ReleasePanel({ catalogue, product }: { catalogue: Catalogue; pro
       {cur ? (
         <>
           <ReleaseMeta release={cur} />
+          {cur.artifacts.some((a) => a.signing.status === "unsigned") && (
+            <p className="caution caution--strong" role="note">
+              <IconShield className="inline-icon" /> <strong>Not code-signed.</strong> Windows SmartScreen shows "Windows protected your PC". Run a file
+              only if its SHA-256 matches the checksum shown here (PowerShell: <code>Get-FileHash .\&lt;file&gt;</code>).
+            </p>
+          )}
           {cur.artifacts.length ? (
             <div className="artifact-list">
               {cur.artifacts.map((a) => (

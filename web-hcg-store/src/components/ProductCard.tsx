@@ -58,7 +58,7 @@ export function ProductCard({
           <p className="product-row__summary">{product.summary}</p>
         </div>
         <p className="product-row__platforms">{platformLine(product)}</p>
-        <StatusPill status={product.developmentStatus} availability={avail} />
+        <StatusPill status={product.developmentStatus} availability={avail} channel={cur?.channel} />
       </article>
     );
   }
@@ -71,7 +71,7 @@ export function ProductCard({
           {title}
           <p className="product-compact__summary">{product.summary}</p>
         </div>
-        <StatusPill status={product.developmentStatus} availability={avail} />
+        <StatusPill status={product.developmentStatus} availability={avail} channel={cur?.channel} />
       </article>
     );
   }
@@ -116,7 +116,7 @@ export function ProductCard({
           ))}
         </ul>
         <div className="product-card__meta">
-          <StatusPill status={product.developmentStatus} availability={avail} />
+          <StatusPill status={product.developmentStatus} availability={avail} channel={cur?.channel} />
           {cur && (
             <span className="product-card__release mono">
               v{cur.version} · {cur.channel}

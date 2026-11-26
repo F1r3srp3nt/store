@@ -46,7 +46,8 @@ export function PlatformChips({ platforms, compact = false }: { platforms: Platf
  * One consistent storefront status per product, combining release availability and development
  * stage: Released → Testing → In development → Planned (→ Paused / Status not stated).
  */
-export function storefrontStatus(status: DevelopmentStatus, availability: Availability): { label: string; tone: string; detail: string } {
+export function storefrontStatus(status: DevelopmentStatus, availability: Availability, channel?: string | null): { label: string; tone: string; detail: string } {
+  if (availability === "released" && channel === "beta") return { label: "Public beta", tone: "released", detail: "An approved public beta release exists. It is a prerelease for testing." };
   if (availability === "released") return { label: "Released", tone: "released", detail: "An approved release exists." };
   switch (status) {
     case "testing":
@@ -64,8 +65,8 @@ export function storefrontStatus(status: DevelopmentStatus, availability: Availa
   }
 }
 
-export function StatusPill({ status, availability }: { status: DevelopmentStatus; availability: Availability }) {
-  const s = storefrontStatus(status, availability);
+export function StatusPill({ status, availability, channel }: { status: DevelopmentStatus; availability: Availability; channel?: string | null }) {
+  const s = storefrontStatus(status, availability, channel);
   return (
     <span className={`status-pill status-pill--${s.tone}`} title={s.detail}>
       <span className="status-pill__dot" aria-hidden="true" />

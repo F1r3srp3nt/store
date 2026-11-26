@@ -196,7 +196,19 @@ function EditionCard({
       <div className="edition__commerce">
         <p className="edition__price">
           <span className="visually-hidden">Price: </span>
-          {offer ? (
+          {access?.freeTesting ? (
+            // A free testing window is open (server-side): free with an HCG account until it ends. Not a price.
+            <>
+              <span className="badge badge--free">Temporarily free</span>{" "}
+              <span className="edition__free-until">
+                Free during public testing until{" "}
+                <time dateTime={new Date(access.freeTesting.endsAt).toISOString()}>
+                  {new Date(access.freeTesting.endsAt).toLocaleDateString("en-GB", { dateStyle: "long" })}
+                </time>
+                . No payment details needed; nothing is charged when it ends.
+              </span>
+            </>
+          ) : offer ? (
             <>
               <strong>{formatPrice(offer)}</strong>
               {offer.testOnly && <span className="badge badge--test">Test mode</span>}
@@ -249,7 +261,7 @@ function OwnershipBadge({ access, loading, signInAvailable }: { access: EditionA
         </span>
       );
     case "free":
-      return <span className="badge badge--muted">Free with your HCG account</span>;
+      return <span className="badge badge--muted">{access.freeTesting ? "Free during testing" : "Free with your HCG account"}</span>;
     case "not-owned":
       return <span className="badge badge--muted">Not owned</span>;
     case "not-for-sale":
