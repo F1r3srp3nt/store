@@ -132,6 +132,29 @@ export class HcgConnectClient {
     return payload;
   }
 
+  /**
+   * Diagnostics only (GET /api/v1/publishing/status): checks a bearer token's signature, issuer, subject and expiry
+   * WITHOUT the client allow-list, so the Store can say precisely which part failed. Never authorises anything.
+   */
+  async inspectAccessToken(token: string): Promise<{ valid: true; payload: JWTPayload } | { valid: false; code: "expired" | "invalid" | "unverifiable"; reason: string }> {
+    try {
+      const { payload } = await jwtVerify(token, this.jwks, {
+        issuer: this.s.issuer,
+        algorithms: ["ES256", "RS256"],
+        clockTolerance: 30,
+        currentDate: new Date(this.now()),
+      });
+      if (!payload.sub) return { valid: false, code: "invalid", reason: "Access token has no subject." };
+      return { valid: true, payload };
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? "";
+      if (code === "ERR_JWT_EXPIRED") return { valid: false, code: "expired", reason: "The access token has expired." };
+      // HCG Connect's signing keys could not be fetched: not the token's fault.
+      if (code === "ERR_JWKS_TIMEOUT" || e instanceof TypeError) return { valid: false, code: "unverifiable", reason: `HCG Connect's signing keys could not be fetched (${(e as Error).message}).` };
+      return { valid: false, code: "invalid", reason: (e as Error).message };
+    }
+  }
+
   async exchangeCode(code: string, verifier: string, nonce: string): Promise<{ tokens: TokenSet; identity: Identity }> {
     const r = await this.tokenRequest({ grant_type: "authorization_code", code, redirect_uri: this.s.redirectUri, code_verifier: verifier });
     if (!r.ok) throw new Error(`Code exchange failed (${r.code}).`);

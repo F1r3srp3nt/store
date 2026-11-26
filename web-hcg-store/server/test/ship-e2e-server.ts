@@ -19,7 +19,8 @@
  *   POST /download   {sub, productId, editionId}   a signed-in customer downloads every file the Store offers them
  *                                                  (SHA-256 of each), as on the product page
  *
- * Options (environment): SHIP_E2E_CATALOGUE=real uses the Store's real catalogue (e.g. HCG Mail) instead of the
+ * Options (environment): SHIP_E2E_PUBLISHING=submissions runs the Store with public publication switched off (private
+ * drafts, uploads and review only); SHIP_E2E_CATALOGUE=real uses the Store's real catalogue (e.g. HCG Mail) instead of the
  * fixture one; SHIP_E2E_DOWNLOADS=free-testing-only|enabled; SHIP_E2E_OFFERS_ID=<TEST key> enables Pricing and Offers; /token accepts {client: "store-manager"} for HCG Store
  * Manager's TEST client.
  */
@@ -77,7 +78,8 @@ const cfg = parseStoreConfig({
   HCG_CATALOGUE_DIR: realCatalogue ? join(import.meta.dirname, "..", "..", "catalogue") : FIXTURE_CATALOGUE,
   HCG_STORE_OFFERS_FILE: join(reg, "offers.json"),
   HCG_STORE_ARTIFACTS_FILE: join(reg, "artifacts.json"),
-  HCG_STORE_PUBLISHING: "enabled",
+  // SHIP_E2E_PUBLISHING=submissions: private drafts, uploads and review only; public publication refused (409).
+  HCG_STORE_PUBLISHING: process.env.SHIP_E2E_PUBLISHING === "submissions" ? "submissions" : "enabled",
   HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER_CLIENT},${STORE_MANAGER_CLIENT}`,
   HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
   HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",

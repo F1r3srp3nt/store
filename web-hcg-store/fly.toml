@@ -48,7 +48,8 @@ kill_timeout = 10
   # Phase 3: Ship to Store publishing. Separate from customer payments and downloads. Enable only after phase 2 is
   # verified, HCG has created the two permissions below as product features with per-person grants (membership of an
   # organisation alone must not pass), and the publishing checks in docs/PRODUCTION-DEPLOY.md pass. Then set
-  # HCG_STORE_PUBLISHING above to "enabled" and uncomment these.
+  # HCG_STORE_PUBLISHING above to "submissions" (private drafts, uploads and review; nothing public) or, after its own
+  # approval, "enabled" (also public publication), and uncomment these (docs/PUBLISHING.md §6a).
   # HCG Executable Maker's production client (issued by HCG, status configured_untested). Never the Store's own client.
   # HCG_STORE_PUBLISHING_CLIENT_IDS = "fb9b6edf-2bfc-4b5e-a354-dbb1af697029"
   # HCG_STORE_PUBLISHER_CENTRAL_ID = "store.publish"

@@ -182,17 +182,42 @@ The Store-held package contract with HCG Repo (HCG Repo `docs/STORE_RELEASES.md`
 
 | Variable | Meaning |
 |---|---|
-| `HCG_STORE_PUBLISHING` | `enabled` / `disabled` (default) |
+| `HCG_STORE_PUBLISHING` | `disabled` (default) · `submissions`: private drafts, uploads, Release Passports, submission, review and approval; **public publication and delivery stay off** · `enabled`: also the explicit public publication of an approved release (§6a) |
 | `HCG_STORE_PUBLISHING_CLIENT_IDS` | Optional. Comma-separated HCG Connect client IDs allowed to call the publishing API. Production: `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (Executable Maker). Must be issued UUIDs; never the Store's own client or, in production, a development client. Without it, releases arrive only through the operator import |
 | `HCG_STORE_PUBLISHER_CENTRAL_ID` | Central feature checked per product for publishing: `store.publish` |
 | `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central feature checked per product for approval: `store.release.approve` |
-| `HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID` | Central feature checked for publication of an approved release: `store.release.publish`. The three IDs must all differ; all three are required when publishing is enabled |
+| `HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID` | Central feature checked for publication of an approved release: `store.release.publish`. The three IDs must all differ. Required with `enabled`; not needed with `submissions` (nothing can be published then) |
 | `HCG_STORE_PROTECTED_DOWNLOADS` | `disabled` (default) · `free-testing-only`: only files of releases published as public and free, during an open free testing window (needs `HCG_STORE_FREE_TESTING_APPROVED=founder-approved` in production) · `enabled`: also licensed and paid downloads (needs `HCG_STORE_LAUNCH_APPROVED=founder-approved`) |
 | `HCG_STORE_ARTIFACT_STORAGE_DIR` | Private directory on the data volume (`/data/artifacts`), outside the static root |
 | `HCG_STORE_UPLOAD_MAX_MB` (4096), `HCG_STORE_UPLOAD_CHUNK_MB` (8), `HCG_STORE_UPLOAD_URL_TTL_SECONDS` (900) | Limits |
 | `HCG_STORE_STORAGE_QUOTA_MB` | Optional. Total size of release files the Store keeps (staging included); a declaration that would exceed it is refused with `quota_exceeded`. Unset: no quota |
 
 No storage administrator key exists anywhere: files are written by the Store process into its private directory.
+
+### 6a. Private submissions without public publication, and diagnostics
+
+Ship to Store is first an artifact submission feature: a person builds an application in HCG Executable Maker, uploads
+it, and it waits privately for review. `HCG_STORE_PUBLISHING=submissions` allows exactly that and nothing public:
+
+| Stage | `disabled` | `submissions` | `enabled` |
+|---|---|---|---|
+| Product list, private draft, resumable upload, server SHA-256, Release Passport, submit for review | off | **on** | on |
+| Release Manager, review, manual approval (browser) | off | **on** | on |
+| Public publication of an approved release (browser, separate permission) | off | **off** (`409 publication_disabled`) | on |
+| Delivery of published releases (downloads, Sileo, release resolution) | off | **off** | per launch switches |
+
+`GET /api/v1/publishing/status` answers in every mode, without sign-in, so an app can say precisely what is off and why:
+API version and `minimumClientApiVersion`, the mode, whether HCG Connect is configured, the permission IDs, and each
+stage with `available`, `where` (app or browser) and the reason when it is off. With a bearer token it also reports,
+separately: whether the token is valid, expired or unverifiable; the HCG Connect client it was issued to and whether
+that client is registered for publishing (and why not: another app's client, or the Store's own web sign-in); each of
+HCG's permissions (`granted`, `not-granted`, `unavailable`, `not-configured`, `switched-off`); and how many products the
+account may submit. The token is never echoed. HCG Executable Maker's Ship to Store diagnostics read this endpoint.
+
+**Proposal for founder review (not applied):** after phases 2–3 of PRODUCTION-DEPLOY.md pass, production can move to
+`HCG_STORE_PUBLISHING = "submissions"` (with the client and the publisher and approver permission IDs uncommented in
+`fly.toml`) so Executable Maker can upload private drafts while public publication stays off. `fly.toml` still says
+`disabled`; nothing was deployed.
 
 ## 7. Production prerequisites (phase 3 in PRODUCTION-DEPLOY.md)
 
@@ -205,7 +230,8 @@ No storage administrator key exists anywhere: files are written by the Store pro
 | 5 | HCG creates `store.publish` and `store.release.approve` as per-product features with per-person grants (membership alone must not pass) | **Not done** (main-site plan steps 3–4, awaiting founder approval) |
 | 6 | Two different people hold the permissions (publisher, approver) | **Not done**: no eligible approver exists |
 | 7 | Publishing checks pass in production (PRODUCTION-DEPLOY.md, phase 3) | **Not run** |
-| 8 | Founder approval to set `HCG_STORE_PUBLISHING=enabled` | **Not given** |
+| 8 | Founder approval to set `HCG_STORE_PUBLISHING=submissions` (private uploads and review only, §6a) | **Not given** |
+| 9 | Founder approval to set `HCG_STORE_PUBLISHING=enabled` (public publication) | **Not given** |
 
 Customer delivery of approved files stays behind the separate launch conditions in [ACCESS.md](ACCESS.md).
 

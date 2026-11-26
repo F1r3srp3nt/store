@@ -77,11 +77,21 @@ export interface StoreConfig {
 }
 
 /**
- * Ship to Store (release publishing). Off unless HCG_STORE_PUBLISHING=enabled. Who may publish or approve is
- * decided by HCG's entitlement authority (central permission IDs), never by the Store.
+ * Ship to Store (release publishing). HCG_STORE_PUBLISHING:
+ * - "disabled" (default): no drafts, uploads, review or publication.
+ * - "submissions": authorised people submit private drafts and upload files (HCG Executable Maker), and releases wait
+ *   for review and approval. Public publication stays off: nothing is delivered and nothing becomes public.
+ * - "enabled": everything, including the explicit public publication of an approved release (browser only).
+ * Who may submit, approve or publish is decided by HCG's entitlement authority (central permission IDs), never by the Store.
  */
+export type PublishingMode = "disabled" | "submissions" | "enabled";
+
 export interface PublishingSettings {
+  mode: PublishingMode;
+  /** Drafts, uploads, submission and review are available ("submissions" or "enabled"). */
   enabled: boolean;
+  /** Public publication (and so delivery of published releases) is available: "enabled" only. */
+  publication: boolean;
   /** HCG Connect client IDs whose access tokens may call the publishing API (e.g. HCG Executable Maker). */
   clientIds: string[];
   /** Central permission checked for publishing (edition = Store product ID, or "*" for every product). */
@@ -280,8 +290,10 @@ export function parseStoreConfig(env: Env): StoreConfig {
 
   const repoBaseUrl = httpsUrl(env.HCG_REPO_BASE_URL ?? "https://repo.hakmicapitalgroup.com/", "HCG_REPO_BASE_URL", problems, test) ?? "";
 
-  const publishingEnabled = env.HCG_STORE_PUBLISHING === "enabled";
-  if (env.HCG_STORE_PUBLISHING && !["enabled", "disabled"].includes(env.HCG_STORE_PUBLISHING)) problems.push(`HCG_STORE_PUBLISHING must be "enabled" or "disabled".`);
+  const publishingMode: PublishingMode = env.HCG_STORE_PUBLISHING === "enabled" ? "enabled" : env.HCG_STORE_PUBLISHING === "submissions" ? "submissions" : "disabled";
+  const publishingEnabled = publishingMode !== "disabled";
+  const publicationEnabled = publishingMode === "enabled";
+  if (env.HCG_STORE_PUBLISHING && !["enabled", "submissions", "disabled"].includes(env.HCG_STORE_PUBLISHING)) problems.push(`HCG_STORE_PUBLISHING must be "enabled", "submissions" or "disabled".`);
   const centralPermission = /^[a-z0-9][a-z0-9._-]{1,79}$/;
   const publisherCentralId = env.HCG_STORE_PUBLISHER_CENTRAL_ID?.trim() || null;
   const approverCentralId = env.HCG_STORE_RELEASE_APPROVER_CENTRAL_ID?.trim() || null;
@@ -297,7 +309,9 @@ export function parseStoreConfig(env: Env): StoreConfig {
     if (!artifactStorageDir) problems.push("Publishing needs HCG_STORE_ARTIFACT_STORAGE_DIR (a private directory).");
     if (!publisherCentralId || !centralPermission.test(publisherCentralId)) problems.push("Publishing needs HCG_STORE_PUBLISHER_CENTRAL_ID: the central permission HCG grants to publishers.");
     if (!approverCentralId || !centralPermission.test(approverCentralId)) problems.push("Publishing needs HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: the central permission HCG grants to release approvers.");
-    if (!publicationCentralId || !centralPermission.test(publicationCentralId)) problems.push("Publishing needs HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: the central permission HCG grants to the people who may publish an approved release.");
+    // Public publication needs its own permission; private submissions do not (nothing can become public then).
+    if (publicationEnabled && (!publicationCentralId || !centralPermission.test(publicationCentralId))) problems.push("Publishing needs HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: the central permission HCG grants to the people who may publish an approved release.");
+    if (!publicationEnabled && publicationCentralId && !centralPermission.test(publicationCentralId)) problems.push("HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID is not a central permission ID.");
     if (new Set([publisherCentralId, approverCentralId, publicationCentralId].filter(Boolean)).size !== [publisherCentralId, approverCentralId, publicationCentralId].filter(Boolean).length) {
       problems.push("Draft submission, release approval and publication must be three different central permission IDs.");
     }
@@ -341,7 +355,9 @@ export function parseStoreConfig(env: Env): StoreConfig {
     downloadUrlTtlSeconds: int("HCG_STORE_DOWNLOAD_URL_TTL_SECONDS", 120, 10, 900),
     repoBaseUrl,
     publishing: {
+      mode: publishingMode,
       enabled: publishingEnabled,
+      publication: publicationEnabled,
       clientIds: publishingClientIds,
       publisherCentralId,
       approverCentralId,

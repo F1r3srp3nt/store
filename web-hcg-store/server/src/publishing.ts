@@ -1,6 +1,9 @@
 /**
  * Ship to Store: release publishing for HCG Executable Maker (and the Store's own review page).
  *
+ *   GET    /api/v1/publishing/status                         what works on this Store and why not (always answers,
+ *                                                             even when Ship to Store is off); with a bearer token,
+ *                                                             also the token, client registration and permissions
  *   GET    /api/v1/publishing/whoami                         who is calling; publisher/approver per HCG
  *   GET    /api/v1/publishing/capabilities                   API version, upload limits, formats, storage use (HCG Store Manager)
  *   GET    /api/v1/publishing/offers/windows?productId=      free testing periods and their history
@@ -85,6 +88,11 @@ export function debianVersionMatches(debVersion: string, releaseVersion: string)
 
 /** HCG Store's own central product (registered: main-site handoff, 16 Nov 2026). */
 export const STORE_CENTRAL_PRODUCT_ID = "hcg.store";
+
+/** The publishing API's version. A client that needs a newer one reads `minimumClientApiVersion` and `features` from status. */
+export const PUBLISHING_API_VERSION = 1;
+const OFF_MESSAGE = "Ship to Store is switched off on this HCG Store server (HCG_STORE_PUBLISHING=disabled): no private drafts, uploads, review or publication. An HCG Store administrator can turn on private submissions (HCG_STORE_PUBLISHING=submissions) without making anything public.";
+const PUBLICATION_OFF_MESSAGE = "Public publication is switched off on this HCG Store server (HCG_STORE_PUBLISHING=submissions). Private drafts, uploads, submission and review work; nothing becomes public until an administrator enables publication.";
 
 const kebab = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const hex64 = /^[a-f0-9]{64}$/;
@@ -259,6 +267,9 @@ export function createPublishing(deps: PublishingDeps) {
   async function permitted(actor: Actor, permission: "publish" | "approve" | "publication" | "offers", productId: string): Promise<boolean> {
     // Pricing and Offers is off until HCG issues its permission and it is configured (HCG_STORE_OFFERS_CENTRAL_ID).
     if (permission === "offers" && !P.offersCentralId) return false;
+    // Public publication is off in "submissions" mode (and when HCG's publication permission is not configured).
+    if (permission === "publication" && (!P.publication || !P.publicationCentralId)) return false;
+    if ((permission === "publish" && !P.publisherCentralId) || (permission === "approve" && !P.approverCentralId)) return false;
     const feature = permission === "publish" ? P.publisherCentralId! : permission === "approve" ? P.approverCentralId! : permission === "publication" ? P.publicationCentralId! : P.offersCentralId!;
     const subject: Subject = { sub: actor.sub, accessToken: actor.accessToken };
     // A central feature of the product (HCG's planned staff permissions `store.publish` and `store.release.approve`),
@@ -531,7 +542,7 @@ export function createPublishing(deps: PublishingDeps) {
 
   /** Verified files of releases MANUALLY approved for public delivery (used by /api/v1/downloads and Sileo). */
   function publishedFor(productId: string, editionId: string | null): ProtectedArtifact[] {
-    if (!P.enabled) return [];
+    if (!P.publication) return [];
     const rows = db.prepare(
       `SELECT a.* FROM pub_artifacts a JOIN pub_releases r ON r.id = a.release_id
        WHERE r.product_id = ? AND r.edition_id IS ? AND r.status = 'published' AND r.approved_eligibility = 'public' AND a.status = 'verified'
@@ -552,7 +563,7 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   function freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[] {
-    if (!P.enabled) return [];
+    if (!P.publication) return [];
     const basis = freeBasis(productId, editionId);
     if (!basis) return [];
     const rows = db.prepare(
@@ -616,6 +627,87 @@ export function createPublishing(deps: PublishingDeps) {
     return { api_version: "v1", destination: "hcg-repo", generatedAt: now(), releases };
   }
 
+  // ------------------------------------------------------------- products and diagnostics
+
+  /** Products HCG lets this account submit releases of (catalogue products and Store draft products). */
+  async function productsFor(actor: Actor) {
+    const all = [
+      ...registry.catalogue.products.map((x) => ({ id: x.id, title: x.name, source: "catalogue" as const, editions: x.editions.map((e) => ({ id: e.id, name: e.name, platforms: e.platforms })), centralId: x.registry.centralId, hcgRepo: x.hcgRepo.map((l) => l.key) })),
+      ...(db.prepare("SELECT id, title FROM pub_products ORDER BY id").all() as { id: string; title: string }[]).map((d) => ({ id: d.id, title: d.title, source: "draft" as const, editions: [], centralId: null, hcgRepo: [] })),
+    ];
+    const allowed = [];
+    for (const x of all) if (await permitted(actor, "publish", x.id)) allowed.push(x);
+    return allowed;
+  }
+
+  /**
+   * `GET /api/v1/publishing/status`: what works on this Store, stage by stage, with the reason when something does not.
+   * Answers in every mode, without sign-in. With a bearer token it also says, separately, whether the token is valid,
+   * which HCG Connect client it was issued to and whether that client is registered for publishing, and which of HCG's
+   * permissions the account holds. The token itself is never echoed.
+   */
+  async function status(req: IncomingMessage) {
+    const stage = (available: boolean, reason: string, where: "app" | "browser" = "app") => ({ available, where, reason: available ? null : reason });
+    const publicationReason = P.enabled ? PUBLICATION_OFF_MESSAGE : OFF_MESSAGE;
+    return {
+      apiVersion: PUBLISHING_API_VERSION,
+      minimumClientApiVersion: 1,
+      features: ["status", "private-submissions", "release-passports", "release-manager", "resumable-upload", "server-checksum"],
+      server: { mode: cfg.mode },
+      publishing: P.mode,
+      hcgConnect: deps.connect && cfg.hcgConnect ? { configured: true, issuer: cfg.hcgConnect.issuer } : { configured: false, issuer: null },
+      desktopClients: { registered: P.clientIds.length },
+      permissions: { scope: STORE_CENTRAL_PRODUCT_ID, submit: P.publisherCentralId, approve: P.approverCentralId, publish: P.publication ? P.publicationCentralId : null },
+      stages: {
+        draftCreation: stage(P.enabled, OFF_MESSAGE),
+        artifactUpload: stage(P.enabled, OFF_MESSAGE),
+        passportAttachment: stage(P.enabled, OFF_MESSAGE),
+        releaseSubmission: stage(P.enabled, OFF_MESSAGE),
+        approval: stage(P.enabled, OFF_MESSAGE, "browser"),
+        publicPublication: stage(P.publication, publicationReason, "browser"),
+      },
+      limits: P.enabled ? { maxUploadBytes: P.maxUploadBytes, chunkBytes: P.chunkBytes, uploadUrlTtlSeconds: P.uploadUrlTtlSeconds } : null,
+      caller: await callerStatus(req),
+    };
+  }
+
+  async function callerStatus(req: IncomingMessage) {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) return null;
+    if (!deps.connect) return { token: "not-checked" as const, reason: "HCG Connect is not configured on this Store, so no sign-in can be checked." };
+    const token = auth.slice(7).trim();
+    const checked = await deps.connect.inspectAccessToken(token);
+    if (!checked.valid) return { token: checked.code, reason: checked.reason };
+    const p = checked.payload;
+    const clientId = typeof p.client_id === "string" ? p.client_id : null;
+    const clientRegistered = !!clientId && P.clientIds.includes(clientId);
+    const clientReason = clientRegistered ? null
+      : !clientId ? "The token names no HCG Connect client."
+      : clientId === cfg.hcgConnect?.clientId ? "This token belongs to HCG Store's own web sign-in, which never calls the publishing API."
+      : "This HCG Connect client is not registered for publishing on this Store (HCG_STORE_PUBLISHING_CLIENT_IDS).";
+    const actor: Actor = { sub: p.sub!, accessToken: token, via: "desktop", email: typeof p.email === "string" ? p.email : null };
+    const check = async (perm: "publish" | "approve" | "publication", configured: boolean) => {
+      if (!configured) return "not-configured" as const;
+      try { return (await permitted(actor, perm, STORE_CENTRAL_PRODUCT_ID)) ? "granted" as const : "not-granted" as const; }
+      catch { return "unavailable" as const; }
+    };
+    // Permissions are HCG's answer about the person; they are checked even when the client or the mode would refuse, so
+    // every cause is visible at once.
+    const permissions = {
+      submit: await check("publish", !!P.publisherCentralId),
+      approve: await check("approve", !!P.approverCentralId),
+      publish: P.publication ? await check("publication", !!P.publicationCentralId) : "switched-off" as const,
+    };
+    let authorizedProducts: number | null = null;
+    if (clientRegistered && permissions.submit === "granted") {
+      try { authorizedProducts = (await productsFor(actor)).length; } catch { authorizedProducts = null; }
+    }
+    return {
+      token: "valid" as const, reason: null, sub: actor.sub, email: actor.email, expiresAt: typeof p.exp === "number" ? p.exp * 1000 : null,
+      scopes: typeof p.scope === "string" ? p.scope.split(" ").filter(Boolean) : [], clientId, clientRegistered, clientReason, permissions, authorizedProducts,
+    };
+  }
+
   // ------------------------------------------------------------- router
 
   async function route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
@@ -634,7 +726,9 @@ export function createPublishing(deps: PublishingDeps) {
     const p = url.pathname;
     const m = req.method ?? "GET";
     if (!p.startsWith("/api/v1/publishing") && !p.startsWith("/publishing-upload/") && !p.startsWith("/publishing-download/") && !p.startsWith("/publishing/") && p !== "/api/v1/repo/releases") return false;
-    if (!P.enabled) { errorJson(res, 404, "publishing_disabled", "Publishing is not enabled on this Store."); return true; }
+    // Diagnostics answer whatever the mode, so an app can say precisely what is switched off and why.
+    if (p === "/api/v1/publishing/status" && m === "GET") { json(res, 200, await status(req)); return true; }
+    if (!P.enabled) { errorJson(res, 404, "publishing_disabled", OFF_MESSAGE); return true; }
     let match: RegExpExecArray | null;
 
     if ((match = /^\/publishing-upload\/v1\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(p)) && (m === "PUT" || m === "GET")) { await putChunk(req, res, match[1]!); return true; }
@@ -719,15 +813,7 @@ export function createPublishing(deps: PublishingDeps) {
         throw e;
       }
     }
-    if (p === "/api/v1/publishing/products" && m === "GET") {
-      const all = [
-        ...registry.catalogue.products.map((x) => ({ id: x.id, title: x.name, source: "catalogue" as const, editions: x.editions.map((e) => ({ id: e.id, name: e.name, platforms: e.platforms })), centralId: x.registry.centralId, hcgRepo: x.hcgRepo.map((l) => l.key) })),
-        ...(db.prepare("SELECT id, title FROM pub_products ORDER BY id").all() as { id: string; title: string }[]).map((d) => ({ id: d.id, title: d.title, source: "draft" as const, editions: [], centralId: null, hcgRepo: [] })),
-      ];
-      const allowed = [];
-      for (const x of all) if (await permitted(actor, "publish", x.id)) allowed.push(x);
-      return send(json(res, 200, { products: allowed }));
-    }
+    if (p === "/api/v1/publishing/products" && m === "GET") return send(json(res, 200, { products: await productsFor(actor) }));
     if (p === "/api/v1/publishing/products" && m === "POST") {
       const body = z.strictObject({ id: z.string().regex(kebab).max(60), title: text.max(120) }).parse(await readJson(req));
       await requirePermission(actor, "publish", "*");
@@ -920,6 +1006,7 @@ export function createPublishing(deps: PublishingDeps) {
         // Publication is a separate, explicit step after approval, by a person holding HCG's separate publication
         // permission, signed in through the browser, other than the person who created the release. Submitting files
         // or approving never implies it, and nothing is published automatically.
+        if (!P.publication) throw new HttpError(409, "publication_disabled", PUBLICATION_OFF_MESSAGE);
         if (actor.via !== "web") throw new HttpError(403, "manual_publication_required", "Releases are published manually in HCG Store, not from a desktop app.");
         await requirePermission(actor, "publication", r.product_id);
         const body = z.strictObject({ confirm: z.string(), current: z.boolean().optional(), supersede: z.boolean().default(false) }).parse(await readJson(req));
@@ -1231,7 +1318,7 @@ export function createPublishing(deps: PublishingDeps) {
 
   /** What a product page may say about free testing (no account data): when the open window ends. */
   function freeWindowFor(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null {
-    if (!P.enabled || !cfg.freeDownloads) return null;
+    if (!P.publication || !cfg.freeDownloads) return null;
     const b = freeBasis(productId, editionId);
     if (b?.kind !== "window" || b.window.endsAt === null) return null;
     // Only announce free testing when the window actually delivers something now: a published, public, free release
