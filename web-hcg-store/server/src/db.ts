@@ -298,6 +298,12 @@ const MIGRATIONS: string[] = [
      BEGIN SELECT RAISE(ABORT, 'a release exception can only be revoked, once'); END;
    ALTER TABLE pub_releases ADD COLUMN known_limitations TEXT NOT NULL DEFAULT '[]';
    ALTER TABLE pub_releases ADD COLUMN imported_from TEXT;`,
+  // Distribution Studio: what the submitter asks for at publication (applied only by the person who publishes), and
+  // descriptive fields of a Store-internal draft product.
+  `ALTER TABLE pub_releases ADD COLUMN publication_request TEXT;
+   ALTER TABLE pub_products ADD COLUMN description TEXT;
+   ALTER TABLE pub_products ADD COLUMN category TEXT;
+   ALTER TABLE pub_products ADD COLUMN platforms TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 /**

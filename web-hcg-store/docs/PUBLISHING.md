@@ -265,3 +265,28 @@ HCG Store Manager (native macOS) uses this same publishing API. There is no seco
 - **What the apps see:** `/api/v1/health` reports `publishing`; `whoami` and `capabilities` report each switch
   (`capabilities.uploads`, `.approval`, `.publication`, `.publicDelivery`, `.offers`).
 - **Customers:** private drafts are never visible to customers in any mode.
+
+## Distribution Studio (HCG Executable Maker) — additive API (proposed, branch `claude/distribution-studio-api`)
+
+Capability flags in `GET /api/v1/publishing/capabilities` and `whoami` (`productMetadata`, `publicationRequests`,
+`availabilityRequests`, `supersedeCompatible`) let an app tell these apart from an older server; nothing is assumed.
+
+- **Products with official metadata.** `GET /api/v1/publishing/products` also returns `slug`, `summary`, `category`,
+  `developmentStatus`, product `platforms`, `icon` and `cover` (the Store's own public media URLs from the reviewed
+  catalogue), `currentReleaseId` and `productUrl`. Draft products return their description, category and platforms.
+- **Descriptive draft products.** `POST /api/v1/publishing/products` accepts optional `description`, `category` and
+  `platforms`. Artwork, editions and central registration stay with HCG's reviewed catalogue; a draft product is
+  never listed publicly and grants nothing.
+- **Publication request.** A draft may carry `publicationRequest: { makeCurrent, supersedePrevious: "none" |
+  "compatible" }`. It is recorded and shown to the person who publishes; nothing happens before publication.
+- **Compatible supersede.** `POST …/publish` accepts `scope: "edition" | "compatible"` (default: the request, else
+  "edition", the earlier behaviour). "compatible" supersedes only published releases of the same product, edition and
+  channel whose every platform and architecture the new release also provides; other platforms, architectures and
+  channels stay published. Superseding happens in the same transaction as the publication, so a failed publication
+  supersedes nothing. Files and history are kept.
+- **Availability requests.** `POST /api/v1/publishing/releases/:id/requests { action: disable | restore | supersede |
+  make-current, reason, confirm: <version> }` (publish permission) records a request in the audit trail and on the
+  review page for the people who approve and publish. It changes nothing; `withdraw` remains the only direct
+  availability change.
+- Schema migration 10 adds `pub_releases.publication_request` and three columns to `pub_products`.
+- TEST server: `SHIP_E2E_PUBLISHING=uploads|disabled`, and `/web-release` creates a draft through a browser session.
