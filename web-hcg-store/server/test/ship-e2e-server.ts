@@ -20,7 +20,7 @@
  *                                                  (SHA-256 of each), as on the product page
  *
  * Options (environment): SHIP_E2E_CATALOGUE=real uses the Store's real catalogue (e.g. HCG Mail) instead of the
- * fixture one; SHIP_E2E_DOWNLOADS=free-testing-only|enabled; /token accepts {client: "store-manager"} for HCG Store
+ * fixture one; SHIP_E2E_DOWNLOADS=free-testing-only|enabled; SHIP_E2E_OFFERS_ID=<TEST key> enables Pricing and Offers; /token accepts {client: "store-manager"} for HCG Store
  * Manager's TEST client.
  */
 import { createHash } from "node:crypto";
@@ -82,6 +82,8 @@ const cfg = parseStoreConfig({
   HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
   HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
   HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
+  // TEST only: a stand-in key for the Pricing and Offers permission HCG has not issued yet.
+  ...(process.env.SHIP_E2E_OFFERS_ID ? { HCG_STORE_OFFERS_CENTRAL_ID: process.env.SHIP_E2E_OFFERS_ID } : {}),
   HCG_STORE_UPLOAD_CHUNK_MB: "1",
   HCG_STORE_UPLOAD_URL_TTL_SECONDS: process.env.UPLOAD_TTL ?? "900",
 });
@@ -116,7 +118,7 @@ const control = createServer(async (req, res) => {
       // Publishing permissions are HCG's personal grants on hcg.store (store.publish, store.release.approve). Older
       // callers name them hcg.store.publish / hcg.store.approve; any edition they send is ignored.
       const feature = ({ "hcg.store.publish": "store.publish", "hcg.store.approve": "store.release.approve" } as Record<string, string>)[b.central!] ?? b.central!;
-      if (feature === cfg.publishing.publisherCentralId || feature === cfg.publishing.approverCentralId || feature === cfg.publishing.publicationCentralId) {
+      if (feature === cfg.publishing.publisherCentralId || feature === cfg.publishing.approverCentralId || feature === cfg.publishing.publicationCentralId || (cfg.publishing.offersCentralId && feature === cfg.publishing.offersCentralId)) {
         authority.grant(b.sub!, STORE_CENTRAL_PRODUCT_ID, featureEdition(feature), "e2e", null);
       } else authority.grant(b.sub!, b.central!, b.edition ?? "*", "e2e", null);
       return out(200, { ok: true });
