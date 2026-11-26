@@ -261,7 +261,7 @@ function OwnershipBadge({ access, loading, signInAvailable }: { access: EditionA
         </span>
       );
     case "free":
-      return <span className="badge badge--muted">Free with your HCG account</span>;
+      return <span className="badge badge--muted">{access.freeTesting ? "Free during testing" : "Free with your HCG account"}</span>;
     case "not-owned":
       return <span className="badge badge--muted">Not owned</span>;
     case "not-for-sale":

@@ -116,7 +116,7 @@ function DeliveryNote({ release }: { release: Release }) {
   );
 }
 
-const DOWNLOADS_NOT_AVAILABLE_HINT = "Owners see their downloads in the panel above when downloads are available.";
+const DOWNLOADS_NOT_AVAILABLE_HINT = "Accounts with access download it under Editions, price and availability when downloads are available.";
 
 /** Plain file-type label: Windows installers and portable ZIPs are named as such. */
 function fileTypeLabel(artifact: Artifact): string {
@@ -145,7 +145,15 @@ export function ArtifactCard({ release, artifact, showGuidance = true }: { relea
         </div>
         <div>
           <dt>Size</dt>
-          <dd>{formatBytes(artifact.sizeBytes) ?? <span className="muted">Not stated</span>}</dd>
+          <dd>
+            {artifact.sizeBytes === null ? (
+              <span className="muted">Not stated</span>
+            ) : (
+              <>
+                {formatBytes(artifact.sizeBytes)} <span className="muted">({artifact.sizeBytes.toLocaleString("en-US")} bytes)</span>
+              </>
+            )}
+          </dd>
         </div>
         <div>
           <dt>Minimum OS</dt>

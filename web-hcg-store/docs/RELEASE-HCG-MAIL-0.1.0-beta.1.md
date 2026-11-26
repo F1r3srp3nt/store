@@ -53,11 +53,11 @@ These come from HCG Mail's `docs/RELEASE_NOTES_0.1.0-beta.1.md` and the run's ev
 - English only.
 
 ### Product page
-- **Badges and warnings:** official HCG Mail banner and icon; **Public beta**; **Temporarily free until \<date\>**
+- **Badges and warnings:** official HCG Mail banner and icon; **Public beta**; **Free during testing** and **Temporarily free until \<date\>**
   (from the open window: "No payment details needed; nothing is charged when it ends"); a prominent **Not
   code-signed** warning with the `Get-FileHash` instruction.
-- **Files:** Windows x64 and ARM64 installers and portable ZIPs, each with its real size, SHA-256 and minimum Windows
-  version.
+- **Files:** Windows x64 and ARM64 installers and portable ZIPs, each with its real size (rounded and in exact bytes),
+  SHA-256 and minimum Windows version.
 - **Text:** release notes, known limitations, and system requirements (Windows 10 1607+ x64 or Windows 11 ARM64; no
   administrator rights or .NET; an IMAP/SMTP account).
 - **Links:** **Report a bug or give feedback** (HCG Mail on GitHub Issues), plus the release notes link.
@@ -140,17 +140,56 @@ Screenshots of the exact preview: artifact `publication-preview` of the release-
 
 ## 4. Rehearsal
 
-The `release-import` workflow (TEST mode, TEST identities, never production) ran the real verified files through
-the Store code with the configuration in step 4. It passed every check:
-- import refused nothing and changed no byte;
-- the ordinary account could neither approve nor publish;
-- nothing was delivered before approval, before publication, or without a window;
-- the tester's downloads matched every SHA-256 during the window;
-- signed-out requests were refused;
-- termination stopped delivery at once;
-- no purchase was created;
-- the generated catalogue entry validates.
+The `release-import` workflow ran the real verified files through the Store code with the configuration in step 4
+(run `45740215392`, commit `e0de2cd`). It ran in TEST mode with TEST identities and never touched production. Every
+check passed (`PASS` lines in the job log):
 
-`publication-preview` artifact: the generated `releases.json` entry, the rehearsal log and screenshots of the product
-page (signed out, tester at 1440 and 390px), Release Manager and the review page. The release ID in production will
-differ (it is assigned at import).
+- **Import:** a submitted private draft whose creator is `import:F1r3srp3nt/HCG-Mail#45686343504`. All four files
+  verified and unchanged; the SHA-256 values are the ones in section 1.
+- **Before approval:** nothing was delivered to the tester.
+- **Approval:** an ordinary account could not approve. The founder then approved (browser, typed version, `public`).
+- **Before publication:** approved but not yet published, so still nothing was delivered.
+- **Publication:** an ordinary account could not publish. The founder then published, with the separate permission.
+- **No window:** once published, the edition was neither free nor for sale.
+- **Window open:** the edition was free to any signed-in account, with 4 files, no offer and no checkout. The tester's
+  four downloads matched the exact bytes.
+- **Refusals:** a signed-out request was refused, and termination stopped delivery at once.
+- **No commerce:** no purchase, payment or licence record was created.
+- **Catalogue:** the entry was generated (`hcg-mail: current release none → rel-… (approver's choice)`) and validates.
+
+### Publication preview: the generated `catalogue/releases.json` entry
+
+The production release ID, approval time and audit hash are assigned at import and approval. Everything else is
+exactly what `npm run releases:sync` writes:
+
+```json
+{
+  "id": "rel-<assigned at import>",
+  "productId": "hcg-mail",
+  "version": "0.1.0-beta.1",
+  "build": "1",
+  "channel": "beta",
+  "status": "approved",
+  "releaseDate": "<approval date>",
+  "releaseNotes": ["… the five release notes in section 1 …"],
+  "knownLimitations": ["… the six limitations in section 1 …"],
+  "artifacts": [
+    { "fileName": "HCGMail-0.1.0-beta.1-win-arm64-Setup.exe", "platform": "windows", "architectures": ["arm64"], "format": "exe", "sizeBytes": 54671358, "sha256": "ffb39988c3c5eea050134661a3c8d75274792fc6ea1180b2f59e6d1c0552c219", "minimumOs": "Windows 11", "signing": { "status": "unsigned" } },
+    { "fileName": "HCGMail-0.1.0-beta.1-win-arm64.zip", "platform": "windows", "architectures": ["arm64"], "format": "zip", "sizeBytes": 81251132, "sha256": "62e7cca424ea4a3ed3ccbfda5c8c90e1264447005798641bac6cc13f1e7bf06a", "minimumOs": "Windows 11", "signing": { "status": "unsigned" } },
+    { "fileName": "HCGMail-0.1.0-beta.1-win-x64-Setup.exe", "platform": "windows", "architectures": ["x64"], "format": "exe", "sizeBytes": 57856665, "sha256": "e87ed85fbb62974dfba0665a152936f26f2b90dcc804b7ae0eed0ff79da24466", "minimumOs": "Windows 10 1607", "signing": { "status": "unsigned" } },
+    { "fileName": "HCGMail-0.1.0-beta.1-win-x64.zip", "platform": "windows", "architectures": ["x64"], "format": "zip", "sizeBytes": 83770084, "sha256": "cf7a16732eb788e39cbfc1b7374f379391a132dfa2f69f408e858bdf2f5b7321", "minimumOs": "Windows 10 1607", "signing": { "status": "unsigned" } }
+  ],
+  "source": { "kind": "hcg-store-approval" }
+}
+```
+
+Every artifact also carries `editionId: "windows-desktop"` and `sourceCommit: 8bb1a4f…`. It also records
+`buildProvider: github-actions` and the toolchain: .NET SDK 10.0.404, runtime 10.0.15, HCG Executable Maker engine
+`595e989a47c9`, and Inno Setup 6.7.1. No download URL appears anywhere in the public catalogue.
+
+### Artifact `publication-preview`
+
+The artifact holds the full entry, the rehearsal log, and screenshots of:
+- the product page, signed out and as a tester at 1440 and 390px;
+- Release Manager;
+- the review page.

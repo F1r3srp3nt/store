@@ -915,7 +915,6 @@ export function createPublishing(deps: PublishingDeps) {
       ${r.releaseNotes.length ? `<h2>Release notes</h2><ul>${r.releaseNotes.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
       ${r.knownLimitations.length ? `<h2>Known limitations</h2><ul>${r.knownLimitations.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
       ${r.withdrawnReason ? `<p>Withdrawn: ${e(r.withdrawnReason)}</p>` : ""}
-      <h2>Release notes</h2><ul>${r.releaseNotes.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>
       <h2>Compatibility</h2><pre>${e(JSON.stringify(r.compatibility, null, 2))}</pre>
       <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Kind</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th><th>Installation</th><th></th></tr>${rows}</table>
       <p>Signature and notarisation results are reported by the uploading tool; HCG Store checks hashes, formats and archive safety only. A draft is visible only to the people HCG allows to publish or approve this product; uploading never makes a file public.</p>${download}
