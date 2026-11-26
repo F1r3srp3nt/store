@@ -162,10 +162,13 @@ Fly.io*: the account is never printed, and payments stay `none` throughout.
    no account ID.
 6. **Operator: import** with `mode=import-release`:
    ```json
-   {"request":"hcg-mail-windows-0.1.0-beta.1.json","authorised_by":"<your words>","preserved_run":"45778776110"}
+   {"request":"hcg-mail-windows-0.1.0-beta.1.json","authorised_by":"<your words>","preserved_run":"<release-import run on main>"}
    ```
-   - `preserved_run` uses the verified copy kept in this repository. Without it, the run downloads from HCG Mail's
-     run, whose artifacts expire on 23 Feb 2027.
+   - `preserved_run` is optional. It uses the verified copy kept in this repository, and only a successful
+     *Release import* run **on main** is accepted: the first one runs automatically when this work merges, and its ID
+     is shown in Actions. Without it, the run downloads from HCG Mail's run, whose artifacts expire on 23 Feb 2027.
+   - The exact SHA-256 of each file is pinned in the committed import request (`expect.sha256`), so any other bytes
+     are refused, whichever copy is used.
    - Every byte is verified again: size, SHA-256, `SHA256SUMS.txt` and each Release Passport (with SHA-512, commit and
      run).
    - Result: a **private draft**, `rel-…`.
@@ -177,7 +180,8 @@ Fly.io*: the account is never printed, and payments stay `none` throughout.
    ```json
    {"command":"grant","release":"rel-…","session_ref":"<from step 5>","digest":"7ee9f69885a75afcfd317295453f47c0c743b06d6ff4fdebaacc5a566c668067","reason":"First Windows public prerelease of HCG Mail; founder-operated","authorised_by":"<your words>"}
    ```
-9. **You, in the browser:** go to HCG Store → Release Manager → HCG Mail 0.1.0-beta.1, then:
+9. **You, in the browser (submission from an app is refused for imports):** go to HCG Store → Release Manager → HCG
+   Mail 0.1.0-beta.1, then:
    1. **Submit for approval**.
    2. **Approve**: eligibility `public`, *make current*, type `0.1.0-beta.1`.
    3. **Publish**: type `0.1.0-beta.1`.
