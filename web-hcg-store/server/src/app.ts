@@ -362,7 +362,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       devices,
       devicesNote: "A connected package manager is not an installation. HCG Store does not know which apps are installed on your devices, so it shows no install or update status.",
       ownershipUnavailable: unavailable,
-      downloadsMessage: cfg.protectedDownloads ? null : DOWNLOADS_NOT_AVAILABLE,
+      downloadsMessage: cfg.protectedDownloads || cfg.freeDownloads ? null : DOWNLOADS_NOT_AVAILABLE,
     };
   }
 
@@ -373,7 +373,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     const fresh = await freshSession(req);
     if (fresh.unavailable) return errorJson(res, 503, "hcg_unavailable", "Your access could not be checked right now. Try again shortly.");
     if (!fresh.session) return errorJson(res, 401, "sign_in_required", "Sign in with HCG Connect to download.");
-    if (!cfg.protectedDownloads) return errorJson(res, 403, "downloads_not_available", DOWNLOADS_NOT_AVAILABLE);
+    if (!cfg.protectedDownloads && !cfg.freeDownloads) return errorJson(res, 403, "downloads_not_available", DOWNLOADS_NOT_AVAILABLE);
     const artifact = findArtifact(registry, artifactId);
     const product = artifact ? findProduct(registry, artifact.productId) : undefined;
     if (!artifact || !product) return errorJson(res, 404, "not_found", "Not found.");
@@ -539,7 +539,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         hcgConnect: connect ? "configured" : "not-configured",
         entitlementAuthority: authority.kind,
         payments: cfg.paymentProvider === "none" ? "disabled" : `${cfg.paymentProvider}-mode`,
-        protectedDownloads: cfg.protectedDownloads ? "enabled" : "disabled",
+        protectedDownloads: cfg.protectedDownloads ? "enabled" : cfg.freeDownloads ? "free-testing-only" : "disabled",
       });
     }
     if (p === "/api/v1/session" && m === "GET") {

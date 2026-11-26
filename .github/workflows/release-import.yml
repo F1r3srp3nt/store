@@ -4,7 +4,8 @@
 # checks, without changing any byte: every file's size and SHA-256 against the draft, every Release Passport
 # (hcg.release-passport v1, HCG Repo's schema) against the file (size, SHA-256, SHA-512), and the draft against the
 # import request. Then rehearses the full Release Manager flow in a TEST-mode HCG Store (import, submit, approve,
-# publish, catalogue export) and uploads the publication preview. Nothing is sent to the production Store.
+# publish, free window, delivery as an ordinary tester, catalogue export) with TEST identities, and uploads the
+# publication preview with screenshots. Nothing is sent to the production Store; no secret is used.
 name: Release import (verify and rehearse)
 
 on:
@@ -75,4 +76,37 @@ jobs:
           path: |
             ${{ runner.temp }}/import/report.json
             ${{ runner.temp }}/import/draft
+          retention-days: 30
+
+      # ---- Rehearsal: the real files through the real Store code in TEST mode (never production) ----
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-hcg-store/package-lock.json
+      - run: npm ci
+      - name: Rehearse import, approval, publication, free window and delivery (TEST identities)
+        run: |
+          set -o pipefail
+          npx tsx server/test/release-rehearsal.ts import --request "$REQUEST" --dir "$RUNNER_TEMP/import" --work "$RUNNER_TEMP/rehearsal" 2>&1 \
+            | grep -v ExperimentalWarning | tee "$RUNNER_TEMP/rehearsal/rehearsal.log"
+      - name: Build the preview site with the generated catalogue entry
+        run: HCG_CATALOGUE_DIR="$RUNNER_TEMP/rehearsal/catalogue" npx vite build --outDir "$RUNNER_TEMP/preview-dist" --logLevel warn
+      - name: Publication preview screenshots
+        run: |
+          npx playwright install --with-deps chromium >/dev/null
+          npx tsx server/test/release-rehearsal.ts serve --work "$RUNNER_TEMP/rehearsal" --static "$RUNNER_TEMP/preview-dist" --port 4790 --control-port 4791 > "$RUNNER_TEMP/rehearsal/serve.log" 2>&1 &
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:4790/api/v1/health >/dev/null && break; sleep 1; done
+          mkdir -p "$RUNNER_TEMP/rehearsal/screenshots"
+          node scripts/rehearsal-screenshots.cjs http://127.0.0.1:4790 http://127.0.0.1:4791 "$RUNNER_TEMP/rehearsal/screenshots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: publication-preview
+          path: |
+            ${{ runner.temp }}/rehearsal/publication-preview.json
+            ${{ runner.temp }}/rehearsal/rehearsal.log
+            ${{ runner.temp }}/rehearsal/catalogue/releases.json
+            ${{ runner.temp }}/rehearsal/catalogue/products.json
+            ${{ runner.temp }}/rehearsal/screenshots
           retention-days: 30

@@ -141,7 +141,7 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
     }
     // authorize_download
     if (!a.owned && a.state !== "free") return fail(res, 403, "Your HCG account does not include this package.");
-    if (!ctx.cfg.protectedDownloads || !a.downloadsAvailable) return fail(res, 403, DOWNLOADS_NOT_AVAILABLE);
+    if (!a.downloadsAvailable) return fail(res, 403, DOWNLOADS_NOT_AVAILABLE);
     const version = typeof body.version === "string" ? body.version : "";
     const arch = typeof body.architecture === "string" ? body.architecture : "iphoneos-arm";
     const files = deliverableArtifacts(ctx.registry, product, edition.id).filter((f) => mayDownload(a, f.id)).filter((f) => {
@@ -171,7 +171,7 @@ async function serveFile(ctx: SileoCtx, res: ServerResponse, token: string) {
   if (!s || s.sub !== payload.s) return errorJson(res, 403, "link_expired", "This download link is no longer valid.");
   const file = findArtifact(ctx.registry, payload.a);
   const product = file ? ctx.registry.catalogue.products.find((p) => p.id === file.productId) : undefined;
-  if (!file || !product || !ctx.cfg.protectedDownloads) return errorJson(res, 403, "not_available", DOWNLOADS_NOT_AVAILABLE);
+  if (!file || !product || (!ctx.cfg.protectedDownloads && !ctx.cfg.freeDownloads)) return errorJson(res, 403, "not_available", DOWNLOADS_NOT_AVAILABLE);
   const a = await decideAccess(ctx.accessDeps, product, file.editionId, s);
   if (!mayDownload(a, file.id)) {
     return errorJson(res, 403, "not_entitled", "Your HCG account does not include this package.");

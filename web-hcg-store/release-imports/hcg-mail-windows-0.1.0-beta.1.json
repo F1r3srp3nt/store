@@ -1,5 +1,5 @@
 {
-  "$comment": "Import request for HCG Store's Release Manager. The files are imported exactly as HCG Mail's CI built them: nothing is rebuilt, re-packed or re-signed. Every value below must match the draft and the Release Passports, or the import stops.",
+  "$comment": "Import request for HCG Store's Release Manager. The files are imported exactly as HCG Mail's CI built them: nothing is rebuilt, re-packed or re-signed. Every value below must match the draft and the Release Passports, or the import stops. requestedEligibility: the draft itself is private (HCG Mail's CI never asks for publication); this request asks for public eligibility so that, after the owner approves and separately publishes it, the release can be delivered free during a testing window. knownLimitations: from HCG Mail's docs/RELEASE_NOTES_0.1.0-beta.1.md and the run's evidence.",
   "format": "hcg.store.release-import/1",
   "source": {
     "repository": "F1r3srp3nt/HCG-Mail",
@@ -16,5 +16,14 @@
     "channel": "beta",
     "distribution": "free",
     "files": 4
-  }
+  },
+  "requestedEligibility": "public",
+  "knownLimitations": [
+    "Not code-signed (no Authenticode signature on the installers or HCGMail.exe): Windows SmartScreen warns on download and first start. Run a file only if its SHA-256 matches the published checksum.",
+    "Signing in to a mailbox, sending and receiving (authenticated IMAP/SMTP) have not been tested on Windows yet. Automated checks on Windows covered installation, start-up, window rendering, restart, Windows Credential Manager and TLS certificate validation.",
+    "Installation and start-up were verified on GitHub-hosted Windows runners (x64: Windows build 26100; ARM64: Windows 11 build 26200), not yet on testers' own PCs.",
+    "Microsoft (Outlook.com, Microsoft 365) and Google (Gmail) sign-in are not set up in this build. Use IMAP/SMTP with an app password where your provider allows it.",
+    "No automatic updates: a new version is a new download, and the installer upgrades in place.",
+    "English only."
+  ]
 }

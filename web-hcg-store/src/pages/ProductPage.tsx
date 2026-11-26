@@ -15,7 +15,7 @@ import { ACCENT_RGB, ProductBanner, ProductMark } from "../components/ProductArt
 import { ReleasePanel } from "../components/Release";
 import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
-import { availability, findProductBySlug, relatedProductsOf, successorOf } from "../domain/model";
+import { availability, currentRelease, findProductBySlug, relatedProductsOf, successorOf } from "../domain/model";
 import type { Product } from "../domain/schema";
 import {
   CATEGORIES,
@@ -118,6 +118,7 @@ function ProductDetail({
               <StatusPill
                 status={product.developmentStatus}
                 availability={avail}
+                channel={currentRelease(catalogue, product)?.channel}
               />
               <span className="product-hero__platforms">
                 {product.platforms.length

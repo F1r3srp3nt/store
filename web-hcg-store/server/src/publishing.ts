@@ -33,7 +33,7 @@
  * Nothing here publishes to external stores or TestFlight.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync, truncateSync } from "node:fs";
+import { chmodSync, copyFileSync, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, resolve, sep } from "node:path";
 import { z } from "zod";
@@ -42,6 +42,7 @@ import type { StoreConfig } from "./config";
 import { seal, sha256Hex, signPayload, unseal, verifyPayload, randomToken } from "./crypto";
 import { transaction, type Db } from "./db";
 import { auditChainIntact } from "./release-records";
+import { openWindowFor, type FreeWindow } from "./free-windows";
 import type { EntitlementAuthority, Subject } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, readJson } from "./http";
@@ -89,6 +90,8 @@ const ReleaseInput = z.strictObject({
   build: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/, "Build number: letters, digits and . _ + -"),
   channel: z.enum(["beta", "stable"]).default("beta"),
   releaseNotes: z.array(text).max(50).default([]),
+  /** Known limitations, shown with the release (e.g. not code-signed, features not yet verified on this platform). */
+  knownLimitations: z.array(text).max(30).default([]),
   compatibility: z
     .strictObject({
       minimumOs: z.partialRecord(z.enum(PLATFORMS), z.string().trim().max(40)).default({}),
@@ -144,6 +147,7 @@ type ReleaseRow = {
   approved_eligibility: string | null; created_by: string; created_at: number; updated_at: number; submitted_at: number | null;
   approved_by: string | null; approved_at: number | null; withdrawn_reason: string | null;
   published_at: number | null; published_by: string | null; superseded_by: string | null;
+  known_limitations: string; imported_from: string | null;
 };
 type ArtifactRow = {
   id: string; release_id: string; file_name: string; platform: string; format: string; architectures: string; minimum_os: string | null;
@@ -214,8 +218,8 @@ export function createPublishing(deps: PublishingDeps) {
     return STORE_CENTRAL_PRODUCT_ID;
   }
 
-  async function permitted(actor: Actor, permission: "publish" | "approve", productId: string): Promise<boolean> {
-    const feature = permission === "publish" ? P.publisherCentralId! : P.approverCentralId!;
+  async function permitted(actor: Actor, permission: "publish" | "approve" | "publication", productId: string): Promise<boolean> {
+    const feature = permission === "publish" ? P.publisherCentralId! : permission === "approve" ? P.approverCentralId! : P.publicationCentralId!;
     const subject: Subject = { sub: actor.sub, accessToken: actor.accessToken };
     // A central feature of the product (HCG's planned staff permissions `store.publish` and `store.release.approve`),
     // checked with the caller's own HCG token on every action and never cached. Owning the product, an HCG role, or
@@ -226,10 +230,14 @@ export function createPublishing(deps: PublishingDeps) {
     return r.status === "granted";
   }
 
-  async function requirePermission(actor: Actor, permission: "publish" | "approve", productId: string) {
+  async function requirePermission(actor: Actor, permission: "publish" | "approve" | "publication", productId: string) {
     if (!(await permitted(actor, permission, productId))) {
-      throw new HttpError(403, permission === "publish" ? "not_publisher" : "not_approver",
-        permission === "publish" ? "HCG has not granted your account permission to publish this product." : "HCG has not granted your account permission to approve releases of this product.");
+      const why = {
+        publish: ["not_publisher", "HCG has not granted your account permission to submit releases of this product."],
+        approve: ["not_approver", "HCG has not granted your account permission to approve releases of this product."],
+        publication: ["not_publication", "HCG has not granted your account permission to publish approved releases."],
+      }[permission];
+      throw new HttpError(403, why[0]!, why[1]!);
     }
   }
 
@@ -255,6 +263,7 @@ export function createPublishing(deps: PublishingDeps) {
       approvedEligibility: r.approved_eligibility, createdBy: r.created_by, createdAt: r.created_at, submittedAt: r.submitted_at,
       approvedBy: r.approved_by, approvedAt: r.approved_at, withdrawnReason: r.withdrawn_reason,
       publishedAt: r.published_at, publishedBy: r.published_by, supersededBy: r.superseded_by, stage: stageOf(r),
+      knownLimitations: JSON.parse(r.known_limitations ?? "[]") as string[], importedFrom: r.imported_from ? JSON.parse(r.imported_from) : null,
       reviewUrl: `${cfg.publicOrigin}/publishing/releases/${r.id}`,
       artifacts: artifactsOf(r.id).map(artifactView),
       audit: withAudit
@@ -363,10 +372,16 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   async function complete(actor: Actor, a: ArtifactRow, res: ServerResponse) {
+    const out = await finalize(actor.sub, a);
+    return json(res, out.status, out.body);
+  }
+
+  /** Verifies a fully received file (hash, format, archive safety, kind) and moves it to immutable storage, or rejects it. */
+  async function finalize(actorSub: string, a: ArtifactRow): Promise<{ status: number; body: Record<string, unknown> }> {
     const r = release(a.release_id)!;
     const up = db.prepare("SELECT * FROM pub_uploads WHERE artifact_id = ?").get(a.id) as { received_bytes: number; staging_key: string } | undefined;
-    if (!up || r.status !== "draft") return errorJson(res, 409, "not_uploading", "This file is not waiting for an upload.");
-    if (up.received_bytes !== a.size_bytes) return json(res, 409, { error: "incomplete", message: `Received ${up.received_bytes} of ${a.size_bytes} bytes.`, received: up.received_bytes });
+    if (!up || r.status !== "draft") return { status: 409, body: { error: { code: "not_uploading", message: "This file is not waiting for an upload." } } };
+    if (up.received_bytes !== a.size_bytes) return { status: 409, body: { error: "incomplete", message: `Received ${up.received_bytes} of ${a.size_bytes} bytes.`, received: up.received_bytes } };
     const staged = stagingPath(up.staging_key);
     const sha256 = await hashFile(staged);
     const problems: string[] = [];
@@ -406,10 +421,10 @@ export function createPublishing(deps: PublishingDeps) {
       transaction(db, () => {
         db.prepare("UPDATE pub_artifacts SET status = 'rejected', sha256 = ?, validation = ?, completed_at = ? WHERE id = ?").run(sha256, JSON.stringify(validation), now(), a.id);
         db.prepare("DELETE FROM pub_uploads WHERE artifact_id = ?").run(a.id);
-        audit(actor.sub, "artifact.rejected", r.id, a.id, { problems, sha256 });
+        audit(actorSub, "artifact.rejected", r.id, a.id, { problems, sha256 });
       });
       rmSync(staged, { force: true });
-      return json(res, 422, { error: "artifact_rejected", message: problems.join(" "), artifact: artifactView(artifact(a.id)!) });
+      return { status: 422, body: { error: "artifact_rejected", message: problems.join(" "), artifact: artifactView(artifact(a.id)!) } };
     }
     const storageKey = `releases/${r.product_id}/${r.id}/${sha256.slice(0, 16)}/${a.file_name}`;
     const final = stagingPath(storageKey);
@@ -421,9 +436,9 @@ export function createPublishing(deps: PublishingDeps) {
       db.prepare("UPDATE pub_artifacts SET status = 'verified', sha256 = ?, storage_key = ?, validation = ?, completed_at = ? WHERE id = ?")
         .run(sha256, storageKey, JSON.stringify(validation), now(), a.id);
       db.prepare("DELETE FROM pub_uploads WHERE artifact_id = ?").run(a.id);
-      audit(actor.sub, "artifact.verified", r.id, a.id, { sha256, sizeBytes: statSync(final).size, kind: content?.kind, signatureStructure: validation.signatureStructure, ios: content?.ios });
+      audit(actorSub, "artifact.verified", r.id, a.id, { sha256, sizeBytes: statSync(final).size, kind: content?.kind, signatureStructure: validation.signatureStructure, ios: content?.ios });
     });
-    return json(res, 200, { artifact: artifactView(artifact(a.id)!) });
+    return { status: 200, body: { artifact: artifactView(artifact(a.id)!) } };
   }
 
   // ------------------------------------------------------------- downloads
@@ -445,9 +460,17 @@ export function createPublishing(deps: PublishingDeps) {
     if (!deliverable) {
       return { ok: false, status: 403, code: "not_released", message: "This release is not published for you to download." };
     }
+    if (r.approved_eligibility === "public" && r.distribution === "free") {
+      // Free public release: only while downloads of free releases are on and a free testing window is open
+      // (or the edition is permanently free).
+      if (!cfg.freeDownloads) return { ok: false, status: 403, code: "downloads_not_available", message: "Downloads are not available yet." };
+      if (!freePublicFor(r.product_id, r.edition_id).some((x) => x.id === a.id)) {
+        return { ok: false, status: 403, code: "free_period_closed", message: "This release is not free right now." };
+      }
+      return { ok: true, basis: "public-free" };
+    }
     if (!cfg.protectedDownloads) return { ok: false, status: 403, code: "downloads_not_available", message: "Downloads are not available yet." };
     const central = productInfo(r.product_id)?.centralId;
-    if (r.approved_eligibility === "public" && r.distribution === "free") return { ok: true, basis: "public-free" };
     if (!central) return { ok: false, status: 403, code: "not_entitled", message: "This product has no confirmed central product ID, so no one can be entitled to it yet." };
     const edition = r.edition_id ? findProduct(registry, r.product_id)?.editions.find((e) => e.id === r.edition_id) : undefined;
     const check = await authority.check(subject, { centralProductId: central, editionId: r.edition_id, centralEditionKey: edition?.centralEditionKey ?? null });
@@ -469,14 +492,29 @@ export function createPublishing(deps: PublishingDeps) {
     return rows.map((a) => asProtected(a, productId, editionId));
   }
 
+  /**
+   * The open free testing window for this edition, or "permanent" when the catalogue says the edition is free.
+   * Without either, a free public release is not delivered (free-windows.ts).
+   */
+  function freeBasis(productId: string, editionId: string | null): { kind: "permanent" } | { kind: "window"; window: FreeWindow } | null {
+    const edition = findProduct(registry, productId)?.editions.find((e) => e.id === editionId);
+    if (edition?.pricingModel === "free") return { kind: "permanent" };
+    const w = openWindowFor(db, productId, editionId, now());
+    return w ? { kind: "window", window: w } : null;
+  }
+
   function freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[] {
     if (!P.enabled) return [];
+    const basis = freeBasis(productId, editionId);
+    if (!basis) return [];
     const rows = db.prepare(
       `SELECT a.* FROM pub_artifacts a JOIN pub_releases r ON r.id = a.release_id
        WHERE r.product_id = ? AND r.edition_id IS ? AND r.status = 'published' AND r.approved_eligibility = 'public'
          AND r.distribution = 'free' AND a.status = 'verified' AND a.format NOT IN ('aab')`,
     ).all(productId, editionId) as ArtifactRow[];
-    return rows.map((a) => asProtected(a, productId, editionId));
+    // A window may cover one release only.
+    const only = basis.kind === "window" ? basis.window.releaseId : null;
+    return rows.filter((a) => !only || a.release_id === only).map((a) => asProtected(a, productId, editionId));
   }
 
   function asProtected(a: ArtifactRow, productId: string, editionId: string | null): ProtectedArtifact {
@@ -592,14 +630,14 @@ export function createPublishing(deps: PublishingDeps) {
       // Release Manager: every release of every product this account may publish or approve, newest first, with its
       // stage. Metadata only; each product is checked with HCG.
       const rows = db.prepare("SELECT * FROM pub_releases ORDER BY created_at DESC, rowid DESC LIMIT 500").all() as ReleaseRow[];
-      const allowed = new Map<string, { publish: boolean; approve: boolean }>();
+      const allowed = new Map<string, { publish: boolean; approve: boolean; publication: boolean }>();
       const releases = [];
       for (const r of rows) {
-        if (!allowed.has(r.product_id)) allowed.set(r.product_id, { publish: await permitted(actor, "publish", r.product_id), approve: await permitted(actor, "approve", r.product_id) });
+        if (!allowed.has(r.product_id)) allowed.set(r.product_id, { publish: await permitted(actor, "publish", r.product_id), approve: await permitted(actor, "approve", r.product_id), publication: await permitted(actor, "publication", r.product_id) });
         const may = allowed.get(r.product_id)!;
-        if (!may.publish && !may.approve) continue;
+        if (!may.publish && !may.approve && !may.publication) continue;
         const v = releaseView(r, false);
-        releases.push({ ...v, artifacts: undefined, files: v.artifacts.filter((a) => a.status !== "removed").length, mayApprove: may.approve, mayPublish: may.publish });
+        releases.push({ ...v, artifacts: undefined, files: v.artifacts.filter((a) => a.status !== "removed").length, mayApprove: may.approve, mayPublish: may.publish, mayPublication: may.publication });
       }
       return send(json(res, 200, { releases, auditIntact: auditIntact() }));
     }
@@ -624,9 +662,10 @@ export function createPublishing(deps: PublishingDeps) {
       try {
         transaction(db, () => {
           db.prepare(`INSERT INTO pub_releases (id, product_id, product_source, edition_id, version, build, channel, release_notes, compatibility, distribution,
-                      requested_eligibility, destinations, status, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?, ?)`)
+                      requested_eligibility, destinations, status, created_by, created_at, updated_at, known_limitations) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?, ?, ?)`)
             .run(id, input.productId, pinfo.source, input.editionId, input.version, input.build, input.channel, JSON.stringify(input.releaseNotes),
-                 JSON.stringify(input.compatibility), input.distribution, input.eligibility, JSON.stringify(input.destinations), actor.sub, now(), now());
+                 JSON.stringify(input.compatibility), input.distribution, input.eligibility, JSON.stringify(input.destinations), actor.sub, now(), now(),
+                 JSON.stringify(input.knownLimitations));
           audit(actor.sub, "release.draft-created", id, null, { productId: input.productId, editionId: input.editionId, version: input.version, build: input.build, eligibility: input.eligibility, distribution: input.distribution, via: actor.via });
         });
       } catch (e) {
@@ -746,11 +785,11 @@ export function createPublishing(deps: PublishingDeps) {
         return send(json(res, 200, releaseView(release(r.id)!)));
       }
       if (action === "/publish" && m === "POST") {
-        // Publication is a separate, explicit step after approval, by a person HCG allows to approve this product,
-        // signed in through the browser, other than the person who created the release. Nothing is published
-        // automatically.
+        // Publication is a separate, explicit step after approval, by a person holding HCG's separate publication
+        // permission, signed in through the browser, other than the person who created the release. Submitting files
+        // or approving never implies it, and nothing is published automatically.
         if (actor.via !== "web") throw new HttpError(403, "manual_publication_required", "Releases are published manually in HCG Store, not from a desktop app.");
-        await requirePermission(actor, "approve", r.product_id);
+        await requirePermission(actor, "publication", r.product_id);
         const body = z.strictObject({ confirm: z.string(), current: z.boolean().optional(), supersede: z.boolean().default(false) }).parse(await readJson(req));
         if (r.status !== "approved") throw new HttpError(409, "not_approved", "Only an approved release can be published.");
         if (r.approved_eligibility !== "public") throw new HttpError(409, "not_public", "Only a release approved for public delivery is published. Internal-testing releases are delivered to testers once approved.");
@@ -838,7 +877,7 @@ export function createPublishing(deps: PublishingDeps) {
     if ((match = /^\/publishing\/releases\/(rel-[a-f0-9]{16})$/.exec(p)) && m === "GET") {
       const r = release(match[1]!);
       if (!r || (!(await permitted(actor, "publish", r.product_id)) && !(await permitted(actor, "approve", r.product_id)))) throw new HttpError(404, "not_found", "Not found.");
-      return send(reviewPage(res, releaseView(r), await permitted(actor, "approve", r.product_id)));
+      return send(reviewPage(res, releaseView(r), await permitted(actor, "approve", r.product_id), await permitted(actor, "publication", r.product_id)));
     }
     throw new HttpError(404, "not_found", "Not found.");
 
@@ -857,7 +896,7 @@ export function createPublishing(deps: PublishingDeps) {
     return deps.streamArtifact(res, a.storage_key!, a.file_name, a.content_type);
   }
 
-  function reviewPage(res: ServerResponse, r: ReturnType<typeof releaseView>, canApprove: boolean) {
+  function reviewPage(res: ServerResponse, r: ReturnType<typeof releaseView>, canApprove: boolean, canPublishRelease = false) {
     const e = escapeHtml;
     const kindName: Record<string, string> = { installer: "Installer", "portable-app": "Portable app", "device-build": "iOS device build", "simulator-build": "iOS Simulator build", "jailbreak-package": "Jailbreak package" };
     const rows = r.artifacts.map((a) => `<tr><td>${e(a.fileName)}</td><td>${e(a.platform)} · ${e(a.format)}</td><td>${e(kindName[a.kind ?? ""] ?? "—")}${a.kindCheckedByStore ? "" : " (declared)"}</td><td>${a.sizeBytes}</td><td><code>${e(a.sha256 ?? a.declaredSha256)}</code></td><td>${e(a.status)}</td><td>${e(a.validation?.signatureStructure ?? "—")} / reported: ${e(a.signingReported.status)}</td><td class="${a.readiness.ordinaryInstall ? "ok" : "warn"}">${e(a.readiness.label)}</td><td>${a.status === "verified" && r.status !== "withdrawn" ? `<button class="dl" data-id="${e(a.id)}">Download to review</button>` : ""}</td></tr>`).join("");
@@ -872,13 +911,16 @@ export function createPublishing(deps: PublishingDeps) {
       <style>body{font:15px system-ui;margin:2rem;max-width:72rem}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:.4rem;text-align:left;font-size:13px}code{font-size:12px}.ok{color:#176b2c}.warn{color:#8a4b00}</style></head><body>
       <h1>${e(r.productTitle)} ${e(r.version)} (build ${e(r.build)})</h1>
       <p>Status: <b>${e(r.status)}</b>${r.approvedEligibility ? ` · approved for <b>${e(r.approvedEligibility)}</b>` : ""} · requested: ${e(r.requestedEligibility)} · distribution: ${e(r.distribution)} · channel: ${e(r.channel)} · destinations: ${e(r.destinations.join(", "))}${r.productSource === "draft" ? " · <b>draft product</b> (not in the catalogue)" : ""}</p>
+      ${r.importedFrom ? `<p>Imported unchanged from <b>${e(String(r.importedFrom.repository))}</b> commit <code>${e(String(r.importedFrom.commit))}</code>, CI run ${e(String(r.importedFrom.runId))}; every file matched its draft SHA-256 and Release Passport. Import authorised by ${e(String(r.importedFrom.authorisedBy))}, performed by ${e(String(r.importedFrom.performedBy))}. The CI build is the creator, so the person who approves is never the person who built it.</p>` : ""}
+      ${r.releaseNotes.length ? `<h2>Release notes</h2><ul>${r.releaseNotes.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
+      ${r.knownLimitations.length ? `<h2>Known limitations</h2><ul>${r.knownLimitations.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
       ${r.withdrawnReason ? `<p>Withdrawn: ${e(r.withdrawnReason)}</p>` : ""}
       <h2>Release notes</h2><ul>${r.releaseNotes.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>
       <h2>Compatibility</h2><pre>${e(JSON.stringify(r.compatibility, null, 2))}</pre>
       <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Kind</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th><th>Installation</th><th></th></tr>${rows}</table>
       <p>Signature and notarisation results are reported by the uploading tool; HCG Store checks hashes, formats and archive safety only. A draft is visible only to the people HCG allows to publish or approve this product; uploading never makes a file public.</p>${download}
       ${approve}
-      ${canApprove && r.status === "approved" && r.approvedEligibility === "public"
+      ${canPublishRelease && r.status === "approved" && r.approvedEligibility === "public"
         ? `<form id="publish"><p><b>Publish.</b> Approved for public delivery but not delivered yet. Publishing is a separate, explicit step; nothing is published automatically.</p>
            <label><input type="checkbox" name="supersede"> Supersede this edition's currently published releases</label>
            <label>Type the version to confirm <input name="confirm" autocomplete="off"></label><button>Publish</button></form>
@@ -888,7 +930,95 @@ export function createPublishing(deps: PublishingDeps) {
       </body></html>`);
   }
 
-  return { route, publishedFor, freePublicFor, publishedById, publishedMeta, auditIntact, allowedFormats: ALLOWED };
+  /**
+   * Operator import of a release built by a product's CI (release-import-cli.ts). The files are imported exactly as
+   * built: each must match the draft's size and SHA-256 and, when given, its HCG Release Passport (SHA-256, SHA-512,
+   * size, source commit, run), and then passes the same content checks as an upload. The result is a SUBMITTED,
+   * PRIVATE draft whose creator is the CI build (`import:<repository>#<run>`), not a person, so a person HCG allows to
+   * approve, and separately to publish, reviews it in the browser. Nothing is approved or published here.
+   */
+  async function importRelease(opts: {
+    draft: { release: unknown; artifacts: unknown[] };
+    filesDir: string;
+    passports: Record<string, { artifact: { filename: string; size: number; sha256: string; sha512: string }; source: { commit: string }; build: { run_id: number } }>;
+    source: { repository: string; commit: string; runId: number };
+    requestedEligibility: "private" | "internal-testing" | "public";
+    knownLimitations: string[];
+    authorisedBy: string;
+    performedBy: string;
+  }) {
+    if (!P.enabled) throw new HttpError(409, "publishing_disabled", "Publishing is not enabled on this Store.");
+    if (!opts.authorisedBy.trim() || !opts.performedBy.trim()) throw new HttpError(400, "who", "Record who authorised and who performed the import.");
+    const input = ReleaseInput.parse({ ...(opts.draft.release as object), eligibility: opts.requestedEligibility, knownLimitations: opts.knownLimitations });
+    const pinfo = productInfo(input.productId);
+    if (!pinfo || pinfo.source !== "catalogue") throw new HttpError(404, "unknown_product", "Imports are for catalogue products only.");
+    if (pinfo.editions.length ? !input.editionId || !pinfo.editions.includes(input.editionId) : input.editionId !== null) throw new HttpError(400, "bad_edition", "Unknown edition.");
+    const files = opts.draft.artifacts.map((x) => ArtifactInput.parse(x));
+    const problems: string[] = [];
+    const sha = (path: string, algo: string) => createHash(algo).update(readFileSync(path)).digest("hex");
+    for (const f of files) {
+      problems.push(...checkDeclaration({ fileName: f.fileName, platform: f.platform, format: f.format, sizeBytes: f.sizeBytes, maxBytes: P.maxUploadBytes }).map((x) => `${f.fileName}: ${x}`));
+      const path = resolve(opts.filesDir, f.fileName);
+      if (!path.startsWith(resolve(opts.filesDir) + sep) || !existsSync(path)) { problems.push(`${f.fileName}: not in the import folder.`); continue; }
+      const size = statSync(path).size;
+      const sha256 = sha(path, "sha256");
+      if (size !== f.sizeBytes) problems.push(`${f.fileName}: ${size} bytes, the draft says ${f.sizeBytes}.`);
+      if (sha256 !== f.sha256) problems.push(`${f.fileName}: SHA-256 ${sha256}, the draft says ${f.sha256}.`);
+      if (f.sourceCommit !== opts.source.commit) problems.push(`${f.fileName}: built from ${f.sourceCommit}, the import names ${opts.source.commit}.`);
+      const pp = opts.passports[f.fileName];
+      if (!pp) problems.push(`${f.fileName}: no Release Passport.`);
+      else {
+        if (pp.artifact.size !== size || pp.artifact.sha256 !== sha256 || pp.artifact.sha512 !== sha(path, "sha512")) problems.push(`${f.fileName}: the Release Passport does not match the file.`);
+        if (pp.source.commit !== opts.source.commit || Number(pp.build.run_id) !== Number(opts.source.runId)) problems.push(`${f.fileName}: the Release Passport names another commit or run.`);
+      }
+    }
+    if (!files.length) problems.push("The draft lists no files.");
+    if (problems.length) throw new HttpError(400, "import_refused", problems.join(" "));
+
+    const creator = `import:${opts.source.repository}#${opts.source.runId}`;
+    const importedFrom = { ...opts.source, authorisedBy: opts.authorisedBy.trim(), performedBy: opts.performedBy.trim(), draftRequestedEligibility: (opts.draft.release as { eligibility?: string }).eligibility ?? null };
+    const id = `rel-${randomBytes(8).toString("hex")}`;
+    transaction(db, () => {
+      db.prepare(`INSERT INTO pub_releases (id, product_id, product_source, edition_id, version, build, channel, release_notes, compatibility, distribution,
+                  requested_eligibility, destinations, status, created_by, created_at, updated_at, known_limitations, imported_from) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?, ?, ?, ?)`)
+        .run(id, input.productId, pinfo.source, input.editionId, input.version, input.build, input.channel, JSON.stringify(input.releaseNotes),
+             JSON.stringify(input.compatibility), input.distribution, input.eligibility, JSON.stringify(input.destinations), creator, now(), now(),
+             JSON.stringify(input.knownLimitations), JSON.stringify(importedFrom));
+      audit(creator, "release.imported", id, null, { productId: input.productId, editionId: input.editionId, version: input.version, build: input.build, requestedEligibility: input.eligibility, distribution: input.distribution, ...importedFrom });
+    });
+    for (const f of files) {
+      const aid = `art-${randomBytes(8).toString("hex")}`;
+      const stagingKey = `.uploads/${aid}.part`;
+      mkdirSync(dirname(stagingPath(stagingKey)), { recursive: true });
+      copyFileSync(resolve(opts.filesDir, f.fileName), stagingPath(stagingKey));
+      const provenance: Provenance = { sourceCommit: f.sourceCommit, buildProvider: f.buildProvider, toolchain: f.toolchain, validationReport: f.validationReport };
+      transaction(db, () => {
+        db.prepare(`INSERT INTO pub_artifacts (id, release_id, file_name, platform, format, architectures, minimum_os, size_bytes, declared_sha256, status,
+                    content_type, signing_reported, package, created_at, declared_kind, provenance) VALUES (?,?,?,?,?,?,?,?,?, 'uploading', ?, ?, ?, ?, ?, ?)`)
+          .run(aid, id, f.fileName, f.platform, f.format, JSON.stringify(f.architectures), f.minimumOs, f.sizeBytes, f.sha256, CONTENT_TYPES[f.format],
+               JSON.stringify({ ...f.signing, reportedBy: "import" }), f.package ? JSON.stringify(f.package) : null, now(), f.kind, JSON.stringify(provenance));
+        db.prepare("INSERT INTO pub_uploads (artifact_id, received_bytes, staging_key, attempts, updated_at) VALUES (?, ?, ?, 0, ?)").run(aid, f.sizeBytes, stagingKey, now());
+        audit(creator, "artifact.declared", id, aid, { fileName: f.fileName, platform: f.platform, format: f.format, kind: f.kind, sizeBytes: f.sizeBytes, declaredSha256: f.sha256, signing: f.signing, provenance, via: "import" });
+      });
+      const out = await finalize(creator, artifact(aid)!);
+      if (out.status !== 200) throw new HttpError(422, "import_rejected", `${f.fileName}: ${String((out.body as { message?: string }).message ?? "rejected")} The draft ${id} keeps the evidence and is not submitted.`);
+    }
+    const verified = artifactsOf(id).filter((a) => a.status === "verified");
+    if (!input.releaseNotes.length) throw new HttpError(409, "release_notes_required", "The draft has no release notes.");
+    transaction(db, () => {
+      db.prepare("UPDATE pub_releases SET status = 'submitted', submitted_at = ?, updated_at = ? WHERE id = ?").run(now(), now(), id);
+      audit(creator, "release.submitted", id, null, { files: verified.map((a) => ({ id: a.id, sha256: a.sha256 })), via: "import" });
+    });
+    return releaseView(release(id)!);
+  }
+
+  /** What a product page may say about free testing (no account data): when the open window ends. */
+  function freeWindowFor(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null {
+    const b = P.enabled ? freeBasis(productId, editionId) : null;
+    return b?.kind === "window" ? { endsAt: b.window.endsAt, releaseId: b.window.releaseId } : null;
+  }
+
+  return { route, publishedFor, freePublicFor, freeWindowFor, publishedById, publishedMeta, auditIntact, importRelease, allowedFormats: ALLOWED };
 }
 
 type ReleaseViewLike = {

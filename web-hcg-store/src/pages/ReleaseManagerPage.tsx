@@ -201,7 +201,7 @@ function ReleaseRow({ release: r, previous }: { release: ManagedRelease; previou
       </dl>
       <div className="rm-release__actions">
         <a className="button button--ghost button--small" href={r.reviewUrl}>
-          {r.mayApprove && (r.stage === "awaiting-approval" || r.stage === "approved") ? "Review, approve or publish" : "Open review page"}
+          {(r.mayApprove || r.mayPublication) && (r.stage === "awaiting-approval" || r.stage === "approved") ? "Review, approve or publish" : "Open review page"}
         </a>
         {r.files > 0 && (
           <button

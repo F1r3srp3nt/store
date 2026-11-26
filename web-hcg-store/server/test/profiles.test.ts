@@ -32,6 +32,7 @@ beforeEach(async () => {
       HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER_CLIENT,
       HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
       HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
+      HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
     },
     ecosystemFetch: mockMe,
   });

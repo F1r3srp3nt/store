@@ -83,6 +83,8 @@ export interface PublishedSource {
   publishedFor(productId: string, editionId: string | null): ProtectedArtifact[];
   /** Of those, the files of releases approved as public AND free: any signed-in HCG account may download them. */
   freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[];
+  /** The open free testing window of this edition (when it ends), if any. Public information, no account data. */
+  freeWindowFor?(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null;
   publishedById(id: string): ProtectedArtifact | undefined;
   publishedMeta(id: string): { version: string; architectures: string[] } | undefined;
 }

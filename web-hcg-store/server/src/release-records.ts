@@ -55,6 +55,8 @@ export interface ReleaseRecord {
   withdrawnAt: number | null;
   withdrawnReason: string | null;
   releaseNotes: string[];
+  /** Known limitations recorded with the release (absent in older exports). */
+  knownLimitations?: string[];
   artifacts: ReleaseRecordArtifact[];
 }
 
@@ -82,14 +84,14 @@ export function auditChainIntact(db: ReadDb): boolean {
 export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExport {
   const releases = db
     .prepare(
-      `SELECT id, product_id, edition_id, version, build, channel, distribution, status, approved_at, published_at, updated_at, withdrawn_reason, release_notes
+      `SELECT id, product_id, edition_id, version, build, channel, distribution, status, approved_at, published_at, updated_at, withdrawn_reason, release_notes, known_limitations
        FROM pub_releases WHERE approved_eligibility = 'public' AND published_at IS NOT NULL AND status IN ('published', 'superseded', 'withdrawn')
          AND product_source = 'catalogue'
        ORDER BY published_at, id`,
     )
     .all() as {
     id: string; product_id: string; edition_id: string | null; version: string; build: string; channel: string; distribution: string;
-    status: "published" | "superseded" | "withdrawn"; approved_at: number; published_at: number; updated_at: number; withdrawn_reason: string | null; release_notes: string;
+    status: "published" | "superseded" | "withdrawn"; approved_at: number; published_at: number; updated_at: number; withdrawn_reason: string | null; release_notes: string; known_limitations: string;
   }[];
   const records: ReleaseRecord[] = [];
   for (const r of releases) {
@@ -140,6 +142,7 @@ export function exportReleaseRecords(db: ReadDb, now: number): ReleaseRecordsExp
       withdrawnAt: r.status === "withdrawn" ? r.updated_at : null,
       withdrawnReason: r.status === "withdrawn" ? r.withdrawn_reason : null,
       releaseNotes: JSON.parse(r.release_notes) as string[],
+      knownLimitations: JSON.parse(r.known_limitations ?? "[]") as string[],
       artifacts,
     });
   }

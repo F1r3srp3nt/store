@@ -246,6 +246,34 @@ const MIGRATIONS: string[] = [
    ALTER TABLE pub_releases ADD COLUMN published_at INTEGER;
    ALTER TABLE pub_releases ADD COLUMN published_by TEXT;
    ALTER TABLE pub_releases ADD COLUMN superseded_by TEXT;`,
+  // 9: Free testing windows (free-windows.ts): a free public release is delivered only while a window is open
+  // (unless its edition is permanently free). Windows are opened, extended and terminated only by the operator path,
+  // with who authorised and who performed each change in an append-only log. Releases record their known
+  // limitations and, for an operator import, where they came from.
+  `CREATE TABLE free_windows (
+     id TEXT PRIMARY KEY,
+     product_id TEXT NOT NULL,
+     edition_id TEXT,
+     release_id TEXT,
+     starts_at INTEGER NOT NULL,
+     ends_at INTEGER NOT NULL,
+     terminated_at INTEGER,
+     terminated_reason TEXT,
+     created_at INTEGER NOT NULL
+   );
+   CREATE TABLE free_window_events (
+     seq INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     window_id TEXT NOT NULL,
+     action TEXT NOT NULL,
+     detail TEXT NOT NULL,
+     authorised_by TEXT NOT NULL,
+     performed_by TEXT NOT NULL
+   );
+   CREATE TRIGGER free_window_events_no_update BEFORE UPDATE ON free_window_events BEGIN SELECT RAISE(ABORT, 'free window events are append-only'); END;
+   CREATE TRIGGER free_window_events_no_delete BEFORE DELETE ON free_window_events BEGIN SELECT RAISE(ABORT, 'free window events are append-only'); END;
+   ALTER TABLE pub_releases ADD COLUMN known_limitations TEXT NOT NULL DEFAULT '[]';
+   ALTER TABLE pub_releases ADD COLUMN imported_from TEXT;`,
 ];
 
 /**

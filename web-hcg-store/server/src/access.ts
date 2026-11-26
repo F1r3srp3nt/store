@@ -38,6 +38,8 @@ export interface EditionAccess {
   downloadsMessage: string;
   /** Files the person may download now; only when downloadsAvailable. */
   artifacts: { id: string; fileName: string; releaseId: string }[];
+  /** A free testing period is open for this edition: free to download with an HCG account until endsAt (ms). */
+  freeTesting?: { endsAt: number } | null;
   message: string | null;
 }
 
@@ -105,6 +107,10 @@ export async function decideAccess(
     downloadsMessage: DOWNLOADS_NOT_AVAILABLE,
     artifacts: [],
     message: null,
+    freeTesting: (() => {
+      const w = registry.published?.freeWindowFor?.(product.id, editionId);
+      return w ? { endsAt: w.endsAt } : null;
+    })(),
   };
 
   if (sessionUnavailable) return { ...base, state: "unavailable", message: "Your access could not be checked right now. Try again shortly." };
@@ -115,12 +121,12 @@ export async function decideAccess(
   // (HCG Repo's sign-in-only "connect" level). It is not ownership: owned stays false, and only those files count.
   const freeFiles = registry.published?.freePublicFor(product.id, editionId) ?? [];
   const freeAccess = (): EditionAccess => {
-    const available = cfg.protectedDownloads;
+    const available = cfg.freeDownloads;
     return {
       ...signedIn,
       state: "free",
       downloadsAvailable: available,
-      downloadsMessage: available ? "Free with your HCG account." : DOWNLOADS_NOT_AVAILABLE,
+      downloadsMessage: available ? (signedIn.freeTesting ? "Free during public testing, with your HCG account." : "Free with your HCG account.") : DOWNLOADS_NOT_AVAILABLE,
       artifacts: available ? freeFiles.map((a) => ({ id: a.id, fileName: a.fileName, releaseId: a.releaseId })) : [],
     };
   };
@@ -139,8 +145,10 @@ export async function decideAccess(
   }
   if (check.status === "not-granted") return { ...signedIn, state: offers.length ? "not-owned" : "not-for-sale" };
 
-  const files = deliverableArtifacts(registry, product, editionId);
-  const downloadsAvailable = cfg.protectedDownloads && files.length > 0;
+  // With only free-testing downloads switched on, an owner (licence, purchase, Founder/Owner grant) gets exactly the
+  // free files anyone signed in gets, and nothing else.
+  const files = cfg.protectedDownloads ? deliverableArtifacts(registry, product, editionId) : cfg.freeDownloads ? freeFiles : [];
+  const downloadsAvailable = files.length > 0;
   return {
     ...signedIn,
     state: "owned",

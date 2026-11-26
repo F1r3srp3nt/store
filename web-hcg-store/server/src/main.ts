@@ -59,7 +59,7 @@ function start() {
     process.on("SIGTERM", () => stop("SIGTERM"));
     process.on("SIGINT", () => stop("SIGINT"));
     console.log(`HCG Store server (${cfg.mode} mode) on http://${cfg.host}:${cfg.port}`);
-    console.log(`  HCG Connect: ${connect ? "configured" : "not configured"} · entitlements: ${authority.kind} · payments: ${cfg.paymentProvider} · central grants: ${outbox.enabled ? `${outbox.environment} (pending ${outbox.pending()})` : "not configured"} · protected downloads: ${cfg.protectedDownloads ? "enabled" : "disabled"}`);
+    console.log(`  HCG Connect: ${connect ? "configured" : "not configured"} · entitlements: ${authority.kind} · payments: ${cfg.paymentProvider} · central grants: ${outbox.enabled ? `${outbox.environment} (pending ${outbox.pending()})` : "not configured"} · protected downloads: ${cfg.protectedDownloads ? "enabled" : cfg.freeDownloads ? "free-testing-only" : "disabled"}`);
   });
 }
 

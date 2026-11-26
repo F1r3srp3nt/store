@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart, profile]
+        options: [deploy, status, evidence, restart, profile, import-release, free-window]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -51,6 +51,10 @@ on:
         description: "profile: who authorised this change (recorded in the append-only profile audit)"
         required: false
         default: ""
+      operator_args:
+        description: 'import-release: {"request":"<file in release-imports/>","authorised_by":"…"} · free-window: {"command":"open|extend|terminate|list","product":"…","edition":"…","release":"rel-…","starts":"now|ISO","ends":"ISO","id":"fw-…","reason":"…","authorised_by":"…"}'
+        required: false
+        default: "{}"
 
 concurrency:
   group: fly-deploy
@@ -186,6 +190,91 @@ jobs:
           show_out=$(run "show --session-ref $REF")
           { echo "## Store profile"; echo '```json'; echo "$set_out" | jq .; echo "$show_out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$set_out" | jq -e 'has("error") | not' >/dev/null
+      # ---- import-release: the files a product's CI built, verified and imported unchanged as a SUBMITTED private
+      # draft. Approval and publication stay with a person in HCG Store (separate central permissions). ----
+      - name: Import request
+        id: imp
+        if: inputs.mode == 'import-release'
+        env:
+          ARGS: ${{ inputs.operator_args }}
+        run: |
+          REQ=$(jq -r '.request // ""' <<<"$ARGS"); AB=$(jq -r '.authorised_by // ""' <<<"$ARGS")
+          [[ "$REQ" =~ ^[a-z0-9.-]+\.json$ && -f "release-imports/$REQ" ]] || { echo "::error::operator_args.request must name a file in web-hcg-store/release-imports/"; exit 1; }
+          [ -n "$AB" ] || { echo "::error::operator_args.authorised_by is required"; exit 1; }
+          echo "request=release-imports/$REQ" >> "$GITHUB_OUTPUT"
+          echo "repo=$(jq -r .source.repository "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+          echo "run=$(jq -r .source.runId "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+          echo "files=$(jq -r .source.filesArtifact "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+          echo "draft=$(jq -r .source.draftArtifact "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
+      - if: inputs.mode == 'import-release'
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ steps.imp.outputs.repo }}
+          run-id: ${{ steps.imp.outputs.run }}
+          name: ${{ steps.imp.outputs.files }}
+          path: ${{ runner.temp }}/import/files
+          github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
+      - if: inputs.mode == 'import-release'
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ steps.imp.outputs.repo }}
+          run-id: ${{ steps.imp.outputs.run }}
+          name: ${{ steps.imp.outputs.draft }}
+          path: ${{ runner.temp }}/import/draft
+          github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
+      - if: inputs.mode == 'import-release'
+        uses: actions/checkout@v4
+        with:
+          repository: F1r3srp3nt/hcg-repo
+          ref: 0c25d955fe37accb9c83cde4632637b6dfcd623c
+          path: hcg-repo
+          sparse-checkout: docs/schemas
+      - name: Verify, upload to the Machine and import (no byte changed; nothing approved or published)
+        if: inputs.mode == 'import-release'
+        env:
+          ARGS: ${{ inputs.operator_args }}
+          REQUEST: ${{ steps.imp.outputs.request }}
+        run: |
+          pip install --quiet jsonschema==4.23.0
+          python3 scripts/verify-release-import.py --request "$REQUEST" --files "$RUNNER_TEMP/import/files" --draft "$RUNNER_TEMP/import/draft" \
+            --schema ../hcg-repo/docs/schemas/release-passport-v1.schema.json --out "$RUNNER_TEMP/import/report.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          cp "$REQUEST" "$RUNNER_TEMP/import/request.json"
+          NAME="import-$GITHUB_RUN_ID"
+          tar -C "$RUNNER_TEMP/import" -czf "$RUNNER_TEMP/$NAME.tar.gz" files draft request.json
+          flyctl ssh console --app "$APP" --command "mkdir -p /data/imports"
+          printf 'put %s /data/imports/%s.tar.gz\n' "$RUNNER_TEMP/$NAME.tar.gz" "$NAME" | flyctl ssh sftp shell --app "$APP"
+          flyctl ssh console --app "$APP" --command "sh -c 'mkdir -p /data/imports/$NAME && tar -xzf /data/imports/$NAME.tar.gz -C /data/imports/$NAME && rm /data/imports/$NAME.tar.gz && chown -R node:node /data/imports/$NAME'"
+          b() { printf %s "$1" | base64 -w0; }
+          AB=$(jq -r .authorised_by <<<"$ARGS")
+          PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=import-release)"
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/release-import.mjs --dir /data/imports/$NAME --request /data/imports/$NAME/request.json --authorised-by-b64 $(b "$AB") --performed-by-b64 $(b "$PB")" | grep '^{' | tail -1)
+          { echo "## Release import"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$out" | jq -e '.imported == true' >/dev/null
+          flyctl ssh console --app "$APP" --command "rm -rf /data/imports/$NAME"
+      # ---- free-window: open, extend, terminate or list a free testing window (free-windows.ts) ----
+      - name: Free testing window (no price, no payment, no charge)
+        if: inputs.mode == 'free-window'
+        env:
+          ARGS: ${{ inputs.operator_args }}
+        run: |
+          b() { printf %s "$1" | base64 -w0; }
+          j() { jq -r --arg k "$1" '.[$k] // ""' <<<"$ARGS"; }
+          CMD=$(j command); safe='^[A-Za-z0-9:._+-]*$'
+          for k in product edition release starts ends id; do [[ "$(j $k)" =~ $safe ]] || { echo "::error::operator_args.$k has unexpected characters"; exit 1; }; done
+          [[ "$CMD" =~ ^(open|extend|terminate|list)$ ]] || { echo "::error::operator_args.command must be open, extend, terminate or list"; exit 1; }
+          if [ "$CMD" != list ] && [ -z "$(j authorised_by)" ]; then echo "::error::operator_args.authorised_by is required"; exit 1; fi
+          PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=free-window)"
+          A="$CMD"
+          [ -n "$(j product)" ] && A="$A --product $(j product)"
+          [ -n "$(j edition)" ] && A="$A --edition $(j edition)"
+          [ -n "$(j release)" ] && A="$A --release $(j release)"
+          [ -n "$(j starts)" ] && A="$A --starts $(j starts)"
+          [ -n "$(j ends)" ] && A="$A --ends $(j ends)"
+          [ -n "$(j id)" ] && A="$A --id $(j id)"
+          A="$A --reason-b64 $(b "$(j reason)") --authorised-by-b64 $(b "$(j authorised_by)") --performed-by-b64 $(b "$PB")"
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/free-window.mjs $A" | grep '^{' | tail -1)
+          { echo "## Free testing window"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$out" | jq -e 'has("error") | not' >/dev/null
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"

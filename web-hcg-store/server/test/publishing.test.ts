@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateCatalogue } from "../../src/domain/catalogue";
 import { exportReleaseRecords } from "../src/release-records";
+import { openWindow } from "../src/free-windows";
 import { syncReleases } from "../src/release-sync";
 import { FIXTURE_CATALOGUE, startHarness, type Client, type Harness } from "./harness";
 
@@ -30,6 +31,7 @@ beforeEach(async () => {
       HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER_CLIENT,
       HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
       HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
+      HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
       HCG_STORE_UPLOAD_CHUNK_MB: "1",
     },
   });
@@ -38,6 +40,8 @@ beforeEach(async () => {
   // HCG's decisions (central permissions), stood in for by the TEST ledger.
   ledger.grant(PUBLISHER.sub, "*", featureEdition("store.publish"), "test", null);
   ledger.grant(APPROVER.sub, "*", featureEdition("store.release.approve"), "test", null);
+  // Publication is HCG's separate permission; the approver in these tests also holds it unless a test says otherwise.
+  ledger.grant(APPROVER.sub, "*", featureEdition("store.release.publish"), "test", null);
 });
 afterEach(async () => {
   await h.stop();
@@ -336,8 +340,11 @@ describe("Ship to Store", () => {
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/approve`, { eligibility: "public", confirm: "1.2.0" })).status).toBe(200);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "1.2.0" })).status).toBe(200);
     const anyone = await desktop(BUYER);
+    // Free and public, but no free testing window is open (and the edition is not permanently free): not delivered.
+    expect((await anyone.call("POST", `/api/v1/publishing/artifacts/${up.id}/download-url`)).body.error.code).toBe("free_period_closed");
+    openWindow(h.db, { productId: PRODUCT, editionId: "standard", releaseId: null, startsAt: h.clock.now() - 1000, endsAt: h.clock.now() + 86_400_000, authorisedBy: "founder (test)", performedBy: "operator (test)" }, h.clock.now());
     const link = await anyone.call("POST", `/api/v1/publishing/artifacts/${up.id}/download-url`);
-    expect(link.status).toBe(200); // free + public: any signed-in HCG account
+    expect(link.status).toBe(200); // free + public during a window: any signed-in HCG account
     expect((await fetch(h.origin + `/api/v1/publishing/artifacts/${up.id}/download-url`, { method: "POST" })).status).toBe(401); // signed out
     expect((await d.call("POST", `/api/v1/publishing/releases/${rel.body.id}/withdraw`, { reason: "Crash on launch (rollback)." })).body.status).toBe("withdrawn");
     expect((await fetch(link.body.url)).status).toBe(410);
@@ -437,7 +444,8 @@ describe("Ship to Store", () => {
     expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/approve`, { eligibility: "public", confirm: "2.0.1" })).status).toBe(200);
     expect((await approverWeb.post(`/api/v1/publishing/releases/${r1}/publish`, { confirm: "2.0.1" })).status).toBe(200);
 
-    // 2. Public + free: any signed-in account, without owning it; signed out still 401.
+    // 2. Public + free: any signed-in account, without owning it, while a free testing window is open; signed out still 401.
+    openWindow(h.db, { productId: "fixture-quasar-shell", editionId: "unleashed", releaseId: null, startsAt: h.clock.now() - 1000, endsAt: h.clock.now() + 86_400_000, authorisedBy: "founder (test)", performedBy: "operator (test)" }, h.clock.now());
     const access = (await (await stranger.get("/api/v1/products/fixture-quasar-shell/access")).json()) as { editions: { editionId: string; state: string; owned: boolean; artifacts: { id: string }[] }[] };
     const unleashed = access.editions.find((e) => e.editionId === "unleashed")!;
     expect([unleashed.state, unleashed.owned, unleashed.artifacts.map((x) => x.id)]).toEqual(["free", false, [fileId]]);
