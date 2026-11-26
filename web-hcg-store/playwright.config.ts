@@ -7,6 +7,7 @@ import { defineConfig } from "@playwright/test";
  *   - port 4174: the clearly-labelled test fixture catalogue (dist-fixture/)
  *   - port 4175: the HCG Store server in TEST mode serving dist-fixture/, with a mock HCG Connect
  *     provider on 4176, TEST offers and private TEST files (server/test/e2e-server.ts)
+ *   - port 4177: the same server with publishing enabled for the Control Center (server/test/admin-e2e-server.ts)
  * Build both first: `npm run build && npm run build:fixture` (done by `npm run test:e2e:full`).
  */
 export default defineConfig({
@@ -25,5 +26,7 @@ export default defineConfig({
       timeout: 60_000,
     },
     { command: "npx tsx server/test/e2e-server.ts", url: "http://127.0.0.1:4175/api/v1/health", reuseExistingServer: false, timeout: 60_000 },
+    // HCG Store Control Center: publishing enabled, mock HCG Connect on 4178 (server/test/admin-e2e-server.ts).
+    { command: "npx tsx server/test/admin-e2e-server.ts", url: "http://127.0.0.1:4177/api/v1/health", reuseExistingServer: false, timeout: 60_000 },
   ],
 });

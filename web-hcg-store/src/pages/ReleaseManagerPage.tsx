@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAccount } from "../account/account-context";
 import {
   signInUrl,
@@ -76,7 +76,8 @@ export function ReleaseManagerPage() {
           <h1>Release Manager</h1>
           <p className="page-head__lead">
             Releases of the products HCG lets your account publish or approve. Approval and publication are separate,
-            manual steps on each release's review page; nothing is published automatically.
+            manual steps; nothing is published automatically. Uploads, versions, rollback and products are managed in
+            the <Link to="/control-center">Control Center</Link>.
           </p>
         </header>
 

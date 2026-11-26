@@ -104,6 +104,13 @@ export interface PublishingSettings {
   chunkBytes: number;
   /** Total bytes of release files the Store keeps (all releases, staging included); null = no quota. */
   storageQuotaBytes: number | null;
+  /** Requests per minute per signed-in person for the management API (upload chunks have their own, higher limit). */
+  adminRatePerMinute: number;
+  /**
+   * Device-aware authorisation (future HCG UEM). Only "off" is accepted until HCG UEM is implemented, reviewed and
+   * approved; the operations it would cover are listed in docs/ADMINISTRATION.md.
+   */
+  devicePolicy: "off";
 }
 
 /**
@@ -289,6 +296,8 @@ export function parseStoreConfig(env: Env): StoreConfig {
   // enabled: everything, including approval and publication (each with its own central permission).
   const publishingMode = (env.HCG_STORE_PUBLISHING ?? "disabled") as "disabled" | "uploads" | "enabled";
   if (!["enabled", "uploads", "disabled"].includes(publishingMode)) problems.push(`HCG_STORE_PUBLISHING must be "enabled", "uploads" or "disabled".`);
+  // HCG UEM (device-aware administration) is not implemented: nothing but "off" may be configured yet.
+  if ((env.HCG_STORE_DEVICE_POLICY ?? "off") !== "off") problems.push(`HCG_STORE_DEVICE_POLICY must be "off" until HCG UEM is implemented, reviewed and approved.`);
   const publishingEnabled = publishingMode === "enabled" || publishingMode === "uploads";
   const publicationEnabled = publishingMode === "enabled";
   const centralPermission = /^[a-z0-9][a-z0-9._-]{1,79}$/;
@@ -364,6 +373,8 @@ export function parseStoreConfig(env: Env): StoreConfig {
       uploadUrlTtlSeconds: int("HCG_STORE_UPLOAD_URL_TTL_SECONDS", 900, 60, 3600),
       chunkBytes: int("HCG_STORE_UPLOAD_CHUNK_MB", 8, 1, 64) * 1024 * 1024,
       storageQuotaBytes: env.HCG_STORE_STORAGE_QUOTA_MB ? int("HCG_STORE_STORAGE_QUOTA_MB", 0, 1, 10_000_000) * 1024 * 1024 : null,
+      adminRatePerMinute: int("HCG_STORE_ADMIN_RATE_PER_MINUTE", 300, 10, 10_000),
+      devicePolicy: "off",
     },
   };
 }

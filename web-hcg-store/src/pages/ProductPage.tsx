@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router-dom";
+import { useAdminMe } from "../admin/useAdminMe";
 import { CatalogueGate } from "../app/catalogue-context";
 import { AccessPanel } from "../components/AccessPanel";
 import { StatusPill } from "../components/Badges";
@@ -81,6 +82,7 @@ function ProductDetail({
             <li aria-current="page">{product.name}</li>
           </ol>
         </nav>
+        <ManageProductButton productId={product.id} />
 
         {successor && (
           <div className="callout callout--merged" role="note">
@@ -361,5 +363,21 @@ function ProductResources({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * "Manage product" for the people HCG grants an HCG Store permission. Shown only when the server says so; the Control
+ * Center authorises every action again on the server, so this button grants nothing by itself.
+ */
+function ManageProductButton({ productId }: { productId: string }) {
+  const admin = useAdminMe();
+  if (admin.status !== "ok" || !admin.me.administrator) return null;
+  return (
+    <div className="manage-product">
+      <Link className="button button--ghost button--small" to={`/control-center?tab=products&product=${encodeURIComponent(productId)}`} data-testid="manage-product">
+        Manage product
+      </Link>
+    </div>
   );
 }

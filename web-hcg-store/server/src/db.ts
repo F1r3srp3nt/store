@@ -298,6 +298,52 @@ const MIGRATIONS: string[] = [
      BEGIN SELECT RAISE(ABORT, 'a release exception can only be revoked, once'); END;
    ALTER TABLE pub_releases ADD COLUMN known_limitations TEXT NOT NULL DEFAULT '[]';
    ALTER TABLE pub_releases ADD COLUMN imported_from TEXT;`,
+  // 10: Release lifecycle dimensions and explicit current releases (release-lifecycle.ts).
+  // - availability is separate from review/publication: available · disabled (restorable) · archived (hidden) ·
+  //   revoked (final). Only "available" releases are ever delivered to customers.
+  // - pub_current: the explicitly selected current release of each distribution TARGET (product, edition, platform,
+  //   architecture, channel). Publishing a macOS, ARM64 or beta build changes only its own targets. Never inferred
+  //   from version numbers. Backfilled from releases already published (newest publication per target).
+  // - revision: every change to a release or a draft product bumps it (triggers), so clients can detect conflicts
+  //   (If-Match) instead of silently overwriting another client's change.
+  // - Draft products get revisioned metadata (Store-only until HCG registers the product centrally).
+  `ALTER TABLE pub_releases ADD COLUMN availability TEXT NOT NULL DEFAULT 'available';
+   ALTER TABLE pub_releases ADD COLUMN availability_reason TEXT;
+   ALTER TABLE pub_releases ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+   ALTER TABLE pub_releases ADD COLUMN supersede_on_publish INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE pub_releases ADD COLUMN upload_source TEXT;
+   CREATE TABLE pub_current (
+     product_id TEXT NOT NULL,
+     edition_key TEXT NOT NULL,
+     platform TEXT NOT NULL,
+     arch TEXT NOT NULL,
+     channel TEXT NOT NULL,
+     release_id TEXT NOT NULL REFERENCES pub_releases(id),
+     selected_at INTEGER NOT NULL,
+     selected_by TEXT NOT NULL,
+     PRIMARY KEY (product_id, edition_key, platform, arch, channel)
+   );
+   INSERT OR REPLACE INTO pub_current (product_id, edition_key, platform, arch, channel, release_id, selected_at, selected_by)
+     SELECT r.product_id, COALESCE(r.edition_id, ''), a.platform, j.value, r.channel, r.id, r.published_at, 'migration-10'
+     FROM pub_releases r JOIN pub_artifacts a ON a.release_id = r.id
+       JOIN json_each(CASE WHEN a.architectures IN ('[]', '') THEN '["any"]' ELSE a.architectures END) j
+     WHERE r.status = 'published' AND r.approved_eligibility = 'public' AND a.status = 'verified' AND a.format <> 'aab'
+     ORDER BY r.published_at, r.id;
+   ALTER TABLE pub_products ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
+   ALTER TABLE pub_products ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+   ALTER TABLE pub_products ADD COLUMN updated_at INTEGER;
+   ALTER TABLE pub_products ADD COLUMN updated_by TEXT;
+   CREATE TRIGGER pub_release_revision AFTER UPDATE ON pub_releases WHEN NEW.revision = OLD.revision
+     BEGIN UPDATE pub_releases SET revision = OLD.revision + 1 WHERE id = NEW.id; END;
+   CREATE TRIGGER pub_release_revision_files_new AFTER INSERT ON pub_artifacts
+     BEGIN UPDATE pub_releases SET revision = revision + 1 WHERE id = NEW.release_id; END;
+   CREATE TRIGGER pub_release_revision_files AFTER UPDATE OF status ON pub_artifacts WHEN NEW.status IS NOT OLD.status
+     BEGIN UPDATE pub_releases SET revision = revision + 1 WHERE id = NEW.release_id; END;
+   CREATE TRIGGER pub_product_revision AFTER UPDATE ON pub_products WHEN NEW.revision = OLD.revision
+     BEGIN UPDATE pub_products SET revision = OLD.revision + 1 WHERE id = NEW.id; END;
+   CREATE TRIGGER pub_release_revoked_final BEFORE UPDATE OF availability ON pub_releases
+     WHEN OLD.availability = 'revoked' AND NEW.availability <> 'revoked'
+     BEGIN SELECT RAISE(ABORT, 'a revoked release stays revoked'); END;`,
 ];
 
 /**
@@ -319,7 +365,8 @@ export type Db = DatabaseSync;
 
 export const MIGRATION_COUNT = MIGRATIONS.length;
 
-export function openDatabase(dataDir: string): Db {
+/** `upTo` (tests only): stop after that many migrations, to build a database as an older Store left it. */
+export function openDatabase(dataDir: string, opts: { upTo?: number } = {}): Db {
   let file = ":memory:";
   if (dataDir !== ":memory:") {
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -331,7 +378,7 @@ export function openDatabase(dataDir: string): Db {
   const row = db.prepare("SELECT version FROM schema_version").get() as { version: number } | undefined;
   let version = row?.version ?? 0;
   if (!row) db.prepare("INSERT INTO schema_version (version) VALUES (0)").run();
-  while (version < MIGRATIONS.length) {
+  while (version < (opts.upTo ?? MIGRATIONS.length)) {
     db.exec("BEGIN");
     try {
       db.exec(MIGRATIONS[version]!);

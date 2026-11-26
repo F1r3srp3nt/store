@@ -196,7 +196,7 @@ export function AccountPage() {
         {account.status === "signed-in" && <MyApps />}
         {account.status === "signed-in" && (
           <p className="fine">
-            Publishing for HCG? <Link to="/release-manager">Release Manager</Link> lists the releases HCG lets you publish or approve.
+            Publishing for HCG? The <Link to="/control-center">Control Center</Link> uploads and manages releases HCG lets you publish or approve.
           </p>
         )}
       </div>

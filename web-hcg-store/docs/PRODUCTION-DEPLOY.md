@@ -290,6 +290,44 @@ fly ssh console --app hcg-store --command "node --no-warnings server-dist/auth-e
 
 Then `npm run releases:sync -- --production` regenerates the catalogue's release records from the approvals.
 
+## Phase 3a: Control Center (website uploads), proposed for founder review
+
+Deploys the Control Center ([ADMINISTRATION.md](ADMINISTRATION.md)) into the running uploads-only Store. **No
+`fly.toml` change**: `HCG_STORE_PUBLISHING` stays `uploads`, the publication key stays commented out, payments stay
+`none`, protected downloads stay `disabled`. Optional: `HCG_STORE_ADMIN_RATE_PER_MINUTE` (default 300).
+
+What the deploy changes:
+
+- **Migration 10.** It adds release availability, revisions and the upload source, the per-target current-release
+  table, and draft-product metadata. Existing rows get `available`, revision 1. Current releases are backfilled only
+  from published releases, and production has none, so the table starts empty. The release before this one runs
+  unchanged on the migrated database (checked), so an image rollback needs no database restore.
+- New routes: `/control-center`, `GET /api/v1/publishing/me`, `/changes`, `/products/:id` (GET, PATCH),
+  `/releases/:id/{disable,enable,archive,revoke,supersede,restore}`.
+- **Every browser change to the publishing API now needs the session's CSRF token** (`X-HCG-CSRF`). The website and
+  the review page send it. Desktop apps use bearer tokens and are unaffected.
+
+Deploy: *Actions → Deploy Store server to Fly.io → mode `deploy`* on `main`. The workflow runs the tests, the
+migration dry run on a copy of the live database, the pre-deploy backup, the deploy and the smoke test with the
+expected commit, as for every deploy.
+
+Verification by the founder (production, after deploy):
+
+| Check | How | Passes when |
+| --- | --- | --- |
+| Deployed commit | `/hcg-build.json` | the merged commit |
+| Mode | `/api/v1/health` | `"publishing":"uploads"`, payments and protected downloads `disabled` |
+| Not authorised | a customer HCG account opens `/control-center` | "Not authorised"; no upload controls |
+| Permissions | the founder opens `/control-center` | chips show *Private uploads only* and *Upload and submit ✓* (needs HCG's `store.publish` grant) |
+| Website upload | *Add new update* → a listed product → a small installer | file `Verified`, SHA-256 equals `shasum -a 256 <file>` on the Mac |
+| Resume | reload the tab during a large upload; *Continue a draft* → choose the same file | continues from the bytes already received |
+| Same draft in the apps | open Release Manager in HCG Executable Maker or Store Manager | the same release, revision and SHA-256 |
+| Submit | *Submit for review* | `submitted` |
+| Publication stays off | the Releases tab | no Approve or Publish buttons. The API answers `publication_disabled`. |
+| Customer delivery stays off | `/api/v1/downloads/<file>` as a customer | refused |
+
+Rollback: `fly deploy --image <previous>` (see Rollback). Uploaded drafts stay in the database and storage either way.
+
 ## Phase 4: customer payments and downloads
 
 Separate from publishing, and only when every launch condition in [ACCESS.md](ACCESS.md) holds and the founder
