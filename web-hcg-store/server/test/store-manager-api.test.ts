@@ -122,3 +122,30 @@ describe("storage quota", () => {
     expect(d).toMatchObject({ status: 409, body: { error: { code: "quota_exceeded" } } });
   });
 });
+
+describe("Pricing and Offers (free testing periods over HTTP)", () => {
+  it("is off until HCG's permission is configured, then only people HCG grants it may open, extend and end periods", async () => {
+    await start();
+    const off = await (await app())("POST", "/api/v1/publishing/offers/windows", { productId: "fixture-quasar-shell", editionId: "standard", starts: "now", days: 30 });
+    expect(off).toMatchObject({ status: 403, body: { error: { code: "not_offers_manager", message: expect.stringMatching(/not enabled/) } } });
+    await h.stop();
+    await start({ HCG_STORE_OFFERS_CENTRAL_ID: "store.offers.test" });
+    (h.authority as TestLedgerAuthority).grant(PUBLISHER.sub, "*", featureEdition("store.offers.test"), "test", null);
+    const call = await app();
+    expect((await call("GET", "/api/v1/publishing/capabilities")).body.offersEnabled).toBe(true);
+    // Customers cannot.
+    expect((await (await app(CUSTOMER))("POST", "/api/v1/publishing/offers/windows", { productId: "fixture-quasar-shell", editionId: "standard", starts: "now", days: 30 })).status).toBe(403);
+    const opened = await call("POST", "/api/v1/publishing/offers/windows", { productId: "fixture-quasar-shell", editionId: "standard", starts: "now", days: 30 });
+    expect(opened).toMatchObject({ status: 201, body: { state: "open", anchor: "fixed" } });
+    const id = opened.body.id as string;
+    expect((await call("POST", "/api/v1/publishing/offers/windows", { productId: "fixture-quasar-shell", editionId: "standard", starts: "now", days: 5 })).body.error.code).toBe("window_refused"); // overlap
+    expect((await call("POST", `/api/v1/publishing/offers/windows/${id}/extend`, { days: 45 })).body.endsAt).toBe(opened.body.startsAt + 45 * 86_400_000);
+    expect((await call("POST", `/api/v1/publishing/offers/windows/${id}/terminate`, {})).status).toBe(400); // a reason is required
+    expect((await call("POST", `/api/v1/publishing/offers/windows/${id}/terminate`, { reason: "Testing finished." })).body.state).toBe("terminated");
+    const list = await call("GET", "/api/v1/publishing/offers/windows?productId=fixture-quasar-shell");
+    expect(list.body.events.map((e: { action: string }) => e.action)).toEqual(["window.opened", "window.extended", "window.terminated"]);
+    expect(JSON.stringify(list.body.events)).toMatch(/HCG account pub@example\.test/);
+    // Never a price, offer, checkout or payment record.
+    expect(h.db.prepare("SELECT count(*) AS n FROM purchases").get()).toEqual({ n: 0 });
+  });
+});

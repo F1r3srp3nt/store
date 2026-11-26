@@ -3,6 +3,10 @@
  *
  *   GET    /api/v1/publishing/whoami                         who is calling; publisher/approver per HCG
  *   GET    /api/v1/publishing/capabilities                   API version, upload limits, formats, storage use (HCG Store Manager)
+ *   GET    /api/v1/publishing/offers/windows?productId=      free testing periods and their history
+ *   POST   /api/v1/publishing/offers/windows                 open a free testing period (fixed, or from publication)
+ *   POST   /api/v1/publishing/offers/windows/:id/extend      longer / later end
+ *   POST   /api/v1/publishing/offers/windows/:id/terminate   end now, with a reason
  *   GET    /api/v1/publishing/products                       products the caller may publish
  *   POST   /api/v1/publishing/products                       draft product (Store-internal until HCG adds it)
  *   GET    /api/v1/publishing/releases?productId=            releases of a product
@@ -44,7 +48,7 @@ import type { StoreConfig } from "./config";
 import { seal, sha256Hex, signPayload, unseal, verifyPayload, randomToken } from "./crypto";
 import { transaction, type Db } from "./db";
 import { appendPubAudit, auditChainIntact } from "./release-records";
-import { openWindowFor, type FreeWindow } from "./free-windows";
+import { extendWindow, FreeWindowError, listWindows, openWindow, openWindowFor, terminateWindow, type FreeWindow, type WindowPeriod } from "./free-windows";
 import { activeException, exceptionsFor } from "./release-exceptions";
 import type { EntitlementAuthority, Subject } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
@@ -252,8 +256,10 @@ export function createPublishing(deps: PublishingDeps) {
     return STORE_CENTRAL_PRODUCT_ID;
   }
 
-  async function permitted(actor: Actor, permission: "publish" | "approve" | "publication", productId: string): Promise<boolean> {
-    const feature = permission === "publish" ? P.publisherCentralId! : permission === "approve" ? P.approverCentralId! : P.publicationCentralId!;
+  async function permitted(actor: Actor, permission: "publish" | "approve" | "publication" | "offers", productId: string): Promise<boolean> {
+    // Pricing and Offers is off until HCG issues its permission and it is configured (HCG_STORE_OFFERS_CENTRAL_ID).
+    if (permission === "offers" && !P.offersCentralId) return false;
+    const feature = permission === "publish" ? P.publisherCentralId! : permission === "approve" ? P.approverCentralId! : permission === "publication" ? P.publicationCentralId! : P.offersCentralId!;
     const subject: Subject = { sub: actor.sub, accessToken: actor.accessToken };
     // A central feature of the product (HCG's planned staff permissions `store.publish` and `store.release.approve`),
     // checked with the caller's own HCG token on every action and never cached. Owning the product, an HCG role, or
@@ -264,12 +270,13 @@ export function createPublishing(deps: PublishingDeps) {
     return r.status === "granted";
   }
 
-  async function requirePermission(actor: Actor, permission: "publish" | "approve" | "publication", productId: string) {
+  async function requirePermission(actor: Actor, permission: "publish" | "approve" | "publication" | "offers", productId: string) {
     if (!(await permitted(actor, permission, productId))) {
       const why = {
         publish: ["not_publisher", "HCG has not granted your account permission to submit releases of this product."],
         approve: ["not_approver", "HCG has not granted your account permission to approve releases of this product."],
         publication: ["not_publication", "HCG has not granted your account permission to publish approved releases."],
+        offers: ["not_offers_manager", P.offersCentralId ? "HCG has not granted your account permission to manage offers and free testing periods." : "Pricing and Offers is not enabled on this Store yet (HCG has not issued its permission)."],
       }[permission];
       throw new HttpError(403, why[0]!, why[1]!);
     }
@@ -651,7 +658,66 @@ export function createPublishing(deps: PublishingDeps) {
         formats: ALLOWED, staffOnlyFormats: [...STAFF_ONLY_FORMATS], buildProviders: BUILD_PROVIDER_IDS,
         storage: { usedBytes: storageUsed(), quotaBytes: P.storageQuotaBytes },
         approvalAndPublication: "browser-only",
+        offersEnabled: !!P.offersCentralId,
       }));
+    }
+    // ---- Pricing and Offers: free testing periods (free-windows.ts). No price, offer, checkout or charge is ever
+    // created here; payments are a separate, separately approved system. Each change records the person (their HCG
+    // account) as having authorised it and the client that performed it.
+    if (p === "/api/v1/publishing/offers/windows" && m === "GET") {
+      const productId = url.searchParams.get("productId") ?? undefined;
+      if (!(await permitted(actor, "offers", STORE_CENTRAL_PRODUCT_ID)) && !(await mayReview(actor, productId ?? STORE_CENTRAL_PRODUCT_ID))) throw new HttpError(403, "not_offers_manager", "HCG has not granted your account access to offers.");
+      const t = now();
+      const windows = listWindows(db, t, productId);
+      const events = db.prepare(`SELECT at, window_id, action, detail, authorised_by AS authorisedBy, performed_by AS performedBy FROM free_window_events ${productId ? "WHERE window_id IN (SELECT id FROM free_windows WHERE product_id = ?)" : ""} ORDER BY seq`).all(...(productId ? [productId] : [])) as { at: number; window_id: string; action: string; detail: string; authorisedBy: string; performedBy: string }[];
+      return send(json(res, 200, { enabled: !!P.offersCentralId, windows, events: events.map((e) => ({ ...e, detail: JSON.parse(e.detail) })) }));
+    }
+    if ((match = /^\/api\/v1\/publishing\/offers\/windows(?:\/(fw-[a-f0-9]{12})\/(extend|terminate))?$/.exec(p)) && m === "POST") {
+      await requirePermission(actor, "offers", STORE_CENTRAL_PRODUCT_ID);
+      const who = { authorisedBy: `HCG account ${actor.email ?? actor.sub}`.slice(0, 200), performedBy: actor.via === "web" ? "HCG Store (browser)" : "HCG Store Manager / app" };
+      const t = now();
+      const day = 24 * 3600 * 1000;
+      try {
+        if (!match[1]) {
+          const b = z.strictObject({
+            productId: z.string().regex(kebab), editionId: z.string().regex(kebab).nullable().default(null), releaseId: z.string().regex(/^rel-[a-f0-9]{16}$/).nullable().default(null),
+            starts: z.union([z.literal("now"), z.literal("publication"), z.number().int()]), ends: z.number().int().optional(), days: z.number().int().min(1).max(366).optional(),
+          }).parse(await readJson(req));
+          const product = findProduct(registry, b.productId);
+          if (!product || product.visibility === "draft") throw new HttpError(404, "unknown_product", "Unknown product.");
+          if (product.editions.length ? !product.editions.some((e) => e.id === b.editionId) : b.editionId !== null) throw new HttpError(400, "bad_edition", "Unknown edition.");
+          let publishedAt: number | null = null;
+          if (b.releaseId) {
+            const r = release(b.releaseId);
+            if (!r || r.product_id !== b.productId || r.edition_id !== b.editionId) throw new HttpError(400, "bad_release", "The release is not a release of this product edition.");
+            if (r.distribution !== "free") throw new HttpError(400, "not_free", "Only a release distributed as free can be in a free testing period.");
+            if (["withdrawn", "superseded"].includes(r.status)) throw new HttpError(409, "release_ended", `The release is ${r.status}.`);
+            publishedAt = r.published_at;
+          }
+          let period: WindowPeriod;
+          if (b.starts === "publication") {
+            if (!b.releaseId || !b.days) throw new HttpError(400, "bad_period", "A period that starts at publication names the release and a number of days.");
+            period = { anchor: "publication", durationMs: b.days * day, publishedAt };
+          } else {
+            const start = b.starts === "now" ? t : b.starts;
+            const end = b.ends ?? (b.days ? start + b.days * day : NaN);
+            if (!Number.isFinite(end)) throw new HttpError(400, "bad_period", "Give an end time or a number of days.");
+            period = { anchor: "fixed", startsAt: start, endsAt: end };
+          }
+          return send(json(res, 201, openWindow(db, { productId: b.productId, editionId: b.editionId, releaseId: b.releaseId, period, ...who }, t)));
+        }
+        if (match[2] === "extend") {
+          const b = z.strictObject({ ends: z.number().int().optional(), days: z.number().int().min(1).max(366).optional() }).parse(await readJson(req));
+          const change = b.days ? { durationMs: b.days * day } : b.ends ? { endsAt: b.ends } : null;
+          if (!change) throw new HttpError(400, "bad_period", "Give a later end time or a total number of days.");
+          return send(json(res, 200, extendWindow(db, match[1]!, change, who, t)));
+        }
+        const b = z.strictObject({ reason: z.string().trim().min(1).max(500) }).parse(await readJson(req));
+        return send(json(res, 200, terminateWindow(db, match[1]!, b.reason, who, t)));
+      } catch (e) {
+        if (e instanceof FreeWindowError) throw new HttpError(409, "window_refused", e.message);
+        throw e;
+      }
     }
     if (p === "/api/v1/publishing/products" && m === "GET") {
       const all = [

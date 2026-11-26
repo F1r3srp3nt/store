@@ -90,6 +90,11 @@ export interface PublishingSettings {
   approverCentralId: string | null;
   /** Central permission checked for publishing an approved release (making it public). Separate from approval. */
   publicationCentralId: string | null;
+  /**
+   * Central permission for Pricing and Offers (free testing periods) from HCG Store Manager or the browser. Unset (the
+   * default) = those routes are off and free testing periods stay operator-only. Must be the key HCG issues.
+   */
+  offersCentralId: string | null;
   maxUploadBytes: number;
   uploadUrlTtlSeconds: number;
   chunkBytes: number;
@@ -281,6 +286,10 @@ export function parseStoreConfig(env: Env): StoreConfig {
   const publisherCentralId = env.HCG_STORE_PUBLISHER_CENTRAL_ID?.trim() || null;
   const approverCentralId = env.HCG_STORE_RELEASE_APPROVER_CENTRAL_ID?.trim() || null;
   const publicationCentralId = env.HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID?.trim() || null;
+  const offersCentralId = env.HCG_STORE_OFFERS_CENTRAL_ID?.trim() || null;
+  if (offersCentralId && (!centralPermission.test(offersCentralId) || [publisherCentralId, approverCentralId, publicationCentralId].includes(offersCentralId))) {
+    problems.push("HCG_STORE_OFFERS_CENTRAL_ID must be its own central permission, different from the three release permissions.");
+  }
   const publishingClientIds = (env.HCG_STORE_PUBLISHING_CLIENT_IDS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   if (publishingEnabled) {
     if (!hcgConnect) problems.push("Publishing needs HCG Connect to be configured.");
@@ -337,6 +346,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
       publisherCentralId,
       approverCentralId,
       publicationCentralId,
+      offersCentralId,
       maxUploadBytes: int("HCG_STORE_UPLOAD_MAX_MB", 4096, 1, 16384) * 1024 * 1024,
       uploadUrlTtlSeconds: int("HCG_STORE_UPLOAD_URL_TTL_SECONDS", 900, 60, 3600),
       chunkBytes: int("HCG_STORE_UPLOAD_CHUNK_MB", 8, 1, 64) * 1024 * 1024,
