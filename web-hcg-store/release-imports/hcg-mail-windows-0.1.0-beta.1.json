@@ -1,0 +1,20 @@
+{
+  "$comment": "Import request for HCG Store's Release Manager. The files are imported exactly as HCG Mail's CI built them: nothing is rebuilt, re-packed or re-signed. Every value below must match the draft and the Release Passports, or the import stops.",
+  "format": "hcg.store.release-import/1",
+  "source": {
+    "repository": "F1r3srp3nt/HCG-Mail",
+    "commit": "8bb1a4f078326da6373962cb81a96f88675bc3f4",
+    "runId": 45686343504,
+    "filesArtifact": "hcg-mail-windows-0.1.0-beta.1",
+    "draftArtifact": "hcg-mail-windows-store-draft"
+  },
+  "expect": {
+    "productId": "hcg-mail",
+    "editionId": "windows-desktop",
+    "version": "0.1.0-beta.1",
+    "build": "1",
+    "channel": "beta",
+    "distribution": "free",
+    "files": 4
+  }
+}

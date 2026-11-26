@@ -1,0 +1,78 @@
+# HCG Store release import: verification and rehearsal. Read-only towards production.
+#
+# Downloads the files and the HCG Store draft that a product's CI produced (a public repository's Actions run), and
+# checks, without changing any byte: every file's size and SHA-256 against the draft, every Release Passport
+# (hcg.release-passport v1, HCG Repo's schema) against the file (size, SHA-256, SHA-512), and the draft against the
+# import request. Then rehearses the full Release Manager flow in a TEST-mode HCG Store (import, submit, approve,
+# publish, catalogue export) and uploads the publication preview. Nothing is sent to the production Store.
+name: Release import (verify and rehearse)
+
+on:
+  push:
+    branches: [claude/stoic-meitner-gqcok1]
+    paths: ["web-hcg-store/release-imports/**", ".github/workflows/release-import.yml"]
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "Import request file under web-hcg-store/release-imports/"
+        required: true
+        default: hcg-mail-windows-0.1.0-beta.1.json
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web-hcg-store
+    env:
+      REQUEST: release-imports/${{ inputs.request || 'hcg-mail-windows-0.1.0-beta.1.json' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the import request
+        id: req
+        run: |
+          echo "repo=$(jq -r .source.repository "$REQUEST")" >> "$GITHUB_OUTPUT"
+          echo "run=$(jq -r .source.runId "$REQUEST")" >> "$GITHUB_OUTPUT"
+          echo "files=$(jq -r .source.filesArtifact "$REQUEST")" >> "$GITHUB_OUTPUT"
+          echo "draft=$(jq -r .source.draftArtifact "$REQUEST")" >> "$GITHUB_OUTPUT"
+      - name: Download the built files (exact bytes from the run)
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ steps.req.outputs.repo }}
+          run-id: ${{ steps.req.outputs.run }}
+          name: ${{ steps.req.outputs.files }}
+          path: ${{ runner.temp }}/import/files
+          github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
+      - name: Download the HCG Store draft and Release Passports
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ steps.req.outputs.repo }}
+          run-id: ${{ steps.req.outputs.run }}
+          name: ${{ steps.req.outputs.draft }}
+          path: ${{ runner.temp }}/import/draft
+          github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
+      - name: HCG Repo passport schema
+        uses: actions/checkout@v4
+        with:
+          repository: F1r3srp3nt/hcg-repo
+          # The commit HCG Mail's workflow validated its passports against.
+          ref: 0c25d955fe37accb9c83cde4632637b6dfcd623c
+          path: hcg-repo
+          sparse-checkout: docs/schemas
+      - name: Verify files, checksums, passports and draft (no byte is changed)
+        run: |
+          pip install --quiet jsonschema==4.23.0
+          python3 scripts/verify-release-import.py --request "$REQUEST" --files "$RUNNER_TEMP/import/files" \
+            --draft "$RUNNER_TEMP/import/draft" --schema ../hcg-repo/docs/schemas/release-passport-v1.schema.json \
+            --out "$RUNNER_TEMP/import/report.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-import-verification
+          path: |
+            ${{ runner.temp }}/import/report.json
+            ${{ runner.temp }}/import/draft
+          retention-days: 30
