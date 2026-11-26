@@ -31,7 +31,10 @@ kill_timeout = 10
   # Off until their own end-to-end tests pass and the founder approves.
   HCG_STORE_PAYMENT_PROVIDER = "none"
   HCG_STORE_PROTECTED_DOWNLOADS = "disabled"
-  HCG_STORE_PUBLISHING = "disabled"
+  # Private uploads only (founder-approved): authorised staff upload to private drafts from HCG Executable Maker (and,
+  # once HCG issues its client, HCG Store Manager) and submit them for review. Approval, publication and every customer
+  # delivery stay off in this mode; "enabled" is a separate, later approval.
+  HCG_STORE_PUBLISHING = "uploads"
   HCG_STORE_UPLOAD_MAX_MB = "2048"
 
   # Phase 2: HCG Connect sign-in, with HCG Store's dedicated PRODUCTION client (issued by HCG through the Owner
@@ -45,14 +48,15 @@ kill_timeout = 10
   HCG_CONNECT_REDIRECT_URI = "https://store.hakmicapitalgroup.com/auth/callback"
   HCG_CONNECT_SCOPES = "openid email profile"
 
-  # Phase 3: Ship to Store publishing. Separate from customer payments and downloads. Enable only after phase 2 is
-  # verified, HCG has created the two permissions below as product features with per-person grants (membership of an
-  # organisation alone must not pass), and the publishing checks in docs/PRODUCTION-DEPLOY.md pass. Then set
-  # HCG_STORE_PUBLISHING above to "enabled" and uncomment these.
-  # HCG Executable Maker's production client (issued by HCG, status configured_untested). Never the Store's own client.
-  # HCG_STORE_PUBLISHING_CLIENT_IDS = "fb9b6edf-2bfc-4b5e-a354-dbb1af697029"
-  # HCG_STORE_PUBLISHER_CENTRAL_ID = "store.publish"
-  # HCG_STORE_RELEASE_APPROVER_CENTRAL_ID = "store.release.approve"
+  # Phase 3: Ship to Store. Separate from customer payments and downloads. Desktop clients HCG accepts (issued
+  # HCG Connect client IDs; never the Store's own client). HCG Executable Maker's production client:
+  HCG_STORE_PUBLISHING_CLIENT_IDS = "fb9b6edf-2bfc-4b5e-a354-dbb1af697029"
+  # HCG's personal grants on hcg.store. store.publish: submit drafts and upload (the only key "uploads" needs).
+  HCG_STORE_PUBLISHER_CENTRAL_ID = "store.publish"
+  # Optional in "uploads": lets approvers open private drafts to review them (approval itself stays off).
+  HCG_STORE_RELEASE_APPROVER_CENTRAL_ID = "store.release.approve"
+  # Needed only for "enabled" (publication); HCG must create this feature first:
+  # HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID = "store.release.publish"
 
 [[mounts]]
   source = "hcg_store_data"
