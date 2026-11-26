@@ -48,6 +48,8 @@ export interface Harness {
 
 export class Client {
   cookies = new Map<string, string>();
+  csrf: string | undefined;
+  csrfFor = "";
   constructor(public readonly origin: string) {}
   cookieHeader() {
     return [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
@@ -62,7 +64,7 @@ export class Client {
       else this.cookies.set(k, v);
     }
   }
-  async request(path: string, init: RequestInit & { json?: unknown; sameOrigin?: boolean } = {}) {
+  async request(path: string, init: RequestInit & { json?: unknown; sameOrigin?: boolean; csrf?: boolean } = {}) {
     const headers = new Headers(init.headers);
     if (this.cookies.size) headers.set("cookie", this.cookieHeader());
     let body = init.body;
@@ -71,6 +73,16 @@ export class Client {
       body = JSON.stringify(init.json);
     }
     if (init.sameOrigin !== false && init.method && init.method !== "GET") headers.set("origin", this.origin);
+    // Like the Store's own pages: management changes carry the session's CSRF token (from /api/v1/publishing/me).
+    const p = path.startsWith("http") ? new URL(path).pathname : path;
+    if (init.sameOrigin !== false && init.method && init.method !== "GET" && p.startsWith("/api/v1/publishing") && this.cookies.size && !headers.has("x-hcg-csrf") && (init as { csrf?: boolean }).csrf !== false) {
+      if (this.csrf === undefined || this.csrfFor !== this.cookieHeader()) {
+        const me = await fetch(this.origin + "/api/v1/publishing/me", { headers: { cookie: this.cookieHeader() } });
+        this.csrf = me.ok ? ((await me.json()) as { csrfToken?: string }).csrfToken ?? "" : "";
+        this.csrfFor = this.cookieHeader();
+      }
+      if (this.csrf) headers.set("x-hcg-csrf", this.csrf);
+    }
     const res = await fetch(path.startsWith("http") ? path : this.origin + path, { ...init, headers, body, redirect: "manual" });
     this.absorb(res);
     return res;
@@ -78,7 +90,7 @@ export class Client {
   get(path: string, init: RequestInit = {}) {
     return this.request(path, init);
   }
-  post(path: string, json?: unknown, init: RequestInit & { sameOrigin?: boolean } = {}) {
+  post(path: string, json?: unknown, init: RequestInit & { sameOrigin?: boolean; csrf?: boolean } = {}) {
     return this.request(path, { ...init, method: "POST", json: json ?? {} });
   }
 }

@@ -154,6 +154,9 @@ iOS device build or one signed without a profile.
 
 ## 4. API
 
+The Control Center (website uploads, release lifecycle, per-target current releases, rollback, product drafts) and the
+full shared management API are documented in [ADMINISTRATION.md](ADMINISTRATION.md).
+
 See the header of `server/src/publishing.ts`. Review page: `GET /publishing/releases/<id>` (signed-in publisher or
 approver). All responses are `private, no-store`.
 

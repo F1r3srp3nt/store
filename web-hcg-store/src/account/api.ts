@@ -174,8 +174,9 @@ export const storeApi = {
   releaseManager: () => request<{ releases: ManagedRelease[]; auditIntact: boolean }>("/api/v1/publishing/manager"),
   /** A mismatch answers 409 with the same report, so both are read here. */
   verifyChecksums: async (id: string): Promise<ChecksumReport> => {
+    const { csrfHeader } = await import("../admin/admin-api");
     const res = await fetch(`${base()}/api/v1/publishing/releases/${encodeURIComponent(id)}/verify-checksums`, {
-      method: "POST", credentials: "same-origin", headers: { accept: "application/json", "content-type": "application/json" }, body: "{}",
+      method: "POST", credentials: "same-origin", headers: { accept: "application/json", "content-type": "application/json", ...(await csrfHeader()) }, body: "{}",
     });
     const body = (await res.json()) as ChecksumReport & { error?: { code: string; message: string } };
     if (res.ok || (res.status === 409 && Array.isArray(body.files))) return body;

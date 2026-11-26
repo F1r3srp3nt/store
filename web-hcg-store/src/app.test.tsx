@@ -19,6 +19,8 @@ type ServerStub = null | {
   access?: (slug: string) => EditionAccess[];
   library?: unknown;
   manager?: unknown;
+  /** /api/v1/publishing/me: what HCG lets this person do in HCG Store (server-decided). */
+  me?: unknown;
 };
 let server: ServerStub = null;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -35,6 +37,8 @@ beforeEach(() => {
         return json({ status: "ok", mode: "test", hcgConnect: "configured", entitlementAuthority: "test-ledger", payments: "test-mode", protectedDownloads: "disabled" });
       const m = /\/api\/v1\/products\/([a-z0-9-]+)\/access$/.exec(path);
       if (m) return json({ productId: m[1], signedIn: server.session.signedIn, editions: server.access?.(m[1]!) ?? [] });
+      if (path.endsWith("/api/v1/publishing/me")) return server.me ? json(server.me) : json({ error: { code: "publishing_disabled", message: "Publishing is not enabled on this Store." } }, 404);
+      if (path.endsWith("/api/v1/publishing/products")) return json({ products: [{ id: "hcg-mail", title: "HCG Mail", source: "catalogue", editions: [], centralId: "hcg.mail" }] });
       if (path.endsWith("/api/v1/publishing/manager")) return server.manager ? json(server.manager) : json({ error: { code: "publishing_disabled", message: "Publishing is not enabled on this Store." } }, 404);
       if (path.endsWith("/api/v1/library")) return server.library ? json(server.library) : json({ error: { code: "sign_in_required", message: "Sign in" } }, 401);
       return json({ error: { code: "not_found", message: "Not found." } }, 404);
@@ -548,3 +552,48 @@ describe("Release Manager", () => {
     expect(screen.getByText(/Buying a product never grants either/)).toBeInTheDocument();
   });
 });
+
+describe("Control Center (web administration)", () => {
+  const user = { sub: "u1", email: "u1@example.test", name: "U" };
+  const me = (perms: Partial<{ submit: boolean; approve: boolean; publish: boolean }>) => ({
+    sub: "u1", email: "u1@example.test", permissions: { submit: false, approve: false, publish: false, offers: false, ...perms },
+    administrator: Object.values(perms).some(Boolean), publishingMode: "uploads",
+    capabilities: { uploads: true, approval: false, publication: false, publicDelivery: false, offers: false }, devicePolicy: { mode: "off", note: "" }, csrfToken: "t",
+  });
+
+  it("asks for sign-in, then shows an ordinary account that it is not authorised (the server decides)", async () => {
+    server = { session: { configured: true, signedIn: false } };
+    renderAt("/control-center");
+    expect(await screen.findByRole("heading", { name: /sign in to administer/i })).toBeTruthy();
+    cleanup();
+    server = { session: { configured: true, signedIn: true, user }, me: me({}) };
+    renderAt("/control-center");
+    expect(await screen.findByTestId("not-authorised")).toBeTruthy();
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.queryByText(/create private draft/i)).toBeNull();
+  });
+
+  it("shows HCG Store's operations to an account HCG granted store.publish, with publication marked as off", async () => {
+    server = { session: { configured: true, signedIn: true, user }, me: me({ submit: true }) };
+    renderAt("/control-center");
+    expect(await screen.findByRole("tab", { name: "Upload application" })).toBeTruthy();
+    expect(screen.getByText("Private uploads only")).toBeTruthy();
+    for (const op of ["Add new update", "Add new product", "Add to listed product", "Continue a draft"]) expect(screen.getByRole("radio", { name: new RegExp(op) })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /create private draft/i })).toBeTruthy();
+    expect(screen.getByText(/supersede previous compatible release after successful publication/i)).toBeTruthy();
+  });
+
+  it("shows Manage product on a product page only to administrators", async () => {
+    server = { session: { configured: true, signedIn: true, user }, me: me({}) };
+    renderAt("/apps/hcg-mail");
+    await screen.findAllByRole("heading", { name: /HCG Mail/ });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId("manage-product")).toBeNull();
+    cleanup();
+    server = { session: { configured: true, signedIn: true, user }, me: me({ approve: true }) };
+    renderAt("/apps/hcg-mail");
+    const link = await screen.findByTestId("manage-product");
+    expect(link.getAttribute("href")).toBe("/control-center?tab=products&product=hcg-mail");
+  });
+});
+
