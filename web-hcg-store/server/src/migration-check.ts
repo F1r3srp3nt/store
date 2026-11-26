@@ -48,6 +48,13 @@ export function checkMigration(source: { live: string } | { backup: string }): M
     const before = new DatabaseSync(copy, { readOnly: true });
     const versionBefore = (before.prepare("SELECT version FROM schema_version").get() as { version: number } | undefined)?.version ?? 0;
     const countsBefore = counts(before);
+    const publishedQuery = "SELECT count(*) AS n FROM pub_releases WHERE status = 'published' OR published_at IS NOT NULL";
+    let publishedBefore = 0;
+    try { publishedBefore = (before.prepare(publishedQuery).get() as { n: number }).n; } catch { /* published_at arrives with migration 8 */
+      publishedBefore = countsBefore.pub_releases === undefined ? 0 : (before.prepare("SELECT count(*) AS n FROM pub_releases WHERE status = 'published'").get() as { n: number }).n;
+    }
+    let importedBefore = 0;
+    try { importedBefore = (before.prepare("SELECT count(*) AS n FROM pub_releases WHERE imported_from IS NOT NULL").get() as { n: number }).n; } catch { /* column arrives with migration 9 */ }
     before.close();
 
     const db = openDatabase(dir); // applies this build's migrations to the copy
@@ -71,18 +78,20 @@ export function checkMigration(source: { live: string } | { backup: string }): M
       for (const k of ["release_notes", "compatibility", "destinations", "known_limitations"]) {
         try { JSON.parse(r[k] ?? ""); } catch { problems.push(`release ${r.id}: ${k} is not JSON`); }
       }
-      if (r.imported_from !== null) problems.push(`release ${r.id}: imported_from should be empty after the upgrade`);
     }
+    const importedAfter = (db.prepare("SELECT count(*) AS n FROM pub_releases WHERE imported_from IS NOT NULL").get() as { n: number }).n;
+    if (importedAfter !== importedBefore) problems.push(`the upgrade changed which releases are marked imported (${importedBefore} → ${importedAfter})`);
     for (const r of db.prepare("SELECT id, architectures, signing_reported, provenance FROM pub_artifacts").all() as Record<string, string | null>[]) {
       for (const k of ["architectures", "signing_reported"]) {
         try { JSON.parse(r[k] ?? ""); } catch { problems.push(`artifact ${r.id}: ${k} is not JSON`); }
       }
     }
-    // Nothing becomes published, free or excepted by the upgrade itself.
-    const published = (db.prepare("SELECT count(*) AS n FROM pub_releases WHERE status = 'published' OR published_at IS NOT NULL").get() as { n: number }).n;
-    if (published) problems.push(`${published} releases are published after the upgrade`);
-    if (countsAfter.free_windows) problems.push("free windows exist after the upgrade");
-    if (countsAfter.release_exceptions) problems.push("release exceptions exist after the upgrade");
+    // Nothing becomes published, free or excepted by the upgrade itself (existing records are kept as they were).
+    const publishedAfter = (db.prepare(publishedQuery).get() as { n: number }).n;
+    if (publishedAfter !== publishedBefore) problems.push(`published releases: ${publishedBefore} before the upgrade, ${publishedAfter} after`);
+    for (const t of ["free_windows", "free_window_events", "release_exceptions"]) {
+      if (countsBefore[t] === undefined && countsAfter[t]) problems.push(`the upgrade created rows in ${t}`);
+    }
     db.close();
     const tables: MigrationCheck["tables"] = {};
     for (const [t, n] of Object.entries(countsAfter)) tables[t] = { before: countsBefore[t] ?? null, after: n };
