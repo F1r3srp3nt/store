@@ -204,7 +204,7 @@ it, and it waits privately for review. `HCG_STORE_PUBLISHING=submissions` allows
 | Product list, private draft, resumable upload, server SHA-256, Release Passport, submit for review | off | **on** | on |
 | Release Manager, review, manual approval (browser) | off | **on** | on |
 | Public publication of an approved release (browser, separate permission) | off | **off** (`409 publication_disabled`) | on |
-| Delivery of published releases (downloads, Sileo, release resolution) | off | **off** | per launch switches |
+| Delivery to anyone but the people who submit and review (downloads, internal-testing downloads, Sileo, release resolution, HCG Repo indexing; HCG Repo still sees withdrawals) | off | **off** (`403 publication_disabled`) | per launch switches |
 
 `GET /api/v1/publishing/status` answers in every mode, without sign-in, so an app can say precisely what is off and why:
 API version and `minimumClientApiVersion`, the mode, whether HCG Connect is configured, the permission IDs, and each

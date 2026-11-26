@@ -167,6 +167,28 @@ describe("Private submissions while public publication is switched off", () => {
     expect(JSON.stringify(await resolution.json())).not.toContain(RELEASE.version);
   });
 
+  it("delivers nothing to customers: an internal-testing approval does not open downloads, and HCG Repo gets no release to index", async () => {
+    await start("submissions", { HCG_STORE_PROTECTED_DOWNLOADS: "enabled" });
+    const BUYER = { sub: "user-buyer", email: "buyer@example.test", name: "Buyer" };
+    (h!.authority as TestLedgerAuthority).grant(BUYER.sub, "fixture.quasar.shell", "standard", "test", null);
+    const token = await maker();
+    const rel = (await call(token, "POST", "/api/v1/publishing/releases", { ...RELEASE, eligibility: "internal-testing" })).body;
+    const file = pe("internal", 4096);
+    const d = await call(token, "POST", `/api/v1/publishing/releases/${rel.id}/artifacts`, { fileName: "Q.exe", platform: "windows", format: "exe", sizeBytes: file.length, sha256: sha(file), ...PROV });
+    await fetch(d.body.uploadUrl, { method: "PUT", headers: { "content-range": `bytes 0-${file.length - 1}/${file.length}` }, body: file });
+    expect((await call(token, "POST", `/api/v1/publishing/artifacts/${d.body.artifact.id}/complete`)).body.artifact.status).toBe("verified");
+    expect((await call(token, "POST", `/api/v1/publishing/releases/${rel.id}/submit`)).status).toBe(200);
+    const approver = await h!.signIn(APPROVER);
+    expect((await approver.post(`/api/v1/publishing/releases/${rel.id}/approve`, { eligibility: "internal-testing", confirm: RELEASE.version })).status).toBe(200);
+    // The entitled customer gets nothing; the person who submitted it can still download it to review.
+    const buyer = await h!.signIn(BUYER);
+    const refused = await buyer.post(`/api/v1/publishing/artifacts/${d.body.artifact.id}/download-url`);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("publication_disabled");
+    expect((await call(token, "POST", `/api/v1/publishing/artifacts/${d.body.artifact.id}/download-url`)).status).toBe(200);
+    expect((await call(token, "GET", "/api/v1/repo/releases?destination=hcg-repo")).body.releases).toEqual([]);
+  });
+
   it("refuses unauthorised uploads: wrong client, no permission, a checksum that does not match", async () => {
     await start("submissions");
     const token = await maker();

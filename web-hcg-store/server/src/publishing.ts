@@ -512,6 +512,9 @@ export function createPublishing(deps: PublishingDeps) {
     // Draft review: the people HCG allows to approve or publish this product may download it to check it first.
     if (await permitted(actor, "approve", r.product_id)) return { ok: true, basis: "approver-review" };
     if (await permitted(actor, "publication", r.product_id)) return { ok: true, basis: "publisher-review" };
+    // "submissions" mode: files are for the people who submit and review them; nothing is delivered to anyone else
+    // (an internal-testing approval, or a release published while publication was on, included).
+    if (!P.publication) return { ok: false, status: 403, code: "publication_disabled", message: PUBLICATION_OFF_MESSAGE };
     if (STAFF_ONLY_FORMATS.has(a.format)) return { ok: false, status: 403, code: "staff_only", message: "This file is for authorised distribution only and is never delivered to customers." };
     if (r.status === "superseded") return { ok: false, status: 410, code: "superseded", message: "A newer release replaced this one." };
     // Public delivery needs the explicit publication step; internal testing needs only its approval.
@@ -605,7 +608,9 @@ export function createPublishing(deps: PublishingDeps) {
   async function repoReleases(actor: Actor, url: URL) {
     if (url.searchParams.get("destination") !== "hcg-repo") throw new HttpError(400, "invalid_destination", "Use destination=hcg-repo.");
     const rows = (db.prepare("SELECT * FROM pub_releases WHERE approved_eligibility = 'public' AND published_at IS NOT NULL AND status IN ('published', 'superseded', 'withdrawn') ORDER BY published_at").all() as ReleaseRow[])
-      .filter((r) => (JSON.parse(r.destinations) as string[]).includes("hcg-repo"));
+      .filter((r) => (JSON.parse(r.destinations) as string[]).includes("hcg-repo"))
+      // With public publication off nothing may be indexed; HCG Repo still learns about removals.
+      .filter((r) => P.publication || r.status === "withdrawn");
     const allowed = new Map<string, boolean>();
     const releases = [];
     for (const r of rows) {
@@ -698,10 +703,11 @@ export function createPublishing(deps: PublishingDeps) {
       approve: await check("approve", !!P.approverCentralId),
       publish: P.publication ? await check("publication", !!P.publicationCentralId) : "switched-off" as const,
     };
-    let authorizedProducts: number | null = null;
-    if (clientRegistered && permissions.submit === "granted") {
-      try { authorizedProducts = (await productsFor(actor)).length; } catch { authorizedProducts = null; }
-    }
+    // HCG's grant is personal on hcg.store (permissionScope), so it covers every catalogue and draft product: counted
+    // without another HCG round trip per product.
+    const authorizedProducts = clientRegistered && permissions.submit === "granted"
+      ? registry.catalogue.products.length + (db.prepare("SELECT COUNT(*) AS n FROM pub_products").get() as { n: number }).n
+      : null;
     return {
       token: "valid" as const, reason: null, sub: actor.sub, email: actor.email, expiresAt: typeof p.exp === "number" ? p.exp * 1000 : null,
       scopes: typeof p.scope === "string" ? p.scope.split(" ").filter(Boolean) : [], clientId, clientRegistered, clientReason, permissions, authorizedProducts,

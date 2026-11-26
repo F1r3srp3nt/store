@@ -150,7 +150,7 @@ export class HcgConnectClient {
       const code = (e as { code?: string }).code ?? "";
       if (code === "ERR_JWT_EXPIRED") return { valid: false, code: "expired", reason: "The access token has expired." };
       // HCG Connect's signing keys could not be fetched: not the token's fault.
-      if (code === "ERR_JWKS_TIMEOUT" || e instanceof TypeError) return { valid: false, code: "unverifiable", reason: `HCG Connect's signing keys could not be fetched (${(e as Error).message}).` };
+      if (["ERR_JWKS_TIMEOUT", "ERR_JWKS_INVALID", "ERR_JOSE_GENERIC"].includes(code) || e instanceof TypeError) return { valid: false, code: "unverifiable", reason: `HCG Connect's signing keys could not be fetched (${(e as Error).message}).` };
       return { valid: false, code: "invalid", reason: (e as Error).message };
     }
   }
