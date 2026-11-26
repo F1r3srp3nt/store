@@ -14,6 +14,14 @@
  *   POST /publish    {releaseId, confirm, publisher, supersede?}   a person (not the creator) publishes an approved public release
  *   POST /review     {releaseId, reviewer}     a person signs in to the Store in a browser, opens the draft's review page
  *                                              and presses "Download to review" for each verified file (SHA-256 of the bytes)
+ *   POST /manager    {sub}                     what a person sees in Release Manager (browser session)
+ *   POST /window     {command: open|terminate, productId, editionId, releaseId?, days?, id?, reason?}   operator path
+ *   POST /download   {sub, productId, editionId}   a signed-in customer downloads every file the Store offers them
+ *                                                  (SHA-256 of each), as on the product page
+ *
+ * Options (environment): SHIP_E2E_CATALOGUE=real uses the Store's real catalogue (e.g. HCG Mail) instead of the
+ * fixture one; SHIP_E2E_DOWNLOADS=free-testing-only|enabled; /token accepts {client: "store-manager"} for HCG Store
+ * Manager's TEST client.
  */
 import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -26,20 +34,26 @@ import { openDatabase } from "../src/db";
 import { featureEdition, TestLedgerAuthority } from "../src/entitlements";
 import { STORE_CENTRAL_PRODUCT_ID } from "../src/publishing";
 import { HcgConnectClient } from "../src/hcg-connect";
+import { openWindow, terminateWindow } from "../src/free-windows";
 import { loadRegistry } from "../src/registry";
 import { Client, FIXTURE_CATALOGUE, TEST_OFFERS } from "./harness";
 import { MockHcgConnect } from "./mock-hcg-connect";
 
 const infoFile = process.argv[2] ?? join(tmpdir(), "ship-e2e.json");
 const MAKER_CLIENT = "99999999-8888-4777-8666-555555555555";
+/** TEST client standing in for HCG Store Manager (HCG has not issued one yet; never used in production). */
+const STORE_MANAGER_CLIENT = "99999999-8888-4777-8666-5555555555aa";
 const idp = new MockHcgConnect();
 idp.otherClients.add(MAKER_CLIENT);
+idp.otherClients.add(STORE_MANAGER_CLIENT);
+const realCatalogue = process.env.SHIP_E2E_CATALOGUE === "real";
 idp.controlEndpoint = true;
 await idp.start();
 
 const storage = mkdtempSync(join(tmpdir(), "hcg-ship-e2e-private-"));
 const reg = mkdtempSync(join(tmpdir(), "hcg-ship-e2e-registry-"));
-writeFileSync(join(reg, "offers.json"), JSON.stringify(TEST_OFFERS));
+// The real catalogue has no TEST offers (and needs none: free testing creates no offer).
+writeFileSync(join(reg, "offers.json"), JSON.stringify(realCatalogue ? { offers: [] } : TEST_OFFERS));
 writeFileSync(join(reg, "artifacts.json"), JSON.stringify({ artifacts: [] }));
 
 const server = createServer();
@@ -57,14 +71,14 @@ const cfg = parseStoreConfig({
   HCG_CONNECT_REDIRECT_URI: `${origin}/auth/callback`,
   HCG_STORE_ENTITLEMENT_AUTHORITY: "test-ledger",
   HCG_STORE_PAYMENT_PROVIDER: "test",
-  HCG_STORE_PROTECTED_DOWNLOADS: "enabled",
+  HCG_STORE_PROTECTED_DOWNLOADS: process.env.SHIP_E2E_DOWNLOADS ?? "enabled",
   HCG_STORE_ARTIFACT_STORAGE_DIR: storage,
   HCG_STORE_STATIC_DIR: "",
-  HCG_CATALOGUE_DIR: FIXTURE_CATALOGUE,
+  HCG_CATALOGUE_DIR: realCatalogue ? join(import.meta.dirname, "..", "..", "catalogue") : FIXTURE_CATALOGUE,
   HCG_STORE_OFFERS_FILE: join(reg, "offers.json"),
   HCG_STORE_ARTIFACTS_FILE: join(reg, "artifacts.json"),
   HCG_STORE_PUBLISHING: "enabled",
-  HCG_STORE_PUBLISHING_CLIENT_IDS: MAKER_CLIENT,
+  HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER_CLIENT},${STORE_MANAGER_CLIENT}`,
   HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
   HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
   HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
@@ -108,7 +122,35 @@ const control = createServer(async (req, res) => {
       return out(200, { ok: true });
     }
     if (req.url === "/revoke-all") { authority.revokeAll(b.sub!); return out(200, { ok: true }); }
-    if (req.url === "/token") return out(200, { token: await idp.accessToken({ sub: b.sub!, email: `${b.sub}@example.test` }, MAKER_CLIENT) });
+    if (req.url === "/token") return out(200, { token: await idp.accessToken({ sub: b.sub!, email: `${b.sub}@example.test` }, b.client === "store-manager" ? STORE_MANAGER_CLIENT : MAKER_CLIENT) });
+    if (req.url === "/manager") {
+      const c = await browserSignIn(b.sub!);
+      const r = await c.get("/api/v1/publishing/manager");
+      return out(r.status, await r.json());
+    }
+    if (req.url === "/window") {
+      const t = Date.now();
+      const who = { authorisedBy: "founder (TEST)", performedBy: "operator (TEST)" };
+      if (b.command === "open") {
+        const days = Number(b.days ?? "30") * 86_400_000;
+        const w = openWindow(db, { productId: b.productId!, editionId: b.editionId ?? null, releaseId: b.releaseId ?? null, period: { anchor: "fixed", startsAt: t, endsAt: t + days }, ...who }, t);
+        return out(200, w);
+      }
+      if (b.command === "terminate") return out(200, terminateWindow(db, b.id!, b.reason ?? "TEST termination", who, t));
+      return out(400, { error: "command" });
+    }
+    if (req.url === "/download") {
+      const c = await browserSignIn(b.sub!);
+      const a = (await (await c.get(`/api/v1/products/${b.productId}/access`)).json()) as { editions: { editionId: string | null; state: string; artifacts: { id: string; fileName: string }[] }[] };
+      const e = a.editions.find((x) => x.editionId === (b.editionId ?? null));
+      const files = [];
+      for (const f of e?.artifacts ?? []) {
+        const r = await c.get(`/api/v1/downloads/${f.id}`);
+        const bytes = Buffer.from(await r.arrayBuffer());
+        files.push({ fileName: f.fileName, status: r.status, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+      }
+      return out(200, { state: e?.state ?? null, files });
+    }
     if (req.url === "/review") {
       const c = await browserSignIn(b.reviewer!);
       const page = await c.get(`/publishing/releases/${b.releaseId}`);
@@ -155,7 +197,7 @@ async function browserSignIn(sub: string): Promise<Client> {
 }
 
 writeFileSync(infoFile, JSON.stringify({
-  storeOrigin: origin, issuer: idp.issuer, makerClientId: MAKER_CLIENT,
+  storeOrigin: origin, issuer: idp.issuer, makerClientId: MAKER_CLIENT, storeManagerClientId: STORE_MANAGER_CLIENT, catalogue: realCatalogue ? "real" : "fixture",
   control: `http://127.0.0.1:${(control.address() as { port: number }).port}`, storage,
 }, null, 2));
 console.log(`HCG Store (TEST, publishing) on ${origin}; mock HCG Connect ${idp.issuer}; info ${infoFile}`);

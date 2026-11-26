@@ -141,6 +141,8 @@ export const BUILD_PROVIDERS = {
   local: { label: "Local build" },
   "github-actions": { label: "GitHub Actions" },
   "hcg-server-build-host": { label: "HCG Server Build Host" },
+  /** Uploaded by a person from their computer with no build evidence: no source commit, run or toolchain is claimed. */
+  "manual-upload": { label: "Manual upload (no build evidence)" },
 } as const;
 export type BuildProvider = keyof typeof BUILD_PROVIDERS;
 export const BUILD_PROVIDER_IDS = Object.keys(BUILD_PROVIDERS) as [BuildProvider, ...BuildProvider[]];
