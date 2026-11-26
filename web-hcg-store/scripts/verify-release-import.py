@@ -40,6 +40,9 @@ for k in ("productId", "editionId", "version", "build", "channel", "distribution
 check(rel.get("eligibility") == "private", "the draft must be private until the owner approves publication")
 check(rel.get("destinations") == ["hcg-store"], "the draft must target HCG Store only")
 check(len(arts) == exp["files"], f"draft lists {len(arts)} files, the request expects {exp['files']}")
+pinned = exp.get("sha256") or {}
+check(len(pinned) == exp["files"], "the import request must pin the SHA-256 of every file (expect.sha256)")
+check(sorted(pinned) == sorted(x["fileName"] for x in arts), "the pinned files differ from the files the draft lists")
 
 present = sorted(f for f in os.listdir(a.files) if os.path.isfile(os.path.join(a.files, f)))
 declared = sorted(x["fileName"] for x in arts)
@@ -68,6 +71,7 @@ for x in arts:
     if not check(os.path.exists(path), f"{name}: missing from the downloaded files"):
         rows.append(row); continue
     size, sha256, sha512 = os.path.getsize(path), digest(path, "sha256"), digest(path, "sha512")
+    check(pinned.get(name) == sha256, f"{name}: SHA-256 {sha256} is not the one the committed import request pins")
     row.update(size=size, sha256=sha256, sha512=sha512)
     check(size == x["sizeBytes"], f"{name}: size {size}, draft says {x['sizeBytes']}")
     check(sha256 == x["sha256"], f"{name}: SHA-256 {sha256}, draft says {x['sha256']}")

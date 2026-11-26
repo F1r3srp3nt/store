@@ -173,6 +173,11 @@ export function createPublishing(deps: PublishingDeps) {
     appendPubAudit(db, now(), actor, action, releaseId, artifactId, detail);
   }
 
+  /** Anyone HCG lets submit, approve or publish this product may read its releases and review page. */
+  async function mayReview(actor: Actor, productId: string) {
+    return (await permitted(actor, "publish", productId)) || (await permitted(actor, "approve", productId)) || (await permitted(actor, "publication", productId));
+  }
+
   /** Who submitted the release for approval (the latest submission), from the audit chain. */
   function submitterOf(releaseId: string): string | null {
     return (db.prepare("SELECT actor FROM pub_audit WHERE action = 'release.submitted' AND release_id = ? ORDER BY seq DESC LIMIT 1").get(releaseId) as { actor: string } | undefined)?.actor ?? null;
@@ -479,8 +484,9 @@ export function createPublishing(deps: PublishingDeps) {
     if (r.status === "withdrawn") return { ok: false, status: 410, code: "withdrawn", message: "This release was withdrawn." };
     const actor: Actor = { sub: subject.sub, accessToken: subject.accessToken, via: subject.via ?? "web" };
     if (await permitted(actor, "publish", r.product_id)) return { ok: true, basis: "publisher" };
-    // Draft review: the people HCG allows to approve this product may download it to check it before approving.
+    // Draft review: the people HCG allows to approve or publish this product may download it to check it first.
     if (await permitted(actor, "approve", r.product_id)) return { ok: true, basis: "approver-review" };
+    if (await permitted(actor, "publication", r.product_id)) return { ok: true, basis: "publisher-review" };
     if (STAFF_ONLY_FORMATS.has(a.format)) return { ok: false, status: 403, code: "staff_only", message: "This file is for authorised distribution only and is never delivered to customers." };
     if (r.status === "superseded") return { ok: false, status: 410, code: "superseded", message: "A newer release replaced this one." };
     // Public delivery needs the explicit publication step; internal testing needs only its approval.
@@ -717,7 +723,7 @@ export function createPublishing(deps: PublishingDeps) {
       if (!r) throw new HttpError(404, "not_found", "Not found.");
       const action = match[2] ?? "";
       if (action === "" && m === "GET") {
-        if (!(await permitted(actor, "publish", r.product_id)) && !(await permitted(actor, "approve", r.product_id))) throw new HttpError(403, "not_publisher", "HCG has not granted your account access to this release.");
+        if (!(await mayReview(actor, r.product_id))) throw new HttpError(403, "not_publisher", "HCG has not granted your account access to this release.");
         return send(json(res, 200, { ...releaseView(r), auditIntact: auditIntact() }));
       }
       if (action === "/artifacts" && m === "POST") {
@@ -766,6 +772,9 @@ export function createPublishing(deps: PublishingDeps) {
       }
       if (action === "/submit" && m === "POST") {
         await requirePermission(actor, "publish", r.product_id);
+        // An imported release has no human creator: its submission is the accountable step, so it happens in the
+        // browser, signed in, by a person (never by a desktop or CI token).
+        if (r.imported_from && actor.via !== "web") throw new HttpError(403, "manual_submission_required", "An imported release is submitted by a person in HCG Store, not from an app.");
         if (r.status !== "draft") throw new HttpError(409, "not_draft", "Only a draft can be submitted.");
         const arts = artifactsOf(r.id);
         if (!arts.some((a) => a.status === "verified")) throw new HttpError(409, "no_files", "Upload and verify at least one file first.");
@@ -780,7 +789,7 @@ export function createPublishing(deps: PublishingDeps) {
         }
         transaction(db, () => {
           db.prepare("UPDATE pub_releases SET status = 'submitted', submitted_at = ?, updated_at = ? WHERE id = ?").run(now(), now(), r.id);
-          audit(actor.sub, "release.submitted", r.id, null, { files: arts.filter((a) => a.status === "verified").map((a) => ({ id: a.id, sha256: a.sha256 })) });
+          audit(actor.sub, "release.submitted", r.id, null, { via: actor.via, files: arts.filter((a) => a.status === "verified").map((a) => ({ id: a.id, sha256: a.sha256 })) });
         });
         return send(json(res, 200, releaseView(release(r.id)!)));
       }
@@ -861,6 +870,12 @@ export function createPublishing(deps: PublishingDeps) {
         transaction(db, () => {
           db.prepare("UPDATE pub_releases SET status = 'withdrawn', withdrawn_reason = ?, updated_at = ? WHERE id = ?").run(body.reason, now(), r.id);
           audit(actor.sub, "release.withdrawn", r.id, null, { reason: body.reason, previousStatus: r.status, previousEligibility: r.approved_eligibility });
+          // A testing period waiting for this release's publication can never start now: end it, recorded.
+          for (const w of db.prepare("SELECT id FROM free_windows WHERE release_id = ? AND starts_at IS NULL AND terminated_at IS NULL").all(r.id) as { id: string }[]) {
+            db.prepare("UPDATE free_windows SET terminated_at = ?, terminated_reason = ? WHERE id = ?").run(now(), "The release was withdrawn before publication.", w.id);
+            db.prepare("INSERT INTO free_window_events (at, window_id, action, detail, authorised_by, performed_by) VALUES (?, ?, ?, ?, ?, ?)")
+              .run(now(), w.id, "window.terminated", JSON.stringify({ reason: "release withdrawn before publication", releaseId: r.id }), "release withdrawal", "HCG Store");
+          }
         });
         return send(json(res, 200, releaseView(release(r.id)!)));
       }
@@ -908,7 +923,7 @@ export function createPublishing(deps: PublishingDeps) {
     }
     if ((match = /^\/publishing\/releases\/(rel-[a-f0-9]{16})$/.exec(p)) && m === "GET") {
       const r = release(match[1]!);
-      if (!r || (!(await permitted(actor, "publish", r.product_id)) && !(await permitted(actor, "approve", r.product_id)))) throw new HttpError(404, "not_found", "Not found.");
+      if (!r || !(await mayReview(actor, r.product_id))) throw new HttpError(404, "not_found", "Not found.");
       return send(reviewPage(res, releaseView(r), await permitted(actor, "approve", r.product_id), await permitted(actor, "publication", r.product_id), await permitted(actor, "publish", r.product_id)));
     }
     throw new HttpError(404, "not_found", "Not found.");
@@ -1072,7 +1087,7 @@ export function createPublishing(deps: PublishingDeps) {
       out.push({
         releaseId: r.id, editionId: r.edition_id, version: r.version, build: r.build, channel: r.channel, distribution: r.distribution,
         publishedAt: r.published_at!, releaseNotes: JSON.parse(r.release_notes) as string[], knownLimitations: JSON.parse(r.known_limitations ?? "[]") as string[],
-        files: artifactsOf(r.id).filter((a) => a.status === "verified").map((a) => {
+        files: artifactsOf(r.id).filter((a) => a.status === "verified" && !STAFF_ONLY_FORMATS.has(a.format)).map((a) => {
           const v = artifactView(a);
           return { id: v.id, fileName: v.fileName, platform: v.platform, format: v.format, kind: v.kind ?? null, architectures: v.architectures as string[], minimumOs: v.minimumOs, sizeBytes: v.sizeBytes, sha256: v.sha256!, signing: String(v.signingReported.status) };
         }),
@@ -1083,8 +1098,13 @@ export function createPublishing(deps: PublishingDeps) {
 
   /** What a product page may say about free testing (no account data): when the open window ends. */
   function freeWindowFor(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null {
-    const b = P.enabled ? freeBasis(productId, editionId) : null;
-    return b?.kind === "window" && b.window.endsAt !== null ? { endsAt: b.window.endsAt, releaseId: b.window.releaseId } : null;
+    if (!P.enabled || !cfg.freeDownloads) return null;
+    const b = freeBasis(productId, editionId);
+    if (b?.kind !== "window" || b.window.endsAt === null) return null;
+    // Only announce free testing when the window actually delivers something now: a published, public, free release
+    // it covers (the named release, or any when it names none).
+    if (!freePublicFor(productId, editionId).length) return null;
+    return { endsAt: b.window.endsAt, releaseId: b.window.releaseId };
   }
 
   return { route, publishedFor, freePublicFor, freeWindowFor, currentPublishedFor, publishedById, publishedMeta, auditIntact, importRelease, allowedFormats: ALLOWED };

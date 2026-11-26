@@ -1,5 +1,5 @@
 {
-  "$comment": "Import request for HCG Store's Release Manager. The files are imported exactly as HCG Mail's CI built them: nothing is rebuilt, re-packed or re-signed. Every value below must match the draft and the Release Passports, or the import stops. requestedEligibility: the draft itself is private (HCG Mail's CI never asks for publication); this request asks for public eligibility so that, after the owner approves and separately publishes it, the release can be delivered free during a testing window. knownLimitations: from HCG Mail's docs/RELEASE_NOTES_0.1.0-beta.1.md and the run's evidence.",
+  "$comment": "Import request for HCG Store's Release Manager. The files are imported exactly as HCG Mail's CI built them: nothing is rebuilt, re-packed or re-signed. Every value below must match the draft and the Release Passports, or the import stops. requestedEligibility: the draft itself is private (HCG Mail's CI never asks for publication); this request asks for public eligibility so that, after the owner approves and separately publishes it, the release can be delivered free during a testing window. knownLimitations: from HCG Mail's docs/RELEASE_NOTES_0.1.0-beta.1.md and the run's evidence. expect.sha256 pins the exact bytes of every file (verified in CI run 45738293811): the import refuses any other bytes, whichever copy (source run or preserved copy) is used.",
   "format": "hcg.store.release-import/1",
   "source": {
     "repository": "F1r3srp3nt/HCG-Mail",
@@ -15,7 +15,13 @@
     "build": "1",
     "channel": "beta",
     "distribution": "free",
-    "files": 4
+    "files": 4,
+    "sha256": {
+      "HCGMail-0.1.0-beta.1-win-x64-Setup.exe": "e87ed85fbb62974dfba0665a152936f26f2b90dcc804b7ae0eed0ff79da24466",
+      "HCGMail-0.1.0-beta.1-win-x64.zip": "cf7a16732eb788e39cbfc1b7374f379391a132dfa2f69f408e858bdf2f5b7321",
+      "HCGMail-0.1.0-beta.1-win-arm64-Setup.exe": "ffb39988c3c5eea050134661a3c8d75274792fc6ea1180b2f59e6d1c0552c219",
+      "HCGMail-0.1.0-beta.1-win-arm64.zip": "62e7cca424ea4a3ed3ccbfda5c8c90e1264447005798641bac6cc13f1e7bf06a"
+    }
   },
   "requestedEligibility": "public",
   "knownLimitations": [

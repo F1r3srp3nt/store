@@ -49,9 +49,10 @@ export function resolveRelease(
 
   const productUrl = `${cfg.publicOrigin}/apps/${product.slug}`;
   const editionName = (id: string | null) => product.editions.find((e) => e.id === id)?.name ?? null;
-  const accessFor = (editionId: string | null, distribution: string): Access => {
+  const accessFor = (editionId: string | null, distribution: string, releaseId: string, livePublished: boolean): Access => {
     const w = live?.freeWindowFor(product.id, editionId);
-    if (w && distribution === "free" && cfg.freeDownloads) return { kind: "free-testing", requiresHcgAccount: true, freeUntil: new Date(w.endsAt).toISOString() };
+    // Free testing only for a published release the open window covers (the named one, or any when it names none).
+    if (w && livePublished && (w.releaseId === null || w.releaseId === releaseId) && distribution === "free" && cfg.freeDownloads) return { kind: "free-testing", requiresHcgAccount: true, freeUntil: new Date(w.endsAt).toISOString() };
     const pricing = product.editions.find((e) => e.id === editionId)?.pricingModel ?? null;
     if (distribution === "free" && pricing === "free" && cfg.freeDownloads) return { kind: "free-with-account", requiresHcgAccount: true };
     if (distribution !== "free" && cfg.protectedDownloads) return { kind: "licence-required", requiresHcgAccount: true };
@@ -103,7 +104,7 @@ export function resolveRelease(
       sha256: f.sha256,
       minimumOs: f.minimumOs,
       signing: f.signing,
-      access: accessFor(r.editionId, r.distribution),
+      access: accessFor(r.editionId, r.distribution, r.release.id, r.release.source === "hcg-store-publication"),
       // Where a visitor gets it: the product page (sign-in, access checks and delivery happen there).
       getUrl: `${productUrl}${r.editionId ? `?edition=${encodeURIComponent(r.editionId)}` : ""}`,
     })),

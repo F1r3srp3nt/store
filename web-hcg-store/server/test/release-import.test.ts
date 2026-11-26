@@ -21,6 +21,8 @@ const FOUNDER = { sub: "user-founder-test", email: "founder@example.test", name:
 const TESTER = { sub: "user-tester-test", email: "tester@example.test", name: "Tester" };
 const OPERATOR_ONLY = { sub: "user-approver-only", email: "approver@example.test", name: "Approver only" };
 const COMMIT = "8bb1a4f078326da6373962cb81a96f88675bc3f4";
+const DESKTOP_CLIENT = "99999999-8888-4777-8666-555555555555";
+const PUBLISHER_ONLY = { sub: "user-publication-only", email: "pub@example.test", name: "Publication only" };
 const RUN = 45686343504;
 const sha = (b: Buffer, algo = "sha256") => createHash(algo).update(b).digest("hex");
 
@@ -112,8 +114,10 @@ beforeEach(async () => {
       HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
       HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
       HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID: "store.release.publish",
+      HCG_STORE_PUBLISHING_CLIENT_IDS: DESKTOP_CLIENT,
     },
   });
+  h.idp.otherClients.add(DESKTOP_CLIENT);
   ledger = h.authority as TestLedgerAuthority;
   // HCG's central grants to the founder: submission, approval and publication (three separate permissions).
   ledger.grant(FOUNDER.sub, "hcg.store", featureEdition("store.publish"), "hcg-erp", null);
@@ -364,5 +368,36 @@ describe("HCG Mail for Windows: operator import, separate approval and publicati
     expect((await resolve("no-such-product")).status).toBe(404);
     expect((await resolve("hcg-mail?platform=amiga")).status).toBe(400);
     expect((await anon.get("/api/public/v1/release-resolution/hcg-mail", { method: "OPTIONS" } as never)).status).toBeLessThan(500);
+  });
+
+  it("review fixes: publication-only may review; imports are submitted in the browser; free testing announced only where delivered", async () => {
+    ledger.grant(PUBLISHER_ONLY.sub, "hcg.store", featureEdition("store.release.publish"), "hcg-erp", null);
+    const r = await doImport(importFolder());
+    // A person holding only store.release.publish can open what they would publish.
+    const pubOnly = await h.signIn(PUBLISHER_ONLY);
+    expect((await pubOnly.get(`/api/v1/publishing/releases/${r.id}`)).status).toBe(200);
+    expect((await pubOnly.get(`/publishing/releases/${r.id}`)).status).toBe(200);
+    // A desktop token may not submit an imported release (the accountable step is a person in the browser).
+    const token = await h.idp.accessToken(FOUNDER, DESKTOP_CLIENT);
+    const viaDesktop = await fetch(h.origin + `/api/v1/publishing/releases/${r.id}/submit`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}" });
+    expect([viaDesktop.status, ((await viaDesktop.json()) as { error: { code: string } }).error.code]).toEqual([403, "manual_submission_required"]);
+    // A window that names another release announces nothing and delivers nothing for this one.
+    const founder = await h.signIn(FOUNDER);
+    await founderReleases(founder, r.id);
+    const now = h.clock.now();
+    openWindow(h.db, { productId: "hcg-mail", editionId: "windows-desktop", releaseId: "rel-0000000000000000", period: { anchor: "fixed", startsAt: now, endsAt: now + 86_400_000 }, ...who }, now);
+    const tester = await h.signIn(TESTER);
+    const access = ((await (await tester.get("/api/v1/products/hcg-mail/access")).json()) as { editions: { editionId: string; freeTesting: unknown; artifacts: unknown[] }[] }).editions.find((e) => e.editionId === "windows-desktop")!;
+    expect(access).toMatchObject({ freeTesting: null, artifacts: [] });
+    const resolution = (await (await h.anonymous().get("/api/public/v1/release-resolution/hcg-mail")).json()) as { options: { access: { kind: string } }[] };
+    expect(resolution.options.every((o) => o.access.kind === "not-available-yet")).toBe(true);
+  });
+
+  it("withdrawing a release before publication ends the testing period waiting for it", async () => {
+    const r = await doImport(importFolder());
+    const w = openWindow(h.db, { productId: "hcg-mail", editionId: "windows-desktop", releaseId: r.id, period: { anchor: "publication", durationMs: 30 * 86_400_000, publishedAt: null }, ...who }, h.clock.now());
+    const founder = await h.signIn(FOUNDER);
+    expect((await post(founder, `/api/v1/publishing/releases/${r.id}/withdraw`, { reason: "Superseded before publication (test)." })).status).toBe(200);
+    expect(listWindows(h.db, h.clock.now()).find((x) => x.id === w.id)).toMatchObject({ state: "terminated", terminatedReason: "The release was withdrawn before publication." });
   });
 });

@@ -18,7 +18,8 @@ import { artifactSetDigest, exceptionsFor, grantFounderException, ReleaseExcepti
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name);
-  return i > 0 ? process.argv[i + 1] : undefined;
+  const v = i > 0 ? process.argv[i + 1] : undefined;
+  return v === undefined || v.startsWith("--") ? undefined : v;
 };
 const b64 = (name: string) => Buffer.from(arg(name) ?? "", "base64").toString("utf8");
 const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());

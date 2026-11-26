@@ -75,6 +75,8 @@ jobs:
     defaults:
       run:
         working-directory: web-hcg-store
+        # bash -eo pipefail: a failing command in a pipeline (e.g. verification piped to tee) fails the step.
+        shell: bash
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
@@ -231,7 +233,12 @@ jobs:
           echo "request=release-imports/$REQ" >> "$GITHUB_OUTPUT"
           FILES=$(jq -r .source.filesArtifact "release-imports/$REQ")
           if [ -n "$PR" ]; then
-            # The verified copy the release-import workflow kept (exact bytes); verified again below.
+            # The verified copy the release-import workflow kept. Only a successful run of THIS repository's
+            # release-import workflow on main is accepted, and every byte is checked again below against the SHA-256
+            # pinned in the committed import request.
+            run=$(GH_TOKEN="${{ github.token }}" gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PR")
+            jq -e --arg repo "$GITHUB_REPOSITORY" '.path == ".github/workflows/release-import.yml" and .head_branch == "main" and .conclusion == "success" and (.event == "push" or .event == "workflow_dispatch") and .head_repository.full_name == $repo' <<<"$run" >/dev/null \
+              || { echo "::error::preserved_run must be a successful run of release-import.yml on main in this repository"; exit 1; }
             echo "repo=$GITHUB_REPOSITORY" >> "$GITHUB_OUTPUT"; echo "run=$PR" >> "$GITHUB_OUTPUT"
             echo "files=verified-$FILES" >> "$GITHUB_OUTPUT"; echo "draft=verified-$FILES" >> "$GITHUB_OUTPUT"; echo "preserved=true" >> "$GITHUB_OUTPUT"
           else
@@ -305,6 +312,7 @@ jobs:
           for k in product edition release starts ends days id; do [[ "$(j $k)" =~ $safe ]] || { echo "::error::operator_args.$k has unexpected characters"; exit 1; }; done
           [[ "$CMD" =~ ^(open|extend|terminate|list)$ ]] || { echo "::error::operator_args.command must be open, extend, terminate or list"; exit 1; }
           if [ "$CMD" != list ] && [ -z "$(j authorised_by)" ]; then echo "::error::operator_args.authorised_by is required"; exit 1; fi
+          if [ "$CMD" = terminate ] && [ -z "$(j reason)" ]; then echo "::error::operator_args.reason is required to terminate"; exit 1; fi
           PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=free-window)"
           A="$CMD"
           [ -n "$(j product)" ] && A="$A --product $(j product)"
@@ -314,7 +322,9 @@ jobs:
           [ -n "$(j ends)" ] && A="$A --ends $(j ends)"
           [ -n "$(j days)" ] && A="$A --days $(j days)"
           [ -n "$(j id)" ] && A="$A --id $(j id)"
-          A="$A --reason-b64 $(b "$(j reason)") --authorised-by-b64 $(b "$(j authorised_by)") --performed-by-b64 $(b "$PB")"
+          [ -n "$(j reason)" ] && A="$A --reason-b64 $(b "$(j reason)")"
+          [ -n "$(j authorised_by)" ] && A="$A --authorised-by-b64 $(b "$(j authorised_by)")"
+          A="$A --performed-by-b64 $(b "$PB")"
           out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/free-window.mjs $A" | grep '^{' | tail -1)
           { echo "## Free testing window"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$out" | jq -e 'has("error") | not' >/dev/null
@@ -335,13 +345,16 @@ jobs:
           [[ "$(j digest)" =~ ^([0-9a-f]{64})?$ ]] || { echo "::error::operator_args.digest must be 64 hex characters"; exit 1; }
           [[ "$(j id)" =~ ^(rx-[0-9a-f]{12})?$ ]] || { echo "::error::operator_args.id must be an exception ID (rx-…)"; exit 1; }
           if [ "$CMD" != list ] && [ -z "$(j authorised_by)" ]; then echo "::error::operator_args.authorised_by is required"; exit 1; fi
+          if [ "$CMD" != list ] && [ -z "$(j reason)" ]; then echo "::error::operator_args.reason is required"; exit 1; fi
           PB="GitHub Actions run $GITHUB_RUN_ID by $GITHUB_ACTOR (Deploy Store server to Fly.io, mode=release-exception)"
           A="$CMD"
           [ -n "$(j release)" ] && A="$A --release $(j release)"
           [ -n "$(j session_ref)" ] && A="$A --session-ref $(j session_ref)"
           [ -n "$(j digest)" ] && A="$A --digest $(j digest)"
           [ -n "$(j id)" ] && A="$A --id $(j id)"
-          A="$A --reason-b64 $(b "$(j reason)") --authorised-by-b64 $(b "$(j authorised_by)") --performed-by-b64 $(b "$PB")"
+          [ -n "$(j reason)" ] && A="$A --reason-b64 $(b "$(j reason)")"
+          [ -n "$(j authorised_by)" ] && A="$A --authorised-by-b64 $(b "$(j authorised_by)")"
+          A="$A --performed-by-b64 $(b "$PB")"
           out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/release-exception.mjs $A" | grep '^{' | tail -1)
           { echo "## Release exception"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$out" | jq -e 'has("error") | not' >/dev/null

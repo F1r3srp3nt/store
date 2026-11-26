@@ -10,7 +10,7 @@ name: Release import (verify and rehearse)
 
 on:
   push:
-    branches: [claude/stoic-meitner-gqcok1]
+    branches: [main, claude/stoic-meitner-gqcok1]
     paths: ["web-hcg-store/release-imports/**", ".github/workflows/release-import.yml"]
   workflow_dispatch:
     inputs:
