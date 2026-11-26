@@ -1,7 +1,7 @@
 # HCG Mail for Windows 0.1.0-beta.1: free public testing release (approval package)
 
-**Status:** prepared and rehearsed. **Not imported into production, not approved, not published, no window opened.**
-Production publishing and downloads stay off until you approve this specific release.
+**Status:** prepared and rehearsed. **Not imported into production, not submitted, approved or published; no
+testing period opened.** Production publishing and downloads stay off until you complete the founder operations below.
 
 ## 1. The release
 
@@ -66,46 +66,89 @@ These come from HCG Mail's `docs/RELEASE_NOTES_0.1.0-beta.1.md` and the run's ev
 
 Screenshots of the exact preview: artifact `publication-preview` of the release-import workflow run (section 4).
 
-## 2. Access policy
+## 2. Access policy and governance
 
-- **Who:** any **signed-in HCG account**, while a free testing window is open. Signed-out visitors see the page and
-  the "Temporarily free" badge, but download nothing.
-- **What:** only the four files of this release, and only after a person has approved it and, separately,
-  published it. Withdrawn or superseded releases are not delivered.
-- **Mode:** `HCG_STORE_PROTECTED_DOWNLOADS=free-testing-only`. No licensed or paid file is delivered to anyone, also
-  owners (including the Founder/Owner grant). Every other private release stays inaccessible.
-- **Window controls**, each recorded with who authorised and who performed it:
-  - **Open:** with a start and end (at most 366 days per window).
-  - **Extend:** a later end.
-  - **Terminate:** at once, with a reason; delivery stops on the next request.
-  - **End:** after the end time, free delivery stops by itself.
-- **No charge, ever:** no offer, price, checkout, Stripe session or payment record is created. When the window ends,
-  the edition shows "Not for sale yet" and nothing is charged. The product's permanent pricing (`not-set`) is
-  unchanged.
-- **Separation of permissions** (central, on `hcg.store`):
-  - `store.publish` lets a person submit drafts, for example from HCG Executable Maker; it is not used for this import.
-  - `store.release.approve` approves, in a browser with the version typed.
-  - `store.release.publish` publishes an approved release, in a browser with the version typed.
+**Who can download**
+- Any **signed-in HCG account**, during the free testing period.
+- Signed-out visitors see the page and the "Temporarily free" badge, but cannot download.
 
-  Uploading or submitting never grants approval or publication. A desktop app can never approve or publish.
-  Customers and purchases grant none of these.
-- **Decision needed: one-person release.** This release's creator is the CI build (operator import), not a person.
-  Your account can therefore approve and publish it alone; the Store still refuses approval by a release's creator.
-  If you want a second human to review it, give `store.release.approve` or `store.release.publish` to someone else
-  and let them do that step.
+**What is delivered**
+- Only the four files of this release.
+- Only after the release has been submitted, approved and, separately, published.
+- Withdrawn or superseded releases are never delivered.
 
-## 3. Production changes required (in order; nothing below has been done)
+**Download mode:** `HCG_STORE_PROTECTED_DOWNLOADS=free-testing-only`.
+- No licensed or paid file is delivered to anyone, owners included (and the Founder/Owner grant).
+- Every other private release stays inaccessible.
 
-1. **Renew the Fly.io token** (blocks every production step):
-   `fly tokens create deploy --app hcg-store --expiry 720h`, then save it as the GitHub secret `FLY_API_TOKEN`.
-2. **Deploy main** (HCG Store v3 plus this release path, which is inert while publishing is off).
-   Then verify: live commit, health, catalogue v2 pages, Release Manager answering "not enabled".
-3. **HCG (ERP, Owner):**
-   - create the feature `store.release.publish` on `hcg.store`; it is new;
-   - give your account `store.release.approve` and `store.release.publish`;
-   - also `store.publish` as you asked, which is not needed for this import.
-4. **Configuration change**, applied as a PR after your approval, then deployed:
+**Testing period: 30 days from the moment of publication**
+- It is prepared before publication (`starts: "publication", days: 30`) and starts at the exact publication time.
+- A deployment delay therefore never shortens it.
+- You can extend it (more days, or a later end) or end it at once (with a reason).
+- After its end, free delivery stops by itself.
+- Every change records who authorised it and who performed it, in an append-only log.
 
+**No charge, ever**
+- No offer, price, checkout, Stripe session, payment record or licence is created.
+- When the period ends, the edition shows "Not for sale yet" and nothing is charged.
+- The product's permanent pricing (`not-set`) is unchanged. Payments stay off.
+
+**Three separate central permissions on `hcg.store`, each a distinct audited step in the browser**
+- `store.publish` lets a person **submit** a draft for approval. It does not include approval or publication.
+- `store.release.approve` lets a person **approve**, typing the version.
+- `store.release.publish` lets a person **publish** an approved release, typing the version.
+
+Holding these permissions:
+- A desktop app can never approve or publish.
+- Customers, purchases and owning a product grant none of these permissions.
+- Uploading or importing files grants none of them.
+
+**Founder-operated release exception (this release only)**
+- Store's rule: whoever **created or submitted** a release may not approve or publish it.
+- The CI build that produced the files is recorded as the creator but **is never counted as a second person**.
+- So for you to submit, approve and publish this release yourself, the operator path records an explicit exception:
+  - one account: yours, named by a verified sign-in reference, never an account ID in logs;
+  - one release: this import's `rel-…`;
+  - one exact file set: digest `7ee9f69885a75afcfd317295453f47c0c743b06d6ff4fdebaacc5a566c668067` over the four
+    SHA-256 values and names;
+  - a reason, and your written authorisation.
+- The exception:
+  - is shown on the review page as "not an independent review";
+  - is written into the hash-chained audit and onto the approval and publication (`independentReview: false`);
+  - stops applying if any file changes;
+  - can be revoked;
+  - is never a permission: you still need each of the three central grants.
+- If you prefer a second person, give that person `store.release.approve` or `store.release.publish` and skip step 8.
+
+## 3. Production steps (in order)
+
+Steps marked **you** are founder operations. Steps marked **operator** are Actions runs of *Deploy Store server to
+Fly.io*: the account is never printed, and payments stay `none` throughout.
+
+1. **You: renew the Fly.io token.** Run the command below, then save the token as the repository secret
+   `FLY_API_TOKEN`:
+   ```bash
+   fly tokens create deploy --app hcg-store --expiry 720h
+   ```
+   **Operator:** `mode=status` confirms that Fly.io accepts it.
+2. **Operator: deploy main** (`mode=deploy`). This runs the tests, then a **migration dry run** on a copy of the live
+   database on the Machine (no write; it stops if any row would be lost), then a **pre-deploy backup**, then the
+   deployment and the smoke test.
+   Then verify:
+   - the live commit (`/hcg-build.json`);
+   - health;
+   - the six themes;
+   - mobile navigation;
+   - the catalogue;
+   - Release Manager ("not enabled");
+   - My Library.
+
+   Nothing in this step enables publishing, downloads or payments.
+3. **You, in HCG ERP (Owner):**
+   - On `hcg.store`, create the feature `store.release.publish`. It is new; the other two exist.
+   - Grant your account `store.publish`, `store.release.approve` and `store.release.publish`.
+   - Grant nothing to customers or applications.
+4. **Configuration**: a PR changing `fly.toml`, merged after your approval, then deployed:
    ```toml
    HCG_STORE_PROTECTED_DOWNLOADS = "free-testing-only"
    HCG_STORE_FREE_TESTING_APPROVED = "founder-approved"
@@ -113,47 +156,73 @@ Screenshots of the exact preview: artifact `publication-preview` of the release-
    HCG_STORE_PUBLISHER_CENTRAL_ID = "store.publish"
    HCG_STORE_RELEASE_APPROVER_CENTRAL_ID = "store.release.approve"
    HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID = "store.release.publish"
-   # unchanged: HCG_STORE_PAYMENT_PROVIDER = "none"; no Executable Maker client needed for this import
+   # unchanged: HCG_STORE_PAYMENT_PROVIDER = "none"; HCG_STORE_PUBLISHING_CLIENT_IDS not set (no app uploads)
    ```
-5. **Import:** Actions → *Deploy Store server to Fly.io*, `mode=import-release`, with these operator arguments:
-   `{"request":"hcg-mail-windows-0.1.0-beta.1.json","authorised_by":"<your words>"}`.
-   The run verifies the files again and imports them as a submitted private draft.
-6. **You, in a browser:** HCG Store → Release Manager → HCG Mail 0.1.0-beta.1 → review page.
-   - **Approve:** eligibility `public`, *make current*, type `0.1.0-beta.1`.
-   - **Publish:** type `0.1.0-beta.1`.
-7. **Open the window:** `mode=free-window`, with operator arguments
-   `{"command":"open","product":"hcg-mail","edition":"windows-desktop","release":"<rel-… from step 5>","starts":"now","ends":"<end, e.g. 2027-01-31T23:59:59Z>","authorised_by":"<your words>"}`.
-8. **Catalogue:** run `npm run releases:sync -- --production` and open a PR with the generated `releases.json` entry
-   and `currentReleaseId`. That PR also confirms the Windows platform (x64, ARM64, minimum versions). Merge it, then
-   deploy, so the release panel appears on the product page.
-9. **Verify:**
-   - as an ordinary account: download each file and compare its SHA-256;
-   - signed out: refused;
-   - Founder: only these files;
-   - payments: still disabled.
+5. **You: sign in** to HCG Store once. **Operator:** `mode=evidence` shows that sign-in's 12-hex `session_ref`, with
+   no account ID.
+6. **Operator: import** with `mode=import-release`:
+   ```json
+   {"request":"hcg-mail-windows-0.1.0-beta.1.json","authorised_by":"<your words>","preserved_run":"45778776110"}
+   ```
+   - `preserved_run` uses the verified copy kept in this repository. Without it, the run downloads from HCG Mail's
+     run, whose artifacts expire on 23 Feb 2027.
+   - Every byte is verified again: size, SHA-256, `SHA256SUMS.txt` and each Release Passport (with SHA-512, commit and
+     run).
+   - Result: a **private draft**, `rel-…`.
+7. **Operator: prepare the 30-day period** with `mode=free-window`:
+   ```json
+   {"command":"open","product":"hcg-mail","edition":"windows-desktop","release":"rel-…","starts":"publication","days":"30","authorised_by":"<your words>"}
+   ```
+8. **Operator: record the founder exception** with `mode=release-exception`:
+   ```json
+   {"command":"grant","release":"rel-…","session_ref":"<from step 5>","digest":"7ee9f69885a75afcfd317295453f47c0c743b06d6ff4fdebaacc5a566c668067","reason":"First Windows public prerelease of HCG Mail; founder-operated","authorised_by":"<your words>"}
+   ```
+9. **You, in the browser:** go to HCG Store → Release Manager → HCG Mail 0.1.0-beta.1, then:
+   1. **Submit for approval**.
+   2. **Approve**: eligibility `public`, *make current*, type `0.1.0-beta.1`.
+   3. **Publish**: type `0.1.0-beta.1`.
 
-**Stopping it:**
-- **Free period:** `mode=free-window` `{"command":"terminate","id":"fw-…","reason":"…","authorised_by":"…"}`. This
+   The 30-day period starts at that moment.
+10. **Verify:**
+    - as an ordinary account: download each file and compare its SHA-256;
+    - signed out: refused;
+    - Founder: only these four files;
+    - payments: still disabled;
+    - `/api/public/v1/release-resolution/hcg-mail` lists the four options as `free-testing`;
+    - no other product changed.
+11. **Catalogue:** `npm run releases:sync -- --production` generates the `releases.json` entry and `currentReleaseId`.
+    A PR with them is merged, then deployed. The product page and the resolution then also work from the catalogue.
+
+**Stopping it**
+- **Free period:** `mode=free-window` with `{"command":"terminate","id":"fw-…","reason":"…","authorised_by":"…"}`. It
   takes effect on the next request.
+- **Extending it:** `{"command":"extend","id":"fw-…","days":"45","authorised_by":"…"}`, or `"ends":"<ISO>"`.
 - **Release:** in Release Manager, **Withdraw**. Delivery stops at once; files and history are kept.
-- **Code:** rollback as in PRODUCTION-DEPLOY.md.
+- **Exception:** `mode=release-exception` with `{"command":"revoke","id":"rx-…","reason":"…","authorised_by":"…"}`.
+- **Code:** roll back as in PRODUCTION-DEPLOY.md. The pre-deploy backup from step 2 is on the data volume
+  (`/data/backups/hcg-store-predeploy-<time>-<commit>.sqlite`).
 
 ## 4. Rehearsal
 
 The `release-import` workflow ran the real verified files through the Store code with the configuration in step 4
-(run `45740215392`, commit `e0de2cd`). It ran in TEST mode with TEST identities and never touched production. Every
-check passed (`PASS` lines in the job log):
+(latest: run `45778776110`, commit `32b5760`; earlier `45740215392`). It ran in TEST mode with TEST identities and never
+touched production. Every check passed (`PASS` lines in the job log):
 
-- **Import:** a submitted private draft whose creator is `import:F1r3srp3nt/HCG-Mail#45686343504`. All four files
-  verified and unchanged; the SHA-256 values are the ones in section 1.
-- **Before approval:** nothing was delivered to the tester.
-- **Approval:** an ordinary account could not approve. The founder then approved (browser, typed version, `public`).
-- **Before publication:** approved but not yet published, so still nothing was delivered.
-- **Publication:** an ordinary account could not publish. The founder then published, with the separate permission.
-- **No window:** once published, the edition was neither free nor for sale.
-- **Window open:** the edition was free to any signed-in account, with 4 files, no offer and no checkout. The tester's
-  four downloads matched the exact bytes.
-- **Refusals:** a signed-out request was refused, and termination stopped delivery at once.
+- **Import:** a private draft whose creator is recorded as `import:F1r3srp3nt/HCG-Mail#45686343504`, with nothing
+  submitted. All four files were verified and unchanged; the SHA-256 values are the ones in section 1.
+- **Testing period:** 30 days, prepared and waiting for publication.
+- **Ordinary account:** could not submit and could not approve.
+- **Submission:** the founder submitted (`store.publish`, browser).
+- **Without an exception:** the submitter could not approve (`separation_of_duties`); the CI build is not a second
+  person.
+- **Founder-operated exception:** recorded for this release and these exact files (digest `7ee9f698…`).
+- **Approval:** the founder approved (browser, typed version, `public`). Approved but not published, still nothing
+  was delivered.
+- **Publication:** an ordinary account could not publish. The founder published, with the separate permission.
+- **Period started at publication:** it lasts exactly 30 days from the publication time.
+- **Delivery:** free to any signed-in account, with 4 files, no offer and no checkout. The tester's four downloads
+  matched the exact bytes.
+- **Refusals:** signed out was refused, and termination stopped delivery at once.
 - **No commerce:** no purchase, payment or licence record was created.
 - **Catalogue:** the entry was generated (`hcg-mail: current release none → rel-… (approver's choice)`) and validates.
 

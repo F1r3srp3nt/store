@@ -70,9 +70,11 @@ change adds; nothing that worked was replaced.
    (`409 provenance_required` names the files; drafts without them still work, so older Maker versions can upload). The
    source repository is never asked for: a private repository stays private. **Approval is manual**: only in a browser
    session in HCG Store, by someone with the approver permission, typing the version; **public** additionally needs a
-   different person than the creator and a catalogue product with a central ID. Desktop tokens cannot approve.
+   person other than the creator and the submitter (or a founder-operated exception for that exact release; see
+   STORE-OWNER.md) and a catalogue product with a central ID. Desktop tokens cannot approve.
 6. **Publish** (public releases only) is a separate, explicit step after approval, on the review page or the Release
-   Manager: browser session, approver permission, a person other than the creator, typed version. The publisher may
+   Manager: browser session, publication permission (`store.release.publish`), a person other than the creator and the
+   submitter (or the same founder-operated exception), typed version. The publisher may
    choose to **supersede** the edition's currently published releases. Nothing is published automatically, and nothing
    is delivered to customers, listed for HCG Repo/Sileo or exported to the catalogue before publication. Internal-testing
    releases are delivered to testers once approved.
@@ -100,7 +102,8 @@ Superseded releases stay in the history and the catalogue, but are no longer del
 
 The manual approval in HCG Store **is** the release review. There is no second, independent review in git:
 - it needs `store.release.approve` for the product, a browser session, the typed version, and for `public` a person
-  other than the creator (`separation_of_duties`) and a product with a central ID;
+  other than the creator and the submitter (`separation_of_duties`; a CI build is never counted as a person) and a
+  product with a central ID;
 - each step is in the append-only, hash-chained publishing audit (database triggers forbid update and delete).
 
 Delivery follows **publication** (the explicit step after approval): published public files are served through the

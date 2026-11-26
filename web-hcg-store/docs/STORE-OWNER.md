@@ -19,9 +19,10 @@ e-mail address or a name sent by a browser.
 | Manage users, organisations, roles and permission grants | Central HCG: the platform **Owner** role (ERP Owner workflows) | ERP, signed in as the Owner | Main site (Owner-only database functions, audited) |
 | Register OAuth clients, products, features | Central HCG Owner | ERP → App integrations | Main site |
 | Publish to HCG Store (`store.publish` on `hcg.store`) | Central personal grant | ERP → App Integrations → HCG Store → Feature access → Personal publishing and approval permissions | HCG Store asks HCG's `/check` on every publishing action |
-| Approve releases (`store.release.approve` on `hcg.store`) | Central personal grant | same ERP page | `/check` on every approval, **plus** Store's different-person rule for public releases: the approver is never the release's creator (never bypassed, also for the Owner) |
-| Publish approved releases (`store.release.publish` on `hcg.store`) | Central personal grant (separate feature; HCG must create it) | same ERP page | `/check` on every publication; browser only; never the release's creator |
-| Import a CI-built release (operator) | Repository and Fly.io access (operator), not a central grant | Actions → *Deploy Store server to Fly.io*, `mode=import-release` | Files verified byte-for-byte against the CI draft and Release Passports; result is a submitted private draft; creator is the CI build |
+| Approve releases (`store.release.approve` on `hcg.store`) | Central personal grant | same ERP page | `/check` on every approval, **plus** Store's different-person rule for public releases: the approver is neither the release's creator nor its submitter, unless a founder-operated exception is recorded for that exact release |
+| Publish approved releases (`store.release.publish` on `hcg.store`) | Central personal grant (separate feature; HCG must create it) | same ERP page | `/check` on every publication; browser only; same different-person rule |
+| Import a CI-built release (operator) | Repository and Fly.io access (operator), not a central grant | Actions → *Deploy Store server to Fly.io*, `mode=import-release` | Files verified byte-for-byte against the CI draft and Release Passports; result is a private **draft**, submitted afterwards by a person with `store.publish`; the CI build is recorded as creator and never counts as a reviewer |
+| Founder-operated release exception (operator) | Repository and Fly.io access, with the founder's written authorisation | `mode=release-exception` | One person, one release, its exact file set (digest); hash-chained audit; revocable; never a permission |
 | Use products and features (customer access) | Central licences per product and edition (D2), separate from purchases | ERP licences for the Owner's organisation, of an internal/owner type, never a payment record | `/check` (`feature_key: "download"` once D3 registers it) at every download |
 | Catalogue, offers, release records, Store configuration | This repository and its deployment (`catalogue/*.json`, `server/data/offers.json`, `fly.toml`), changed by reviewed PRs and deployed from `main` | GitHub and Fly.io accounts held by the founder | Server validates at start; release records are generated from Store approvals |
 | Display name and designation in HCG Store | **Presentation only**, not a right | Operator command on the server (below) | Read only for display; no permission check reads it |
@@ -51,11 +52,15 @@ it. It does not change registration dates, history or ordering.
 3. HCG Store re-checks on every action and never caches a yes, so a revocation applies to the next request.
 
 The features stay **disabled** centrally until publishing is activated (PUBLISHING.md §7); holding a grant does not
-enable an unfinished service. Public approval and publication always need a person other than the release's creator.
-A release uploaded by a person (HCG Executable Maker) therefore needs a second person to approve it. A release imported
-from a product's CI build (`mode=import-release`) has the CI build as its creator, so one person holding both
-`store.release.approve` and `store.release.publish` can approve and publish it: the founder's decision of 26 Nov 2026
-for HCG Mail for Windows 0.1.0-beta.1 (docs/RELEASE-HCG-MAIL-0.1.0-beta.1.md) is required before this is used.
+enable an unfinished service. Public approval and publication always need a person other than the release's creator
+and other than the person who submitted it. A CI build never counts as a person: a release imported from CI
+(`mode=import-release`) stays a draft until someone with `store.publish` submits it, and that submitter may not approve
+or publish it. The only exception is a **founder-operated release exception** (server/src/release-exceptions.ts,
+`mode=release-exception`): recorded by the operator path with the founder's written authorisation, for one named
+account (a verified sign-in reference), one release and its exact files. It is shown on the review page, recorded on
+the approval and publication as `independentReview: false`, stops applying if any file changes, can be revoked, and is
+never a permission (each step still needs its own central grant). It is prepared for HCG Mail for Windows
+0.1.0-beta.1 only (docs/RELEASE-HCG-MAIL-0.1.0-beta.1.md).
 
 ## Founder product ownership (central, live)
 
