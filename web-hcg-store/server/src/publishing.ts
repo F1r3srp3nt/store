@@ -257,9 +257,10 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   async function permitted(actor: Actor, permission: "publish" | "approve" | "publication" | "offers", productId: string): Promise<boolean> {
-    // Pricing and Offers is off until HCG issues its permission and it is configured (HCG_STORE_OFFERS_CENTRAL_ID).
-    if (permission === "offers" && !P.offersCentralId) return false;
-    const feature = permission === "publish" ? P.publisherCentralId! : permission === "approve" ? P.approverCentralId! : permission === "publication" ? P.publicationCentralId! : P.offersCentralId!;
+    // A permission whose central key is not configured is never granted (offers until HCG issues it; approval and
+    // publication in "uploads" mode).
+    const feature = permission === "publish" ? P.publisherCentralId : permission === "approve" ? P.approverCentralId : permission === "publication" ? P.publicationCentralId : P.offersCentralId;
+    if (!feature) return false;
     const subject: Subject = { sub: actor.sub, accessToken: actor.accessToken };
     // A central feature of the product (HCG's planned staff permissions `store.publish` and `store.release.approve`),
     // checked with the caller's own HCG token on every action and never cached. Owning the product, an HCG role, or
@@ -407,6 +408,15 @@ export function createPublishing(deps: PublishingDeps) {
     }
   }
 
+  /** What this Store allows right now (independent switches), for apps to show precisely what works. */
+  function capabilityFlags() {
+    return {
+      products: true, drafts: true, uploads: true, resumableUploads: true, passports: true, submission: true,
+      approval: P.publicationEnabled && !!P.approverCentralId, publication: P.publicationEnabled && !!P.publicationCentralId,
+      publicDelivery: P.publicationEnabled && cfg.freeDownloads, offers: !!P.offersCentralId,
+    };
+  }
+
   /** Bytes of every release file the Store keeps or is receiving (removed and rejected files excluded). */
   function storageUsed(): number {
     return (db.prepare("SELECT COALESCE(SUM(size_bytes), 0) AS n FROM pub_artifacts WHERE status NOT IN ('removed', 'rejected')").get() as { n: number }).n;
@@ -501,6 +511,8 @@ export function createPublishing(deps: PublishingDeps) {
     // Draft review: the people HCG allows to approve or publish this product may download it to check it first.
     if (await permitted(actor, "approve", r.product_id)) return { ok: true, basis: "approver-review" };
     if (await permitted(actor, "publication", r.product_id)) return { ok: true, basis: "publisher-review" };
+    // Private uploads only: nothing is delivered to anyone but the staff above.
+    if (!P.publicationEnabled) return { ok: false, status: 403, code: "publication_disabled", message: "This release is not available." };
     if (STAFF_ONLY_FORMATS.has(a.format)) return { ok: false, status: 403, code: "staff_only", message: "This file is for authorised distribution only and is never delivered to customers." };
     if (r.status === "superseded") return { ok: false, status: 410, code: "superseded", message: "A newer release replaced this one." };
     // Public delivery needs the explicit publication step; internal testing needs only its approval.
@@ -531,7 +543,7 @@ export function createPublishing(deps: PublishingDeps) {
 
   /** Verified files of releases MANUALLY approved for public delivery (used by /api/v1/downloads and Sileo). */
   function publishedFor(productId: string, editionId: string | null): ProtectedArtifact[] {
-    if (!P.enabled) return [];
+    if (!P.publicationEnabled) return [];
     const rows = db.prepare(
       `SELECT a.* FROM pub_artifacts a JOIN pub_releases r ON r.id = a.release_id
        WHERE r.product_id = ? AND r.edition_id IS ? AND r.status = 'published' AND r.approved_eligibility = 'public' AND a.status = 'verified'
@@ -552,7 +564,7 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   function freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[] {
-    if (!P.enabled) return [];
+    if (!P.publicationEnabled) return [];
     const basis = freeBasis(productId, editionId);
     if (!basis) return [];
     const rows = db.prepare(
@@ -571,6 +583,7 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   function publishedById(id: string): ProtectedArtifact | undefined {
+    if (!P.publicationEnabled) return undefined;
     const a = artifact(id);
     const r = a ? release(a.release_id) : undefined;
     if (!a || !r || r.status !== "published" || r.approved_eligibility !== "public" || a.status !== "verified" || STAFF_ONLY_FORMATS.has(a.format)) return undefined;
@@ -647,7 +660,7 @@ export function createPublishing(deps: PublishingDeps) {
     if (p === "/api/v1/repo/releases" && m === "GET") { send(json(res, 200, await repoReleases(actor, url))); return true; }
 
     if (p === "/api/v1/publishing/whoami" && m === "GET") {
-      return send(json(res, 200, { sub: actor.sub, email: actor.email ?? null, via: actor.via, publisherPermission: P.publisherCentralId, approverPermission: P.approverCentralId, maxUploadBytes: P.maxUploadBytes, chunkBytes: P.chunkBytes }));
+      return send(json(res, 200, { sub: actor.sub, email: actor.email ?? null, via: actor.via, publisherPermission: P.publisherCentralId, approverPermission: P.approverCentralId, maxUploadBytes: P.maxUploadBytes, chunkBytes: P.chunkBytes, publishingMode: P.mode, capabilities: capabilityFlags() }));
     }
     if (p === "/api/v1/publishing/capabilities" && m === "GET") {
       if (!(await permitted(actor, "publish", STORE_CENTRAL_PRODUCT_ID)) && !(await permitted(actor, "approve", STORE_CENTRAL_PRODUCT_ID)) && !(await permitted(actor, "publication", STORE_CENTRAL_PRODUCT_ID))) {
@@ -658,6 +671,8 @@ export function createPublishing(deps: PublishingDeps) {
         formats: ALLOWED, staffOnlyFormats: [...STAFF_ONLY_FORMATS], buildProviders: BUILD_PROVIDER_IDS,
         storage: { usedBytes: storageUsed(), quotaBytes: P.storageQuotaBytes },
         approvalAndPublication: "browser-only",
+        publishingMode: P.mode,
+        capabilities: capabilityFlags(),
         offersEnabled: !!P.offersCentralId,
       }));
     }
@@ -885,6 +900,9 @@ export function createPublishing(deps: PublishingDeps) {
           audit(actor.sub, "release.submitted", r.id, null, { via: actor.via, files: arts.filter((a) => a.status === "verified").map((a) => ({ id: a.id, sha256: a.sha256 })) });
         });
         return send(json(res, 200, releaseView(release(r.id)!)));
+      }
+      if ((action === "/approve" || action === "/publish") && m === "POST" && !P.publicationEnabled) {
+        throw new HttpError(409, "publication_disabled", "This HCG Store accepts private uploads only: approval and publication are switched off (HCG_STORE_PUBLISHING=uploads). Your draft is kept privately.");
       }
       if (action === "/approve" && m === "POST") {
         // Manual approval happens in HCG Store, signed in through the browser; a desktop token cannot approve.
@@ -1231,7 +1249,7 @@ export function createPublishing(deps: PublishingDeps) {
 
   /** What a product page may say about free testing (no account data): when the open window ends. */
   function freeWindowFor(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null {
-    if (!P.enabled || !cfg.freeDownloads) return null;
+    if (!P.publicationEnabled || !cfg.freeDownloads) return null;
     const b = freeBasis(productId, editionId);
     if (b?.kind !== "window" || b.window.endsAt === null) return null;
     // Only announce free testing when the window actually delivers something now: a published, public, free release
