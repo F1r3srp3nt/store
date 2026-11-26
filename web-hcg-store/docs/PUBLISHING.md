@@ -246,3 +246,22 @@ HCG Store Manager (native macOS) uses this same publishing API. There is no seco
 - **Approval and publication** stay browser-only, on the review page; the app opens that page.
 - **Tokens:** HCG Store accepts the app's tokens only after HCG issues it a client ID and that ID is added to
   `HCG_STORE_PUBLISHING_CLIENT_IDS`.
+
+## Private uploads while publication is off (`HCG_STORE_PUBLISHING=uploads`)
+
+| Capability | `disabled` | `uploads` | `enabled` |
+|---|---|---|---|
+| List authorised catalogue products and editions | – | yes | yes |
+| Create private drafts, upload, resume, attach Release Passports, verify checksums | – | yes | yes |
+| Submit for review; open in Release Manager and the review page (staff) | – | yes | yes |
+| Approve (`store.release.approve`) | – | **no** (`409 publication_disabled`) | yes |
+| Publish (`store.release.publish`) | – | **no** | yes |
+| Deliver anything to customers, HCG Repo or the public release resolution | – | **no** | after publication |
+
+- **What `uploads` needs:** only `HCG_STORE_PUBLISHER_CENTRAL_ID` (HCG's `store.publish`), HCG Connect, the
+  entitlement authority, private artifact storage, and the desktop clients in `HCG_STORE_PUBLISHING_CLIENT_IDS`.
+- **Optional keys:** the approval and publication keys may also be set. In this mode they only let those people open
+  drafts to review them.
+- **What the apps see:** `/api/v1/health` reports `publishing`; `whoami` and `capabilities` report each switch
+  (`capabilities.uploads`, `.approval`, `.publication`, `.publicDelivery`, `.offers`).
+- **Customers:** private drafts are never visible to customers in any mode.

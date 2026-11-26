@@ -526,7 +526,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
 
   const sileoCtx = { cfg, db, registry, sessions, connect, authority, accessDeps, now, startLogin, streamArtifact, freshSession };
   const publishing = createPublishing({ cfg, db, registry, connect, authority, now, freshSession, streamArtifact });
-  if (cfg.publishing.enabled) registry.published = publishing;
+  // Customer delivery of published releases only when publication is on (never in "uploads" mode).
+  if (cfg.publishing.publicationEnabled) registry.published = publishing;
 
   async function route(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://store.invalid");
@@ -542,6 +543,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         entitlementAuthority: authority.kind,
         payments: cfg.paymentProvider === "none" ? "disabled" : `${cfg.paymentProvider}-mode`,
         protectedDownloads: cfg.protectedDownloads ? "enabled" : cfg.freeDownloads ? "free-testing-only" : "disabled",
+        // Ship to Store clients (HCG Executable Maker, HCG Store Manager) read this before signing in.
+        publishing: cfg.publishing.mode,
       });
     }
     if (p === "/api/v1/session" && m === "GET") {
@@ -632,7 +635,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       const cors = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS", "access-control-max-age": "86400", vary: "Origin" };
       if (m === "OPTIONS") return send(res, 204, "", cors);
       try {
-        const body = resolveRelease({ cfg, registry, live: cfg.publishing.enabled ? publishing : null, now: now() }, match[1]!, { platform: url.searchParams.get("platform"), arch: url.searchParams.get("arch") });
+        const body = resolveRelease({ cfg, registry, live: cfg.publishing.publicationEnabled ? publishing : null, now: now() }, match[1]!, { platform: url.searchParams.get("platform"), arch: url.searchParams.get("arch") });
         return json(res, 200, body, { ...cors, "cache-control": "public, max-age=60" });
       } catch (e) {
         if (e instanceof ResolutionError) return errorJson(res, e.status, e.code, e.message, cors);
