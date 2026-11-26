@@ -1,5 +1,5 @@
 # Deploys the HCG Store server (storefront + sign-in) to Fly.io. Manual only: Actions → "Deploy Store
-# server to Fly.io" → Run workflow. Needs the repository secret FLY_API_TOKEN: an org-scoped token
+# server to Fly.io" → Run workflow. Needs FLY_API_TOKEN (the production environment secret overrides the repository one): an org-scoped token
 # (`fly tokens create org`) for the first run, which also creates the app, its volume and its session
 # key; an app deploy token (`fly tokens create deploy -a hcg-store`) is enough afterwards.
 #
@@ -86,9 +86,19 @@ jobs:
         run: echo "APP=$(sed -n 's/^app = "\(.*\)"$/\1/p' fly.toml)" >> "$GITHUB_ENV"
       - name: Fly access
         run: |
-          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::The repository secret FLY_API_TOKEN is not set."; exit 1; fi
-          flyctl auth whoami >/dev/null 2>&1 || flyctl orgs list >/dev/null || { echo "::error::FLY_API_TOKEN was refused by Fly.io."; exit 1; }
-          echo "Fly.io accepted the token."
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::FLY_API_TOKEN is not set (production environment or repository secret)."; exit 1; fi
+          # Shape only, never the value: helps spot a truncated or mis-pasted secret.
+          t="$FLY_API_TOKEN"
+          case "$t" in "FlyV1 "*) prefix="FlyV1";; fm1_*|fm2_*) prefix="bare macaroon (no FlyV1 prefix)";; \"*|\'*) prefix="starts with a quote";; *) prefix="unrecognised";; esac
+          echo "Token shape: $prefix, ${#t} characters, $(printf '%s' "$t" | tr -cd ',' | wc -c) commas, $(printf '%s' "$t" | tr -cd '\n' | wc -c) newlines."
+          # An organisation or user token passes whoami; an app deploy token (fly tokens create deploy -a <app>) cannot
+          # see organisations, so check it against the app itself. Either is accepted; anything else stops here.
+          if flyctl auth whoami >/dev/null 2>&1; then echo "Fly.io accepted the token (organisation or user token)."
+          elif flyctl status --app "$APP" >/dev/null 2>&1; then echo "Fly.io accepted the token for app $APP (app deploy token)."
+          else
+            echo "Fly.io refused the token. App check:"; flyctl status --app "$APP" 2>&1 | head -3 || true
+            echo "::error::FLY_API_TOKEN was refused by Fly.io for app $APP."; exit 1
+          fi
 
       - uses: actions/setup-node@v4
         if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run'
