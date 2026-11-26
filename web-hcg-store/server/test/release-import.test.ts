@@ -335,4 +335,34 @@ describe("HCG Mail for Windows: operator import, separate approval and publicati
     const events = (h.db.prepare("SELECT action FROM free_window_events WHERE window_id = ? ORDER BY seq").all(w.id) as { action: string }[]).map((e) => e.action);
     expect(events).toEqual(["window.prepared", "window.extended", "window.started-at-publication"]);
   });
+
+  it("public release resolution: the current published release and how to get it, with no file URLs, for any website", async () => {
+    const anon = h.anonymous();
+    const resolve = async (q: string) => {
+      const res = await anon.get(`/api/public/v1/release-resolution/${q}`);
+      return { status: res.status, cors: res.headers.get("access-control-allow-origin"), body: (await res.json()) as Record<string, unknown> & { releases: { id: string; version: string; source: string }[]; options: { fileName: string; architectures: string[]; access: { kind: string; freeUntil?: string }; getUrl: string; sha256: string }[] } };
+    };
+    // Before anything is published: the product, no release, no options.
+    const before = await resolve("hcg-mail");
+    expect(before).toMatchObject({ status: 200, cors: "*", body: { format: "hcg.store.release-resolution/1", product: { id: "hcg-mail", productUrl: expect.stringMatching(/\/apps\/hcg-mail$/) }, releases: [], options: [] } });
+    const r = await doImport(importFolder());
+    expect((await resolve("hcg-mail")).body.releases).toEqual([]); // a draft is never exposed
+    const founder = await h.signIn(FOUNDER);
+    await founderReleases(founder, r.id);
+    const published = await resolve("hcg-mail");
+    expect(published.body.releases).toMatchObject([{ id: r.id, version: "0.1.0-beta.1", source: "hcg-store-publication" }]);
+    expect(published.body.options).toHaveLength(4);
+    expect(published.body.options.every((o) => o.access.kind === "not-available-yet")).toBe(true); // no free window yet
+    const now = h.clock.now();
+    openWindow(h.db, { productId: "hcg-mail", editionId: "windows-desktop", releaseId: r.id, period: { anchor: "fixed", startsAt: now, endsAt: now + 30 * 86_400_000 }, ...who }, now);
+    const arm = await resolve("hcg-mail?platform=windows&arch=arm64");
+    expect(arm.body.options.map((o) => o.fileName).sort()).toEqual(["HCGMail-0.1.0-beta.1-win-arm64-Setup.exe", "HCGMail-0.1.0-beta.1-win-arm64.zip"]);
+    expect(arm.body.options[0]).toMatchObject({ access: { kind: "free-testing", freeUntil: new Date(now + 30 * 86_400_000).toISOString() }, getUrl: expect.stringMatching(/\/apps\/hcg-mail\?edition=windows-desktop$/) });
+    expect((await resolve("hcg-mail?platform=macos")).body.options).toEqual([]);
+    // Nothing private: no download route, storage key, account or audit data.
+    expect(JSON.stringify(arm.body)).not.toMatch(/\/api\/v1\/downloads|storage|\.uploads|user-|audit|art-/);
+    expect((await resolve("no-such-product")).status).toBe(404);
+    expect((await resolve("hcg-mail?platform=amiga")).status).toBe(400);
+    expect((await anon.get("/api/public/v1/release-resolution/hcg-mail", { method: "OPTIONS" } as never)).status).toBeLessThan(500);
+  });
 });

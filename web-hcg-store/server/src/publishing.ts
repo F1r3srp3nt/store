@@ -1051,13 +1051,43 @@ export function createPublishing(deps: PublishingDeps) {
     return releaseView(release(id)!);
   }
 
+  /**
+   * The release(s) of a catalogue product that are PUBLISHED and that the approver made the product's current release
+   * (the explicit "make current" choice at approval, never inferred from versions): at most one per edition, the most
+   * recently published such release. Public metadata only: no storage location, account or audit data.
+   */
+  function currentPublishedFor(productId: string) {
+    const rows = db.prepare(`SELECT * FROM pub_releases WHERE product_id = ? AND product_source = 'catalogue' AND status = 'published'
+                             AND approved_eligibility = 'public' ORDER BY published_at DESC, id`).all(productId) as ReleaseRow[];
+    const seen = new Set<string>();
+    const out = [];
+    for (const r of rows) {
+      const approval = db.prepare("SELECT detail FROM pub_audit WHERE action = 'release.approved' AND release_id = ? ORDER BY seq DESC LIMIT 1").get(r.id) as { detail: string } | undefined;
+      const publication = db.prepare("SELECT detail FROM pub_audit WHERE action = 'release.published' AND release_id = ? ORDER BY seq DESC LIMIT 1").get(r.id) as { detail: string } | undefined;
+      const current = (publication ? (JSON.parse(publication.detail) as { current?: boolean }).current : undefined) ?? (approval ? (JSON.parse(approval.detail) as { current?: boolean }).current : false);
+      if (!current) continue;
+      const key = r.edition_id ?? "";
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        releaseId: r.id, editionId: r.edition_id, version: r.version, build: r.build, channel: r.channel, distribution: r.distribution,
+        publishedAt: r.published_at!, releaseNotes: JSON.parse(r.release_notes) as string[], knownLimitations: JSON.parse(r.known_limitations ?? "[]") as string[],
+        files: artifactsOf(r.id).filter((a) => a.status === "verified").map((a) => {
+          const v = artifactView(a);
+          return { id: v.id, fileName: v.fileName, platform: v.platform, format: v.format, kind: v.kind ?? null, architectures: v.architectures as string[], minimumOs: v.minimumOs, sizeBytes: v.sizeBytes, sha256: v.sha256!, signing: String(v.signingReported.status) };
+        }),
+      });
+    }
+    return out;
+  }
+
   /** What a product page may say about free testing (no account data): when the open window ends. */
   function freeWindowFor(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null {
     const b = P.enabled ? freeBasis(productId, editionId) : null;
     return b?.kind === "window" && b.window.endsAt !== null ? { endsAt: b.window.endsAt, releaseId: b.window.releaseId } : null;
   }
 
-  return { route, publishedFor, freePublicFor, freeWindowFor, publishedById, publishedMeta, auditIntact, importRelease, allowedFormats: ALLOWED };
+  return { route, publishedFor, freePublicFor, freeWindowFor, currentPublishedFor, publishedById, publishedMeta, auditIntact, importRelease, allowedFormats: ALLOWED };
 }
 
 type ReleaseViewLike = {
