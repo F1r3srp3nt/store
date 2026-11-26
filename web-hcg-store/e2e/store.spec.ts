@@ -78,8 +78,11 @@ test.describe("responsive layouts", () => {
     await expect(banner).toHaveAttribute("fetchpriority", "high");
     // Chromium supports AVIF, so it picks the AVIF rendition; the WebP files stay as the fallback.
     await expect.poll(() => banner.evaluate((i: HTMLImageElement) => i.currentSrc)).toMatch(/banner-\d+\.avif$/);
+    // Genuine screenshots, grouped by the platform each capture ran on: macOS first (1), then Linux (3).
     const shots = page.locator(".product-gallery img");
-    await expect(shots).toHaveCount(2);
+    await expect(shots).toHaveCount(1);
+    await page.getByRole("group", { name: "Screenshots by platform" }).getByRole("button", { name: /Linux/ }).click();
+    await expect(shots).toHaveCount(3);
     for (const s of await shots.all()) await expect(s).toHaveAttribute("loading", "lazy");
   });
 
