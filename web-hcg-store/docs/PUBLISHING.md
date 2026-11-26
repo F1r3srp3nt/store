@@ -180,9 +180,11 @@ The Store-held package contract with HCG Repo (HCG Repo `docs/STORE_RELEASES.md`
 | Variable | Meaning |
 |---|---|
 | `HCG_STORE_PUBLISHING` | `enabled` / `disabled` (default) |
-| `HCG_STORE_PUBLISHING_CLIENT_IDS` | Comma-separated HCG Connect client IDs allowed to call the publishing API. Production: `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (Executable Maker). Must be issued UUIDs; never the Store's own client or, in production, a development client |
+| `HCG_STORE_PUBLISHING_CLIENT_IDS` | Optional. Comma-separated HCG Connect client IDs allowed to call the publishing API. Production: `fb9b6edf-2bfc-4b5e-a354-dbb1af697029` (Executable Maker). Must be issued UUIDs; never the Store's own client or, in production, a development client. Without it, releases arrive only through the operator import |
 | `HCG_STORE_PUBLISHER_CENTRAL_ID` | Central feature checked per product for publishing: `store.publish` |
-| `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central feature checked per product for approval: `store.release.approve` (must differ) |
+| `HCG_STORE_RELEASE_APPROVER_CENTRAL_ID` | Central feature checked per product for approval: `store.release.approve` |
+| `HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID` | Central feature checked for publication of an approved release: `store.release.publish`. The three IDs must all differ; all three are required when publishing is enabled |
+| `HCG_STORE_PROTECTED_DOWNLOADS` | `disabled` (default) · `free-testing-only`: only files of releases published as public and free, during an open free testing window (needs `HCG_STORE_FREE_TESTING_APPROVED=founder-approved` in production) · `enabled`: also licensed and paid downloads (needs `HCG_STORE_LAUNCH_APPROVED=founder-approved`) |
 | `HCG_STORE_ARTIFACT_STORAGE_DIR` | Private directory on the data volume (`/data/artifacts`), outside the static root |
 | `HCG_STORE_UPLOAD_MAX_MB` (4096), `HCG_STORE_UPLOAD_CHUNK_MB` (8), `HCG_STORE_UPLOAD_URL_TTL_SECONDS` (900) | Limits |
 
