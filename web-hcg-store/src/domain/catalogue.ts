@@ -59,6 +59,15 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
     "central registry id",
   );
 
+  for (const product of products) {
+    for (const m of product.media) {
+      if (m.kind !== "screenshot" && (m.platform !== null || m.appVersion !== null))
+        errors.push(`Product "${product.id}" media "${m.src}": only screenshots name a platform or app version.`);
+      if (m.platform && !product.platforms.some((pl) => pl.platform === m.platform))
+        errors.push(`Product "${product.id}" screenshot "${m.src}" shows ${m.platform}, which is not one of the product's platforms.`);
+    }
+  }
+
   const byId = new Map(products.map((x) => [x.id, x]));
   const releaseById = new Map(releases.map((x) => [x.id, x]));
 

@@ -314,7 +314,7 @@ describe("approved product artwork mapping (catalogue is the single source)", ()
   });
 
   it("keeps real screenshots and does not restore the RePrompter listing", () => {
-    expect(product("hcg-executable-maker").media.filter((m) => m.kind === "screenshot")).toHaveLength(2);
+    expect(product("hcg-executable-maker").media.filter((m) => m.kind === "screenshot").map((m) => m.platform)).toEqual(["macos", "linux", "linux", "linux"]);
     expect(product("hcg-clarity").media.filter((m) => m.kind === "screenshot")).toHaveLength(3);
     expect(product("hcg-mail").media.filter((m) => m.kind === "screenshot")).toHaveLength(2);
     expect(product("hcg-reprompter").supersededBy).toBe("hcg-clarity");

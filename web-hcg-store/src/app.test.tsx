@@ -205,10 +205,19 @@ describe("store pages with the shipped catalogue", () => {
     expect(banner).toHaveAttribute("fetchpriority", "high");
     expect([banner.getAttribute("width"), banner.getAttribute("height")]).toEqual(["2000", "667"]);
     expect(container.querySelector(".product-banner source[type='image/avif']")!.getAttribute("srcset")).toMatch(/banner-640\.avif 640w/);
-    // Both real screenshots are still shown, lazily, and labelled; the banner is never called a screenshot.
+    // Real screenshots, grouped by the platform each capture ran on, lazily loaded and labelled; the banner is never
+    // called a screenshot.
+    const group = screen.getByRole("group", { name: "Screenshots by platform" });
+    const macos = within(group).getByRole("button", { name: /macOS/ });
+    const linux = within(group).getByRole("button", { name: /Linux/ });
+    expect(macos).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelectorAll(".product-gallery img")).toHaveLength(1);
+    fireEvent.click(linux);
+    expect(linux).toHaveAttribute("aria-pressed", "true");
     const shots = container.querySelectorAll(".product-gallery img");
-    expect(shots).toHaveLength(2);
+    expect(shots).toHaveLength(3);
     shots.forEach((img) => expect(img).toHaveAttribute("loading", "lazy"));
+    expect(screen.getByText(/Linux · version 0\.3\.0/)).toBeInTheDocument();
     expect(screen.getAllByText("Screenshot")).toHaveLength(1);
     expect(container.querySelector(".product-banner .art-label")).toBeNull();
     // Exactly one high-priority image on the page.

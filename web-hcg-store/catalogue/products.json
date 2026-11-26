@@ -168,8 +168,9 @@
           "width": 1440,
           "height": 900,
           "alt": "HCG Mail desktop window with folders, a message list of sample messages and an open sample message.",
-          "caption": "Desktop app rendered by its automated UI test with sample messages.",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/classic-reading.png at 13d93a8, rendered by the headless UI test (MainWindowTests). Resized to WebP."
+          "caption": "Desktop app rendered by its automated UI test with sample messages (headless render of the desktop app, not a capture of a particular operating system).",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/classic-reading.png at 13d93a8, rendered by the headless UI test (MainWindowTests). Resized to WebP.",
+          "platform": null
         },
         {
           "kind": "screenshot",
@@ -178,8 +179,9 @@
           "width": 1000,
           "height": 760,
           "alt": "HCG Mail account setup dialog.",
-          "caption": "Account setup dialog, rendered by the automated UI test.",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/account-setup.png at 13d93a8, rendered by the headless UI test (DialogViewModelTests). Resized to WebP."
+          "caption": "Account setup dialog, rendered by the automated UI test (headless render of the desktop app, not a capture of a particular operating system).",
+          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/account-setup.png at 13d93a8, rendered by the headless UI test (DialogViewModelTests). Resized to WebP.",
+          "platform": null
         }
       ],
       "currentReleaseId": null,
@@ -565,6 +567,40 @@
       "media": [
         {
           "kind": "screenshot",
+          "src": "media/products/hcg-executable-maker/swift-inspect-macos-1381.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/swift-inspect-macos-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1381,
+          "height": 1400,
+          "alt": "HCG Executable Maker New Build wizard on a Mac, inspecting a Swift package: project analysis, required toolchains (Xcode, Swift 6.3.3, macOS SDK, codesign) all satisfied, and findings.",
+          "caption": "New Build, inspecting a Swift package on macOS ARM64 (version 0.2.0).",
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/11-swift-inspect-relay.jpg at 8a10bbb, rendered from the running app on a GitHub-hosted macOS runner (swift-macos CI job). Resized to WebP.",
+          "platform": "macos",
+          "appVersion": "0.2.0"
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-executable-maker/cmake-inspect-linux-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-executable-maker/cmake-inspect-linux-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 1459,
+          "alt": "HCG Executable Maker New Build wizard on Linux, inspecting a CMake project: executable targets and libraries listed, toolchains satisfied, and a confirmation before configuring.",
+          "caption": "New Build, inspecting a C/CMake project on Linux x64 (version 0.3.0 development build).",
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/16-native-cmake-configured.jpg at 8a10bbb, rendered from the running app headless on Linux (ui-driver --native). Resized to WebP.",
+          "platform": "linux",
+          "appVersion": "0.3.0"
+        },
+        {
+          "kind": "screenshot",
           "src": "media/products/hcg-executable-maker/dashboard-1440.webp",
           "variants": [
             {
@@ -576,7 +612,9 @@
           "height": 920,
           "alt": "HCG Executable Maker Command Center dashboard showing build counts, recent builds, host environment and build toolchains.",
           "caption": "Command Center, development build 0.1.0-m0.1 running on Linux x64.",
-          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/01-dashboard.png at commit 8cfaeee, captured from the running app under Xvfb. Converted to WebP."
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/01-dashboard.png at commit 8cfaeee, captured from the running app under Xvfb. Converted to WebP.",
+          "platform": "linux",
+          "appVersion": "0.1.0-m0.1"
         },
         {
           "kind": "screenshot",
@@ -591,7 +629,9 @@
           "height": 900,
           "alt": "HCG Executable Maker Mobile Build Studio showing an imported Android project with build outputs marked unavailable because the Android SDK is missing.",
           "caption": "Mobile Build Studio, development build (milestone 0.5), reporting missing toolchains honestly.",
-          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/10-mobile-build-studio.png at commit 8cfaeee. Resized and converted to WebP."
+          "provenance": "F1r3srp3nt/HCG-Executable-Maker docs/screenshots/10-mobile-build-studio.png at commit 8cfaeee. Resized and converted to WebP.",
+          "platform": "linux",
+          "appVersion": "0.1.0-m0.1"
         }
       ],
       "currentReleaseId": null,
