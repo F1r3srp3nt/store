@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception]
+        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -89,16 +89,40 @@ jobs:
           echo "Fly.io accepted the token."
 
       - uses: actions/setup-node@v4
-        if: inputs.mode == 'deploy'
+        if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web-hcg-store/package-lock.json
-      - if: inputs.mode == 'deploy'
+      - if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run'
         run: npm ci
       - name: Unit, component and server tests
         if: inputs.mode == 'deploy'
         run: npm test
+      # ---- Before changing anything: upgrade a COPY of the live database with this commit's migrations, on the
+      # Machine (the data never leaves it), and stop if anything would be lost. Then keep a consistent backup. ----
+      - name: Migration dry run on a copy of the live database (counts only; the live database is not written)
+        if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run'
+        run: |
+          if ! flyctl status --app "$APP" >/dev/null 2>&1; then echo "No app yet: nothing to migrate."; exit 0; fi
+          npx esbuild server/src/migration-check-cli.ts --bundle --platform=node --format=esm --target=node22 --outfile="$RUNNER_TEMP/migration-check.mjs" --log-level=warning
+          printf 'put %s /tmp/migration-check.mjs\n' "$RUNNER_TEMP/migration-check.mjs" | flyctl ssh sftp shell --app "$APP"
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings /tmp/migration-check.mjs --live /data/hcg-store.sqlite --if-exists" | grep '^{' | tail -1)
+          { echo "## Migration dry run (copy of the live database)"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$out" | jq -e '.ok == true' >/dev/null || { echo "::error::The migration dry run found problems; nothing was deployed."; exit 1; }
+      - name: Backup before deploying (consistent copy on the data volume, next to the server's own backups)
+        if: inputs.mode == 'deploy'
+        run: |
+          if ! flyctl status --app "$APP" >/dev/null 2>&1; then echo "No app yet: nothing to back up."; exit 0; fi
+          FILE="/data/backups/hcg-store-predeploy-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::7}.sqlite"
+          flyctl ssh console --app "$APP" --command "mkdir -p /data/backups"
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings /tmp/migration-check.mjs --live /data/hcg-store.sqlite --if-exists --copy-to $FILE" | grep '^{' | tail -1)
+          flyctl ssh console --app "$APP" --command "rm -f /tmp/migration-check.mjs"
+          echo "$out" | jq -e '.ok == true' >/dev/null || { echo "::error::Could not take the pre-deploy backup; nothing was deployed."; echo "$out"; exit 1; }
+          echo "Pre-deploy backup: $(echo "$out" | jq -r '.backup // .note') (restore: docs/PRODUCTION-DEPLOY.md, Rollback)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Remove the dry-run tool (migration-dry-run mode)
+        if: inputs.mode == 'migration-dry-run'
+        run: flyctl ssh console --app "$APP" --command "rm -f /tmp/migration-check.mjs" || true
 
       - name: Create the app if missing
         if: inputs.mode == 'deploy'

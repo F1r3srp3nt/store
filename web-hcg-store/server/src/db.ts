@@ -317,6 +317,8 @@ export function recordAuthEvent(db: Db, at: number, type: string, opts: { sessio
 
 export type Db = DatabaseSync;
 
+export const MIGRATION_COUNT = MIGRATIONS.length;
+
 export function openDatabase(dataDir: string): Db {
   let file = ":memory:";
   if (dataDir !== ":memory:") {
