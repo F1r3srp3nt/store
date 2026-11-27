@@ -79,6 +79,25 @@ describe("shipped catalogue", () => {
     if (!res.ok) expect(res.errors.join("\n")).toMatch(/no central product ID/);
   });
 
+  it("accepts an App Store link only as an official apps.apple.com listing on an App Store edition", () => {
+    type P = { products: { id: string; editions: { channel: string; appStoreUrl?: string | null }[] }[] };
+    const withLink = (url: string, id = "hcg-news") => {
+      const products = clone(raw.realProducts) as P;
+      products.products.find((p) => p.id === id)!.editions[0]!.appStoreUrl = url;
+      return validateCatalogue(products, raw.realReleases);
+    };
+    expect(withLink("https://apps.apple.com/no/app/hcg-news/id1234567890").ok).toBe(true);
+    expect(withLink("https://example.com/app/hcg-news/id1234567890").ok).toBe(false);
+    expect(withLink("http://apps.apple.com/no/app/hcg-news/id1234567890").ok).toBe(false);
+    expect(withLink("https://apps.apple.com/no/developer/hakmi").ok).toBe(false);
+    // HCG Nexus's edition is distributed by sideloading, not the App Store.
+    const wrongChannel = withLink("https://apps.apple.com/no/app/x/id1", "hcg-nexus");
+    expect(wrongChannel.ok).toBe(false);
+    if (!wrongChannel.ok) expect(wrongChannel.errors.join("\n")).toMatch(/App Store link but its channel/);
+    // The shipped catalogue has no App Store link until Apple publishes the listing.
+    for (const prod of realCatalogue().products) for (const e of prod.editions) expect(e.appStoreUrl, `${prod.id}/${e.id}`).toBeNull();
+  });
+
   it("contains no Dropbox or other download URLs", () => {
     expect(JSON.stringify(raw.realReleases) + JSON.stringify(raw.realProducts)).not.toMatch(/dropbox|https?:\/\/[^"]*\.(zip|dmg|exe|ipa|apk|msi|pkg)/i);
   });

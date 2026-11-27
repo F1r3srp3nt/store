@@ -95,6 +95,20 @@ export const EditionSchema = z.strictObject({
   tier: z.enum(EDITION_TIER_IDS).nullable().default(null),
   /** How HCG intends to charge for it. Never a price, never "available". */
   pricingModel: z.enum(PRICING_MODEL_IDS).default("not-set"),
+  /**
+   * The edition's official App Store listing (https://apps.apple.com/…), only for channel "app-store" and only
+   * once Apple has published it. Null until then: the page says the listing isn't available yet. Apple, not
+   * HCG Store, decides who can download it.
+   */
+  appStoreUrl: z
+    .string()
+    .url()
+    .refine((u) => {
+      const x = new URL(u);
+      return x.protocol === "https:" && x.hostname === "apps.apple.com" && /\/app\/.*id\d+/.test(x.pathname) && !x.username && !x.password;
+    }, "Use the official App Store listing URL: https://apps.apple.com/…/app/…/id<number>.")
+    .nullable()
+    .default(null),
   /** What HCG Connect requires for it, as stated by HCG. */
   access: z.enum(ACCESS_REQUIREMENT_IDS).default("unknown"),
 });

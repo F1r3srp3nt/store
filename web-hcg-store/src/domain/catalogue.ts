@@ -117,6 +117,8 @@ export function validateCatalogue(productsDoc: unknown, releasesDoc: unknown): V
     for (const e of product.editions) {
       if (e.channel === "jailbreak-package" && !e.identifiers.some((i) => i.kind === "debian-package"))
         errors.push(`Product "${product.id}" edition "${e.id}" is a jailbreak package but declares no package identifier.`);
+      if (e.appStoreUrl && e.channel !== "app-store")
+        errors.push(`Product "${product.id}" edition "${e.id}" has an App Store link but its channel is "${e.channel}".`);
     }
     if (product.supersededBy) {
       const successor = byId.get(product.supersededBy);

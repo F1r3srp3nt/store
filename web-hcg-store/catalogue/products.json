@@ -578,32 +578,35 @@
       "slug": "hcg-news",
       "name": "HCG News",
       "monogram": "N",
-      "summary": "Read news.hakmicapitalgroup.com natively on iPhone and iPad, with sections, search and offline saves, plus a newsroom for HCG News staff.",
+      "summary": "Read news.hakmicapitalgroup.com natively on iPhone and iPad, in the website's Classic or Future Edition, with sections, search and offline saves.",
       "description": [
-        "HCG News for iPhone and iPad is a native reader for the HCG News publication, with sections, search and saved articles, HCG account sign-in, and a newsroom area for staff roles.",
-        "The app's core library is tested; the app itself has not yet been compiled or run on a Mac, simulator or device."
+        "HCG News for iPhone and iPad is the native app for the HCG News publication: the featured story, breaking news and the latest reporting on technology, business, markets and the ideas shaping tomorrow, with sections, search and saved articles for offline reading.",
+        "It brings the website's identity to the app: the Classic and Future Editions, each in Light and Dark, the official HCG logos and the publication's typefaces. HCG News staff can sign in with their HCG account to use the newsroom.",
+        "Version 1.0.0 is a release candidate. It has not yet been compiled or run on a Mac, simulator or device, and it has not been submitted to the App Store."
       ],
       "category": "news-media",
       "tags": [
         "news",
-        "media"
+        "media",
+        "technology",
+        "business"
       ],
       "developmentStatus": "in-development",
-      "developmentNote": "Version 0.2.0 (build 2), development build. Not released, and not yet compiled or run on a Mac, simulator or device.",
+      "developmentNote": "Version 1.0.0 (build 3), release candidate. Not submitted to the App Store, and not yet compiled or run on a Mac, simulator or device.",
       "platforms": [
         {
           "platform": "ios",
           "support": "in-development",
           "architectures": [],
           "minimumOs": null,
-          "note": "Development build, not yet compiled on a Mac."
+          "note": "Release candidate, not yet compiled on a Mac."
         },
         {
           "platform": "ipados",
           "support": "in-development",
           "architectures": [],
           "minimumOs": null,
-          "note": "Development build, not yet compiled on a Mac."
+          "note": "Release candidate, not yet compiled on a Mac."
         }
       ],
       "media": [],
@@ -630,7 +633,7 @@
             "ipados"
           ],
           "channel": "app-store",
-          "status": "Development build 0.2.0 (2). Not released.",
+          "status": "Release candidate 1.0.0 (3). Not submitted to the App Store.",
           "identifiers": [
             {
               "kind": "bundle-id",
@@ -639,7 +642,8 @@
           ],
           "layouts": [],
           "note": null,
-          "centralEditionKey": "ios"
+          "centralEditionKey": "ios",
+          "appStoreUrl": null
         }
       ],
       "hcgRepo": [],
@@ -675,13 +679,17 @@
         "atmosphere": "media"
       },
       "currentFeatures": [
-        "Core library (HCGNewsKit) implemented and covered by automated tests"
+        "Published articles from news.hakmicapitalgroup.com: featured story, breaking news, latest, sections and search",
+        "Classic and Future Editions, each in Light and Dark",
+        "Saved articles with offline downloads",
+        "HCG account sign-in, and a newsroom for HCG News staff roles",
+        "Core library (HCGNewsKit) covered by automated tests"
       ],
       "plannedFeatures": [
+        "App Store release",
         "Notifications",
         "Saved-article sync",
-        "Additional platforms (Mac, widgets, Watch, Android or web)",
-        "App Store release"
+        "Additional platforms (Mac, widgets, Watch, Android or web)"
       ],
       "requirements": [
         "iPhone or iPad with iOS or iPadOS 17.0 or later"

@@ -178,6 +178,17 @@ function EditionCard({
             )}
           </dl>
           {edition.note && <p className="fine">{edition.note}</p>}
+          {edition.channel === "app-store" && (
+            <div className="edition__appstore">
+              {edition.appStoreUrl ? (
+                <a className="button button--primary" href={edition.appStoreUrl} rel="noopener noreferrer">
+                  View on the App Store <IconArrowRight />
+                </a>
+              ) : (
+                <p className="status-note">App Store listing not available yet. This page will link to it once Apple publishes it.</p>
+              )}
+            </div>
+          )}
           {edition.channel === "jailbreak-package" && repo && (
             <div className="edition__repo">
               <h4 className="feature-heading">Installing from HCG Repo</h4>

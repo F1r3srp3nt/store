@@ -49,6 +49,7 @@ The production build (`npm run build`) also refuses to build an invalid catalogu
 | `supersededBy` | ID of the product this one has been merged into, or `null`. A superseded product is hidden from listings, search and filters but **keeps its page, ID, links and entitlements**; the page points to the successor. The successor must exist and must not itself be superseded, and a superseded product has no collections. |
 | `formerNames[]` | Earlier names of this product. Shown as "Formerly …" and included in search. |
 | `currentReleaseId` | Explicit pointer to the current approved release. `null` shows "No public release supplied". |
+| `editions[].appStoreUrl` | The edition's official App Store listing (`https://apps.apple.com/…/app/…/id<number>`), only for `channel: "app-store"`, and only once Apple has published it. `null` until then: the page says "App Store listing not available yet". When set, the edition shows **View on the App Store**. Apple decides downloads; HCG Store grants nothing. |
 | `catalogueNotes` | Public notes about open questions (naming, scope, classification). |
 
 Everything in these files is bundled into the public website. Do not put anything private in them.
