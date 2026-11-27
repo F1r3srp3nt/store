@@ -25,7 +25,7 @@ export interface UploadProgress {
   message: string | null;
   retries: number;
 }
-export interface Declaration { platform: string; format: string; architectures: string[]; minimumOs: string | null }
+export interface Declaration { platform: string; format: string; architectures: string[]; minimumOs: string | null; signing?: { status: string; evidence: string | null } }
 
 const JOURNAL = "hcg-store.uploads";
 export interface JournalEntry { artifactId: string; releaseId: string; fileName: string; size: number; lastModified: number; sha256: string; startedAt: number }

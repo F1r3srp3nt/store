@@ -7,6 +7,7 @@
  * Control (127.0.0.1 only, standing in for HCG's decisions):
  *   POST /__e2e/grant/:sub/:permission     store.publish | store.release.approve | store.release.publish | licence:<central>:<edition>
  *   POST /__e2e/desktop-token/:sub         an access token HCG Connect issued to the TEST desktop client for :sub
+ *   POST /__e2e/founder/:sub              HCG's Founder policy (founder_owner_all_products) for :sub
  *   POST /__e2e/slow/:ms                   slow every upload chunk down (to interrupt an upload half-way)
  */
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -81,6 +82,8 @@ createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
     return void res.end(JSON.stringify({ token: await idp.accessToken({ sub, email: `${sub}@example.test`, name: sub }, DESKTOP_CLIENT) }));
   }
+  // TEST stand-in for HCG's Owner activating the Founder policy (founder_owner_all_products) for a subject.
+  if (req.method === "POST" && (m = /^\/__e2e\/founder\/([^/]+)$/.exec(url))) { authority.setFounderPolicy(decodeURIComponent(m[1]!), true); return void res.writeHead(204).end(); }
   if (req.method === "POST" && (m = /^\/__e2e\/slow\/(\d+)$/.exec(url))) { slowMs = Number(m[1]); return void res.writeHead(204).end(); }
   if (req.method === "PUT" && url.startsWith("/publishing-upload/") && slowMs > 0) return void setTimeout(() => void app.handle(req, res), slowMs);
   void app.handle(req, res);

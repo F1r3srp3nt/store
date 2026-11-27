@@ -168,6 +168,54 @@ Coordination for the desktop teams (Executable Maker, Store Manager, the future 
 5. Approve, publish, supersede, restore and revoke are browser-only. Desktop apps open the Control Center, or the
    review page (`reviewUrl`).
 
+## 5a. Complete release administration on the website
+
+The website is a full administrative client of HCG Store and stays one: it needs no desktop application. HCG Store
+Manager and HCG Executable Maker are additional clients of the **same** endpoints, permissions and hash-chained audit;
+there is no second approval database. Every step is checked again on the server, with HCG's permissions read live.
+
+| Step | Where (Control Center → Releases, Release readiness) | Server |
+|---|---|---|
+| Create a draft · upload files (resumable) · declare signing as checked on a Mac/PC, with evidence | Upload application | `POST /releases`, `POST /releases/:id/artifacts`, upload, `POST /artifacts/:id/complete` |
+| Inspect files, validation, signing, notarization, Release Passports | Release readiness → Files | `GET /releases/:id/readiness` |
+| Edit release details (notes, limitations, requested eligibility) — a submitted or approved release returns to draft | Edit release details | `PATCH /releases/:id` (store.publish) |
+| Submit for review | Submit for review | `POST /releases/:id/submit` |
+| Record the Founder's own exception | Record founder exception | `POST /releases/:id/founder-exception` (browser only) |
+| Approve · publish | Approve · Publish | `POST /releases/:id/approve` · `/publish` (browser only) |
+| Request changes (back to draft) · reject (withdrawn, reason recorded) | Request changes · Reject | `POST /releases/:id/request-changes` · `/reject` (store.release.approve) |
+| Current version per platform · supersede · roll back · disable · withdraw · revoke | Release card actions | `/supersede`, `/restore`, `/disable`, `/withdraw`, `/revoke` |
+| History and audit | Details and history | `GET /releases/:id` (audit) |
+
+**Release Readiness Inspector.** For each release under review it shows the status, artifact verification, signing,
+notarization, the three HCG permissions of the person looking, separation of duties, and every step with
+*Available*, *Done* or *Not available*. A step that cannot run is shown disabled **with its reasons** and, where one
+exists, the action that resolves it (e.g. *Submit for review*, *Record founder exception*, *Add release notes*).
+
+**The Founder's own exception (website).** The person who created or submitted a release may approve and publish it
+for the public only with a founder-operated exception for that exact release and those exact files. On the website,
+the Founder records it personally when, and only when:
+- HCG's `/me` reports the Founder policy (`founder_owner_all_products`) and `/access` reports HCG Store as
+  founder-owned for that account — never an e-mail address, a Store profile or anything the browser sends;
+- the account holds store.publish, store.release.approve and store.release.publish;
+- the release is the account's own, not yet published, with verified files and no upload in progress;
+- the files meet the mandatory signing requirements for public delivery (below);
+- the person types the version, gives a reason, confirms the files digest they reviewed and acknowledges that it is
+  not an independent review.
+
+It is recorded with the Founder's account, the release, every file's SHA-256 and the files digest, the reason, the time
+and the central basis; approval and publication carry `governance.independentReview: false`. No reviewer is invented.
+Everyone else (including staff holding all three permissions) keeps separation of duties: another person approves.
+`HCG_STORE_FOUNDER_WEB_EXCEPTIONS=off` limits exceptions to the operator path (`mode=release-exception`).
+
+**Mandatory signing for public delivery (never changed by an exception).** Every macOS file customers would receive
+must be Developer ID signed and notarized (HCG Store sees the signature seal in the file; notarization is reported by
+the uploader's check — HCG Executable Maker, a CI import verified by HCG Store, or the website uploader with
+evidence); iOS and Android device builds must be installable. Unsigned files can still be approved for private or
+internal testing.
+
+**Diagnosis.** `mode=release-diagnosis` (deploy workflow) prints every release, its files, exceptions, current targets
+and the recent audit from the production database, opened read-only; accounts appear only as one-way references.
+
 ## 6. Product Manager
 
 - **Listed products**: the catalogue entry comes from HCG (HCG ERP is the source of truth; catalogue files are

@@ -102,6 +102,20 @@ async function call<T>(method: string, path: string, body?: unknown, opts: { rev
 }
 
 const enc = encodeURIComponent;
+/** One step of the Release Readiness Inspector: allowed now, or exactly why not and what resolves it. */
+export interface Gate { allowed: boolean; reasons: string[]; resolution: { action: string; label: string } | null }
+export interface Readiness {
+  releaseId: string; version: string; status: string; stage: string; availability: string; revision: number; requestedEligibility: string; approvedEligibility: string | null;
+  files: { verified: number; pending: number; rejected: number; list: { id: string; fileName: string; platform: string; status: string; sha256: string | null; signingReported: string;
+    readiness: { status: string; label: string }; problems: string[]; passport: { matched: boolean; provider: string | null; runId: string | null; commit: string | null } | null; buildProvider: string | null }[] };
+  signing: { publicBlockers: string[]; notarized: { fileName: string; notarized: boolean }[] };
+  permissions: { submit: boolean; approve: boolean; publication: boolean; required: { submit: string | null; approve: string | null; publish: string | null } };
+  governance: { sameParty: boolean; createdBy: string; submittedBy: string | null; exception: { id: string; artifactDigest: string; createdAt: number } | null; founderConfirmedByHcg: boolean | null; filesDigest: string | null; independentReview: boolean };
+  steps: { submit: Gate; founderException: Gate; approve: Gate; publish: Gate; reject: Gate; requestChanges: Gate; edit: Gate };
+  outstanding: string[];
+  reviewNotes: { at: number; action: string; reason: string | null }[];
+}
+
 export const adminApi = {
   me: async () => {
     const me = await call<Me>("GET", "/api/v1/publishing/me");
@@ -117,9 +131,11 @@ export const adminApi = {
     call<{ releases: AdminRelease[]; auditIntact: boolean }>("GET", `/api/v1/publishing/manager?${new URLSearchParams({ ...(productId ? { productId } : {}), ...(archived ? { include: "archived" } : {}) })}`),
   release: (id: string) => call<AdminRelease & { auditIntact: boolean }>("GET", `/api/v1/publishing/releases/${enc(id)}`),
   createRelease: (r: NewRelease) => call<AdminRelease>("POST", "/api/v1/publishing/releases", r),
-  declareArtifact: (releaseId: string, a: { fileName: string; platform: string; format: string; sizeBytes: number; sha256: string; architectures: string[]; minimumOs: string | null }) =>
+  declareArtifact: (releaseId: string, a: { fileName: string; platform: string; format: string; sizeBytes: number; sha256: string; architectures: string[]; minimumOs: string | null; signing?: { status: string; evidence: string | null } }) =>
     call<{ artifact: AdminArtifact; uploadUrl: string; chunkBytes: number; expiresAt: number }>("POST", `/api/v1/publishing/releases/${enc(releaseId)}/artifacts`, {
-      ...a, buildProvider: "manual-upload", signing: { status: "not-checked", evidence: null, tool: null },
+      ...a, buildProvider: "manual-upload",
+      // What the uploader checked on their own machine (codesign/spctl/stapler or signtool), recorded as REPORTED by the website.
+      signing: { status: a.signing?.status ?? "not-checked", evidence: a.signing?.evidence ?? null, tool: a.signing && a.signing.status !== "not-checked" ? "reported on the HCG Store website" : null },
     }),
   renewUploadUrl: (artifactId: string) => call<{ received: number; uploadUrl: string; chunkBytes: number }>("POST", `/api/v1/publishing/artifacts/${enc(artifactId)}/upload-url`),
   complete: (artifactId: string) => call<{ artifact: AdminArtifact; message?: string }>("POST", `/api/v1/publishing/artifacts/${enc(artifactId)}/complete`, undefined, { allow: [422] }),
@@ -134,6 +150,12 @@ export const adminApi = {
     call<AdminRelease & { switch: SwitchResult }>("POST", `/api/v1/publishing/releases/${enc(id)}/${op}`, { confirm, reason }, { revision }),
   verifyChecksums: (id: string) => call<{ ok: boolean; files: { fileName: string; expected: string | null; actual: string | null; ok: boolean }[] }>("POST", `/api/v1/publishing/releases/${enc(id)}/verify-checksums`, undefined, { allow: [409] }),
   downloadUrl: (artifactId: string) => call<{ url: string; sha256: string }>("POST", `/api/v1/publishing/artifacts/${enc(artifactId)}/download-url`),
+  readiness: (id: string) => call<Readiness>("GET", `/api/v1/publishing/releases/${enc(id)}/readiness`),
+  updateRelease: (id: string, revision: number, patch: { releaseNotes?: string[]; knownLimitations?: string[]; requestedEligibility?: string; supersedePreviousOnPublish?: boolean }) =>
+    call<AdminRelease>("PATCH", `/api/v1/publishing/releases/${enc(id)}`, patch, { revision }),
+  founderException: (id: string, revision: number, body: { confirm: string; reason: string; filesDigest: string }) =>
+    call<{ exception: ReleaseExceptionView; release: AdminRelease }>("POST", `/api/v1/publishing/releases/${enc(id)}/founder-exception`, body, { revision }),
+  review: (id: string, op: "reject" | "request-changes", revision: number, reason: string) => call<AdminRelease>("POST", `/api/v1/publishing/releases/${enc(id)}/${op}`, { reason }, { revision }),
   changes: (since: number) => call<{ latestSeq: number; changes: { seq: number; action: string; releaseId: string | null; productId: string | null }[] }>("GET", `/api/v1/publishing/changes?since=${since}`),
 };
 

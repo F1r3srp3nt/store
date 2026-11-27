@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run, permission-diagnosis, release-records]
+        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run, permission-diagnosis, release-records, release-diagnosis]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -101,12 +101,12 @@ jobs:
           fi
 
       - uses: actions/setup-node@v4
-        if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run'
+        if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run' || inputs.mode == 'release-diagnosis'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web-hcg-store/package-lock.json
-      - if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run'
+      - if: inputs.mode == 'deploy' || inputs.mode == 'migration-dry-run' || inputs.mode == 'release-diagnosis'
         run: npm ci
       - name: Unit, component and server tests
         if: inputs.mode == 'deploy'
@@ -422,6 +422,20 @@ jobs:
           out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/permission-diagnosis.mjs --session-ref $ref" | grep '^{' | tail -1)
           { echo "## Publishing permission diagnosis"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$out" | jq -e 'has("error") | not' >/dev/null
+      # ---- release-diagnosis: every release, its files, founder exceptions, current targets and the recent publishing
+      # audit, read-only (the database is opened read-only). Accounts appear only as one-way references. ----
+      - name: Release diagnosis (read-only)
+        if: inputs.mode == 'release-diagnosis'
+        run: |
+          npx esbuild server/src/release-diagnosis-cli.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile="$RUNNER_TEMP/release-diagnosis.mjs" --log-level=warning
+          printf 'put %s /tmp/release-diagnosis.mjs\n' "$RUNNER_TEMP/release-diagnosis.mjs" | flyctl ssh sftp shell --app "$APP"
+          out=$(flyctl ssh console --app "$APP" --command "sh -c 'chmod 644 /tmp/release-diagnosis.mjs && node --no-warnings server-dist/with-machine-env.mjs /tmp/release-diagnosis.mjs; rm -f /tmp/release-diagnosis.mjs'" | grep '^{' | tail -1)
+          echo "$out" | jq -e '.format == "hcg.store.release-diagnosis/1"' >/dev/null
+          { echo "## Release diagnosis"; echo '```json'; echo "$out" | jq .; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "DIAG_SESSIONS $(echo "$out" | jq -c '[.sessions[] | [.session_ref, .account, .ended]]')"
+          echo "$out" | jq -r '.releases[] | "DIAG_RELEASE \(.id) \(.productId)/\(.editionId) \(.version)+\(.build) status=\(.status) avail=\(.availability) req=\(.requestedEligibility) appr=\(.approvedEligibility) created=\(.createdBy) submitted=\(.submittedBy) approvedBy=\(.approvedBy) source=\(.uploadSource // "-" | tostring | .[0:60]) files=\([.files[] | "\(.fileName)[\(.status),\(.signing),\(.problems|length)p]"] | join(";")) exceptions=\([.exceptions[] | "\(.id):\(.subject):applies=\(.appliesToCurrentFiles)"] | join(";")) updated=\(.updatedAt)"'
+          echo "$out" | jq -r '.audit[0:40][] | "DIAG_AUDIT \(.seq) \(.at) \(.actor) \(.action) \(.release // "-") \(.detail | tostring | .[0:160])"'
+          echo "DIAG_CURRENT $(echo "$out" | jq -c '[.current[] | [.product_id, .edition_key, .platform, .arch, .channel, .release_id]]')"
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"

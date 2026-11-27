@@ -36,6 +36,8 @@ function macZip(name: string): string {
   const files = [
     { name: "Quasar.app/Contents/Info.plist", data: Buffer.from('<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>test.hcg.quasar</string></dict></plist>') },
     { name: "Quasar.app/Contents/MacOS/Quasar", data: randomBytes(6 * 1024 * 1024) },
+    // A signed app's seal (public macOS files must be Developer ID signed and notarized).
+    { name: "Quasar.app/Contents/_CodeSignature/CodeResources", data: Buffer.from("<plist/>") },
   ];
   const locals: Buffer[] = []; const central: Buffer[] = []; let off = 0;
   for (const f of files) {
@@ -106,9 +108,12 @@ test("the owner uploads a genuine EXE and a macOS ZIP through the website; the Z
   const rows = page.getByTestId("upload-row");
   await expect(rows).toHaveCount(2);
   await rows.nth(0).getByLabel("x64").check();
-  await expect(rows.nth(1).getByRole("combobox")).toHaveValue("macos");
+  await expect(rows.nth(1).getByRole("combobox").first()).toHaveValue("macos");
   await rows.nth(1).getByLabel("x64").check();
   await rows.nth(1).getByLabel("arm64").check();
+  // What the uploader verified on their Mac, recorded with evidence (reported; the Store also checks the seal).
+  await rows.nth(1).getByLabel("Signing, as you checked it").selectOption("notarized");
+  await rows.nth(1).getByLabel("Signing evidence (recorded)").fill("TEST: spctl accepted, source=Notarized Developer ID; stapler validate worked");
 
   // Genuine EXE: straight through.
   await rows.nth(0).getByRole("button", { name: "Upload" }).click();
@@ -157,14 +162,14 @@ test("a second person approves and publishes in the browser; a Windows update su
   await grant("cc-reviewer", "store.release.publish");
   const reviewer = await signIn(browser, "cc-reviewer", "/control-center?tab=releases");
   const card = reviewer.getByTestId("release-1.0.0-100");
-  await card.getByRole("button", { name: "Approve" }).click();
+  await card.getByTestId("step-approve").click();
   await card.getByLabel("Approve for").selectOption("public");
   await card.getByLabel(/Type the version/).fill("1.0.0");
-  await card.getByRole("button", { name: "Approve" }).last().click();
+  await card.getByTestId("confirm-approve").click();
   await expect(card.getByText("Approved for public.")).toBeVisible();
-  await card.getByRole("button", { name: "Publish" }).click();
+  await card.getByTestId("step-publish").click();
   await card.getByLabel(/Type the version/).fill("1.0.0");
-  await card.getByRole("button", { name: "Publish" }).last().click();
+  await card.getByTestId("confirm-publish").click();
   await expect(card.getByText(/Published\. Now current on:/)).toBeVisible();
   await expect(card.getByTestId("lifecycle")).toHaveText("current");
 
@@ -185,14 +190,14 @@ test("a second person approves and publishes in the browser; a Windows update su
 
   await reviewer.reload();
   const v2 = reviewer.getByTestId("release-1.1.0-110");
-  await v2.getByRole("button", { name: "Approve" }).click();
+  await v2.getByTestId("step-approve").click();
   await v2.getByLabel("Approve for").selectOption("public");
   await v2.getByLabel(/Type the version/).fill("1.1.0");
-  await v2.getByRole("button", { name: "Approve" }).last().click();
-  await v2.getByRole("button", { name: "Publish" }).click();
+  await v2.getByTestId("confirm-approve").click();
+  await v2.getByTestId("step-publish").click();
   await expect(v2.getByLabel(/Supersede the previous compatible release/)).toBeChecked();
   await v2.getByLabel(/Type the version/).fill("1.1.0");
-  await v2.getByRole("button", { name: "Publish" }).last().click();
+  await v2.getByTestId("confirm-publish").click();
   await expect(v2.getByText(/Now current on: Windows x64 \(stable\)/)).toBeVisible();
   await reviewer.reload();
   // macOS keeps 1.0.0; Windows is 1.1.0.
@@ -246,4 +251,160 @@ test("the Control Center renders in all six HCG Store themes", async ({ browser 
     await expect(page.getByTestId("release-1.0.0-100")).toBeVisible();
     await page.screenshot({ path: join(SHOTS, `09-theme-${theme}.png`) });
   }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Complete website release lifecycle (founder exception, readiness, signing, review decisions). Same serial chain as
+// above: one mock HCG Connect, one TEST Store, never two sign-ins at once.
+const FOUNDER = `rx-founder-${Date.now()}`;
+const REVIEWER = `rx-reviewer-${Date.now()}`;
+
+function rxExe(name: string): string {
+  const b = Buffer.concat([Buffer.alloc(512), randomBytes(120_000)]);
+  b.write("MZ", 0, "latin1"); b.writeUInt32LE(128, 60); b.write("PE\0\0", 128, "latin1"); b.writeUInt16LE(0x20b, 152);
+  const out = join(dir, name);
+  writeFileSync(out, b);
+  return out;
+}
+function unsignedMacZip(name: string): string {
+  const files = [{ name: "Quasar.app/Contents/Info.plist", data: Buffer.from("<plist/>") }, { name: "Quasar.app/Contents/MacOS/Quasar", data: randomBytes(40_000) }];
+  const locals: Buffer[] = []; const central: Buffer[] = []; let off = 0;
+  for (const f of files) {
+    const comp = deflateRawSync(f.data);
+    const n = Buffer.from(f.name);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(8, 8); lh.writeUInt32LE(comp.length, 18); lh.writeUInt32LE(f.data.length, 22); lh.writeUInt16LE(n.length, 26);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(0x031e, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(comp.length, 20); ch.writeUInt32LE(f.data.length, 24); ch.writeUInt16LE(n.length, 28); ch.writeUInt32LE((0o100755 << 16) >>> 0, 38); ch.writeUInt32LE(off, 42);
+    locals.push(lh, n, comp); central.push(ch, n); off += 30 + n.length + comp.length;
+  }
+  const cd = Buffer.concat(central);
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16);
+  const out = join(dir, name);
+  writeFileSync(out, Buffer.concat([...locals, cd, end]));
+  return out;
+}
+
+async function control(path: string) {
+  expect((await fetch(`${STORE}${path}`, { method: "POST" })).status).toBe(204);
+}
+async function signInAs(browser: Browser, sub: string, returnTo = "/control-center"): Promise<Page> {
+  const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 }, deviceScaleFactor: 1 });
+  await fetch(`${IDP}/__test/next-user/${sub}`, { method: "POST" });
+  const page = await ctx.newPage();
+  await page.goto(`${STORE}/auth/login?return_to=${encodeURIComponent(returnTo)}`);
+  await page.waitForURL((u) => u.pathname === returnTo.split("?")[0]);
+  return page;
+}
+const shotOf = async (page: Page, name: string, el?: ReturnType<Page["getByTestId"]>) => {
+  await page.evaluate(() => document.querySelector<HTMLElement>(".site-header")?.style.setProperty("position", "static", "important"));
+  if (el) await el.screenshot({ path: join(SHOTS, `${name}.png`) });
+  else await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+};
+async function createDraft(page: Page, version: string, build: string, file: string, mac = false) {
+  await page.getByRole("tab", { name: "Upload application" }).click();
+  await page.getByLabel("Product", { exact: true }).selectOption("fixture-quasar-shell");
+  await page.getByLabel("Version", { exact: true }).fill(version);
+  await page.getByLabel("Build", { exact: true }).fill(build);
+  await page.getByLabel("Release notes (one per line)").fill(`TEST ${version}: website-administered release.`);
+  await page.getByRole("button", { name: "Create private draft" }).click();
+  await page.getByTestId("file-input").setInputFiles(file);
+  const row = page.getByTestId("upload-row").first();
+  await row.getByLabel(mac ? "arm64" : "x64").check();
+  await row.getByRole("button", { name: "Upload" }).click();
+  await expect(row.getByTestId("upload-phase")).toHaveText("Verified", { timeout: 60_000 });
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await expect(page.getByRole("tab", { name: "Releases", selected: true })).toBeVisible();
+}
+
+
+test("the Founder submits their own release; the inspector explains why approval waits, and resolves it with the audited founder exception", async ({ browser }) => {
+  for (const p of ["store.publish", "store.release.approve", "store.release.publish"]) await control(`/__e2e/grant/${FOUNDER}/${p}`);
+  await control(`/__e2e/founder/${FOUNDER}`);
+  const page = await signInAs(browser, FOUNDER);
+  await createDraft(page, "7.0.0", "700", rxExe("Quasar-7.0.0-x64.exe"));
+  const card = page.getByTestId("release-7.0.0-700");
+  const inspector = card.getByTestId("readiness");
+  await expect(inspector).toBeVisible();
+  // Approval is not silently missing: it is listed, disabled, with the reason and the resolution.
+  const approve = inspector.locator('[data-step="approve"]');
+  await expect(approve.getByRole("button", { name: "Approve" })).toBeDisabled();
+  await expect(approve.getByTestId("why-approve")).toContainText("founder-operated exception");
+  await expect(inspector).toContainText("HCG confirms the Founder policy for your account");
+  await shotOf(page, "10-readiness-approval-waits", inspector);
+
+  await approve.getByTestId("resolve-approve").click();
+  const form = inspector.locator('[data-step="founderException"]');
+  await expect(form).toContainText("not an independent review");
+  await form.getByLabel("Reason (recorded)").fill("TEST: the Founder releases their own build");
+  await form.getByLabel(/I understand this is not an independent review/).check();
+  await form.getByLabel(/Type the version/).fill("7.0.0");
+  await shotOf(page, "11-founder-exception-form", inspector);
+  await form.getByTestId("confirm-founderException").click();
+  await expect(card.getByText(/Founder exception rx-[a-f0-9]+ recorded for these exact files/)).toBeVisible();
+  await expect(card.getByTestId("founder-exception")).toBeVisible();
+
+  await inspector.getByTestId("step-approve").click();
+  await inspector.getByLabel("Approve for").selectOption("public");
+  await inspector.getByLabel(/Type the version/).fill("7.0.0");
+  await inspector.getByTestId("confirm-approve").click();
+  await expect(card.getByText("Approved for public.")).toBeVisible();
+  await inspector.getByTestId("step-publish").click();
+  await inspector.getByLabel(/Type the version/).fill("7.0.0");
+  await inspector.getByTestId("confirm-publish").click();
+  await expect(card.getByText(/Published\. Now current on: Windows x64/)).toBeVisible();
+  await expect(card.getByTestId("lifecycle")).toHaveText("current");
+  // History and audit: the exception, approval and publication are recorded under the Founder.
+  await card.getByRole("button", { name: "Details and history" }).click();
+  await expect(card.locator(".cc-audit")).toContainText("release.exception-granted");
+  await expect(card.locator(".cc-audit")).toContainText("release.published");
+  await shotOf(page, "12-founder-published", card);
+});
+
+test("unsigned macOS files are never approved for the public, not even with a founder exception; the reason is shown", async ({ browser }) => {
+  const page = await signInAs(browser, FOUNDER, "/control-center");
+  await createDraft(page, "7.1.0", "710", unsignedMacZip("Quasar-7.1.0-macOS.zip"), true);
+  const inspector = page.getByTestId("release-7.1.0-710").getByTestId("readiness");
+  await expect(inspector).toContainText("do not meet public signing requirements");
+  const ex = inspector.locator('[data-step="founderException"]');
+  await expect(ex.getByRole("button", { name: "Record founder exception" })).toBeDisabled();
+  await expect(ex.getByTestId("why-founderException")).toContainText("never changes them");
+  await shotOf(page, "13-unsigned-macos-refused", inspector);
+});
+
+test("a reviewer requests changes and rejects with recorded reasons; an ordinary customer gets no administration", async ({ browser }) => {
+  for (const p of ["store.release.approve", "store.release.publish"]) await control(`/__e2e/grant/${REVIEWER}/${p}`);
+  const founder = await signInAs(browser, FOUNDER, "/control-center");
+  await createDraft(founder, "7.2.0", "720", rxExe("Quasar-7.2.0-x64.exe"));
+  const reviewer = await signInAs(browser, REVIEWER, "/control-center?tab=releases");
+  const card = reviewer.getByTestId("release-7.2.0-720");
+  const inspector = card.getByTestId("readiness");
+  // An independent reviewer: approval is available, no exception is involved.
+  await expect(inspector.getByTestId("step-approve")).toBeEnabled();
+  await inspector.getByTestId("step-requestChanges").click();
+  await inspector.getByLabel("Review reason (recorded)").fill("TEST: add known limitations");
+  await inspector.getByTestId("confirm-requestChanges").click();
+  await expect(card.getByText("Returned to draft for changes")).toBeVisible();
+  await expect(card.getByTestId("lifecycle")).not.toHaveText("submitted");
+  await expect(inspector).toContainText("TEST: add known limitations");
+
+  // The Founder edits and resubmits; the reviewer rejects.
+  await founder.goto(`${STORE}/control-center?tab=releases`);
+  const fi = founder.getByTestId("release-7.2.0-720").getByTestId("readiness");
+  await fi.getByTestId("step-edit").click();
+  await fi.getByLabel("Known limitations (one per line)").fill("TEST: none known.");
+  await fi.getByTestId("confirm-edit").click();
+  await expect(founder.getByText("Release details saved.")).toBeVisible();
+  await fi.getByTestId("step-submit").click();
+  await fi.getByTestId("confirm-submit").click();
+  await expect(founder.getByText("Submitted for review.")).toBeVisible();
+  await reviewer.reload();
+  await inspector.getByTestId("step-reject").click();
+  await inspector.getByLabel("Review reason (recorded)").fill("TEST: wrong build");
+  await inspector.getByTestId("confirm-reject").click();
+  await expect(card.getByText("Rejected (recorded with your reason).")).toBeVisible();
+  await expect(card.getByTestId("lifecycle")).toHaveText("withdrawn");
+
+  const customer = await signInAs(browser, `rx-customer-${Date.now()}`);
+  await expect(customer.getByTestId("not-authorised")).toBeVisible();
+  const r = await customer.evaluate(async () => (await fetch("/api/v1/publishing/manager")).json());
+  expect(r.releases).toEqual([]);
 });
