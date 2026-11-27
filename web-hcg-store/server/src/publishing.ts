@@ -64,6 +64,7 @@ import { findByPackageId, findProduct, type ProtectedArtifact, type Registry, ty
 import type { Session } from "./sessions";
 import { isSemver } from "../../src/domain/version";
 import { BUILD_PROVIDER_IDS } from "../../src/domain/taxonomy";
+import { REJECTED_SHA256 } from "./release-import-request";
 
 export interface Actor {
   sub: string;
@@ -598,6 +599,7 @@ export function createPublishing(deps: PublishingDeps) {
     const sha256 = await hashFile(staged);
     const problems: string[] = [];
     if (sha256 !== a.declared_sha256) problems.push(`SHA-256 mismatch: received ${sha256}, declared ${a.declared_sha256}. The file changed or was corrupted in transit.`);
+    if (REJECTED_SHA256.has(sha256)) problems.push("HCG Store refused this exact file earlier (rejected-artifacts.json); it can never be published.");
     const content = problems.length ? null : inspectContent(staged, a.platform as PublishPlatform, a.format as PublishFormat);
     if (content) problems.push(...content.problems);
     if (content?.kind && a.declared_kind && content.kind !== a.declared_kind && content.kind !== "simulator-build") {
@@ -1625,6 +1627,7 @@ export function createPublishing(deps: PublishingDeps) {
       const sha256 = sha(path, "sha256");
       if (size !== f.sizeBytes) problems.push(`${f.fileName}: ${size} bytes, the draft says ${f.sizeBytes}.`);
       if (sha256 !== f.sha256) problems.push(`${f.fileName}: SHA-256 ${sha256}, the draft says ${f.sha256}.`);
+      if (REJECTED_SHA256.has(sha256)) problems.push(`${f.fileName}: HCG Store refused this exact file earlier (rejected-artifacts.json); it is never imported.`);
       const src = opts.source;
       if (src.kind === "github-release") {
         // No build evidence exists for a hand-built file: claim none.

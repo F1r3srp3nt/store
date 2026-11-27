@@ -119,8 +119,13 @@ jobs:
           app=$(find zipx -maxdepth 2 -name '*.app' -type d | head -1)
           pl="$app/Contents/Info.plist"; v=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$pl"); b=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$pl")
           id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$pl"); exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$pl")"
-          note "bundle: $id version $v build $b minimum $(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$pl" 2>/dev/null) arch $(lipo -archs "$exe")"
+          min=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$pl" 2>/dev/null || true)
+          note "bundle: $id version $v build $b minimum $min arch $(lipo -archs "$exe")"
           [ "$id" = com.hakmicapitalgroup.hcgmail ] || bad "bundle identifier $id"
+          [ "$v" = "$VERSION" ] || bad "CFBundleShortVersionString $v, expected $VERSION"
+          want_b=$(jq -r .release.build draft/store-release-draft.json); [ "$b" = "$want_b" ] || bad "CFBundleVersion $b, the draft says build $want_b"
+          [ -n "$min" ] || bad "no LSMinimumSystemVersion"
+          jq -n --arg min "$min" --arg v "$v" --arg b "$b" '{minimumSystemVersion: $min, version: $v, build: $b}' > facts.json
           [ "$(lipo -archs "$exe")" = arm64 ] || bad "architecture $(lipo -archs "$exe")"
           codesign -dvvv "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|Identifier|Timestamp|Runtime Version|Sealed Resources|Info.plist|Signature|flags)' | tee -a "$GITHUB_STEP_SUMMARY"
           codesign -dvvv "$app" 2>&1 | grep -q '^Authority=Developer ID Application:' || bad "app is not signed with a Developer ID Application certificate"
@@ -137,7 +142,7 @@ jobs:
           echo "$out" | grep -q 'accepted' && echo "$out" | grep -q 'Notarized Developer ID' || bad "Gatekeeper did not accept the installer as Notarized Developer ID"
           xcrun stapler validate "$pkg" >st2.txt 2>&1 && note "PASS installer notarization ticket stapled" || { cat st2.txt; bad "no stapled ticket on the installer"; }
           pkgutil --expand "$pkg" pkgx && for d in pkgx/Distribution pkgx/*/PackageInfo; do [ -f "$d" ] && grep -oE '(hostArchitectures|install-location|version|os-version min)="[^"]*"' "$d" | sort -u | sed 's/^/  /' | tee -a "$GITHUB_STEP_SUMMARY"; done
-          for s in pkgx/*/Scripts pkgx/Scripts; do [ -e "$s" ] && note "installer scripts present: $(ls "$s" | tr '\n' ' ')"; done
+          for s in pkgx/*/Scripts pkgx/Scripts; do [ -e "$s" ] && bad "the installer runs scripts: $(ls "$s" | tr '\n' ' ')"; done
           payload=$(find pkgx -name Payload | head -1); mkdir -p payload && (cd payload && cat "../$payload" | gunzip -dc | cpio -i --quiet 2>/dev/null || aa extract -i "../$payload" 2>/dev/null || true)
           papp=$(find payload -maxdepth 3 -name '*.app' -type d | head -1)
           if [ -n "$papp" ]; then
@@ -151,16 +156,23 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os
-          d = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "draft", "store-release-draft.json")))
+          t = os.environ["RUNNER_TEMP"]
+          d = json.load(open(os.path.join(t, "draft", "store-release-draft.json")))
+          facts = json.load(open(os.path.join(t, "facts.json")))
           run = int(os.environ["RUN_ID"]); commit = d["artifacts"][0]["sourceCommit"]
+          store_run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          notes = [n for n in d["release"]["releaseNotes"] if "free during testing" not in n]
           req = {
             "$comment": f"HCG Mail 1.0.0-beta.1 for macOS (Apple silicon): Developer ID signed, notarized and stapled by HCG Mail's CI run {run}; verified independently by HCG Store's hcg-mail-macos-evidence workflow. Imported unchanged; expect.sha256 pins the exact bytes. Free, permanently, no account (edition pricingModel free, HCG_STORE_ANONYMOUS_FREE_PRODUCTS=hcg-mail).",
             "format": "hcg.store.release-import/1",
             "source": {"repository": "F1r3srp3nt/HCG-Mail", "commit": commit, "runId": run, "filesArtifact": "hcg-mail-macos-1.0.0-beta.1", "draftArtifact": "hcg-mail-macos-release-manifest"},
             "expect": {"productId": "hcg-mail", "editionId": "macos-desktop", "version": d["release"]["version"], "build": d["release"]["build"], "channel": "beta", "distribution": "free",
-                       "files": len(d["artifacts"]), "sha256": {a["fileName"]: a["sha256"] for a in d["artifacts"]}},
+                       "platform": "macos", "files": len(d["artifacts"]), "sha256": {a["fileName"]: a["sha256"] for a in d["artifacts"]}},
             "requestedEligibility": "public",
-            "knownLimitations": ["<review: from the run's release manifest and HCG Store's verification>"],
+            "knownLimitations": ["<review: the run's own limitations are in release-manifest.json (artifacts[].knownLimitations)>"],
+            "reviewedReleaseNotes": [f"HCG Mail {d['release']['version']} for Mac: public beta. Free, with no HCG account needed."] + notes,
+            "storeVerifiedSigning": {a["fileName"]: {"status": "notarized", "evidence": f"Verified by HCG Store ({store_run}): Developer ID signature, stapled notarization ticket, Gatekeeper accepted the quarantined download as Notarized Developer ID."} for a in d["artifacts"]},
+            "reviewedFileFields": {a["fileName"]: {"minimumOs": f"macOS {facts['minimumSystemVersion']}", "package": None} for a in d["artifacts"]},
           }
           os.makedirs("candidate", exist_ok=True)
           json.dump(req, open("candidate/hcg-mail-macos-1.0.0-beta.1.json", "w"), indent=2)

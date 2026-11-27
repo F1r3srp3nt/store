@@ -8,7 +8,7 @@ import { PageMeta } from "../components/PageMeta";
 import { ProductMark } from "../components/ProductArt";
 import type { Catalogue } from "../domain/catalogue";
 import { currentRelease, listedProducts } from "../domain/model";
-import type { Media, Product, Release } from "../domain/schema";
+import type { Media, Product } from "../domain/schema";
 import { PLATFORMS } from "../domain/taxonomy";
 import { assetUrl, formatBytes } from "../lib/format";
 import { useMotionAllowed } from "../theme/ThemeContext";
@@ -39,6 +39,29 @@ function formatName(platform: string, format: string): string {
   return `.${format}`;
 }
 const statusOf = (channel: string) => (channel === "beta" ? "Public Beta" : "Stable");
+const platformName = (platform: string) => PLATFORMS[platform as keyof typeof PLATFORMS]?.label ?? platform;
+
+/**
+ * The visitor's desktop platform, from the browser (User-Agent Client Hints where available, else the user agent).
+ * Only orders the downloads: every file stays offered. An iPad asking for the desktop site reports "Macintosh" but has
+ * a touch screen, so it is not treated as a Mac.
+ */
+export function visitorPlatform(nav: { userAgent?: string; platform?: string; maxTouchPoints?: number; userAgentData?: { platform?: string } } | undefined =
+  typeof navigator === "undefined" ? undefined : (navigator as never)): "macos" | "windows" | null {
+  if (!nav) return null;
+  const hint = (nav.userAgentData?.platform ?? "").toLowerCase();
+  const ua = `${nav.userAgent ?? ""} ${nav.platform ?? ""}`;
+  if (hint === "macos" || (!hint && /Macintosh|MacIntel|Mac OS X/.test(ua) && !(nav.maxTouchPoints && nav.maxTouchPoints > 1))) return "macos";
+  if (hint === "windows" || (!hint && /Windows|Win64|Win32/.test(ua))) return "windows";
+  return null;
+}
+
+/** The visitor's platform first, then the usual order; on macOS the installer (.pkg) before the app (.zip). */
+export function orderFiles<T extends { details: { platform: string; format: string } }>(files: T[], visitor: string | null): T[] {
+  const rank = (p: string) => (p === visitor ? -1 : PLATFORM_ORDER.indexOf(p));
+  const fmt = (f: string) => (f === "pkg" ? 0 : f === "zip" ? 1 : 2);
+  return [...files].sort((a, b) => rank(a.details.platform) - rank(b.details.platform) || fmt(a.details.format) - fmt(b.details.format));
+}
 
 function useLiveAccess(product: Product): Live {
   const { state: account } = useAccount();
@@ -57,13 +80,26 @@ function useLiveAccess(product: Product): Live {
 
 export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; product: Product }) {
   const landing = product.landing!;
-  const release = currentRelease(catalogue, product)!;
+  const current = currentRelease(catalogue, product)!;
   const live = useLiveAccess(product);
-  const files: File[] = live.status === "ready"
-    ? live.editions.filter((e) => e.downloadsAvailable).flatMap((e) => e.artifacts).filter((a): a is File => !!a.details)
-    : [];
+  const [visitor] = useState(() => visitorPlatform());
+  const files: File[] = orderFiles(
+    live.status === "ready" ? live.editions.filter((e) => e.downloadsAvailable).flatMap((e) => e.artifacts).filter((a): a is File => !!a.details) : [],
+    visitor,
+  );
   const anonymous = live.status === "ready" && live.editions.some((e) => e.anonymous && e.downloadsAvailable);
-  const primary = [...files].sort((a, b) => PLATFORM_ORDER.indexOf(a.details.platform) - PLATFORM_ORDER.indexOf(b.details.platform))[0] ?? null;
+  const primary = files[0] ?? null;
+  // The hero describes the release of the file it offers (e.g. the macOS release for a Mac visitor).
+  const release = (primary && catalogue.releases.find((r) => r.id === primary.releaseId && r.productId === product.id)) || current;
+  // One release per platform can be live at once (Windows and macOS each have their own current release).
+  const liveReleases = [...new Map(files.map((f) => [f.releaseId, f])).values()].map((f) => ({
+    platform: f.details.platform,
+    release: catalogue.releases.find((r) => r.id === f.releaseId && r.productId === product.id) ?? null,
+  }));
+  const shownReleases = liveReleases.some((r) => r.release) ? liveReleases.filter((r) => r.release) : [{ platform: null, release: current }];
+  const livePlatforms = new Set(files.map((f) => f.details.platform));
+  const upcoming = landing.upcoming.filter((u) => !livePlatforms.has(u.platform));
+  const alsoFor = groupByPlatform(files, visitor).filter(([p]) => p !== primary?.details.platform).map(([, g]) => g[0]!);
   const free = product.editions.some((e) => e.pricingModel === "free") || anonymous;
   const screenshots = product.media.filter((m) => m.kind === "screenshot");
   const [viewer, setViewer] = useState<number | null>(null);
@@ -76,7 +112,7 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
     <div className={`launch${motion ? " launch--motion" : ""}`} data-product={product.id}>
       <PageMeta
         title={`${product.name}: ${landing.headline.replace(/\.$/, "")}`}
-        description={`${landing.tagline} ${statusOf(release.channel)} ${release.version}${primary ? ` for ${targetLabel(primary.details.platform, primary.details.architectures)}` : ""}${free ? ", free" : ""}.`}
+        description={`${landing.tagline} ${statusOf(release.channel)} ${release.version}${files.length ? ` for ${[...livePlatforms].map((p) => platformName(p)).join(" and ")}` : ""}${free ? ", free" : ""}.`}
       />
       <div className="launch__backdrop" aria-hidden="true" />
 
@@ -103,7 +139,7 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
           <p className="launch-hero__headline">{landing.headline}</p>
           <p className="launch-hero__tagline">{landing.tagline}</p>
           <dl className="launch-hero__facts">
-            <div><dt>Version</dt><dd>{release.version}</dd></div>
+            <div><dt>Version</dt><dd>{primary?.details.version ?? release.version}</dd></div>
             <div><dt>Price</dt><dd>{free ? "Free" : "See editions"}</dd></div>
             {primary && <div><dt>Platform</dt><dd>{targetLabel(primary.details.platform, primary.details.architectures)}</dd></div>}
             {primary && <div><dt>Size</dt><dd>{formatBytes(primary.details.sizeBytes)}</dd></div>}
@@ -111,9 +147,21 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
           </dl>
           <DownloadAction live={live} file={primary} big />
           {primary && <UnsignedNote file={primary} />}
-          {landing.upcoming.length > 0 && (
+          {alsoFor.length > 0 && (
+            <p className="launch-hero__also" data-testid="launch-also">
+              Also available for{" "}
+              {alsoFor.map((f, i) => (
+                <span key={f.id}>
+                  {i > 0 && (i === alsoFor.length - 1 ? " and " : ", ")}
+                  <a className="text-link" href={`#plat-${f.details.platform}`}>{platformName(f.details.platform)}</a>
+                </span>
+              ))}
+              .
+            </p>
+          )}
+          {upcoming.length > 0 && (
             <p className="launch-hero__upcoming">
-              {landing.upcoming.map((u) => <span key={u.platform} className="launch-chip">{u.label}: coming soon</span>)}
+              {upcoming.map((u) => <span key={u.platform} className="launch-chip">{u.label}: coming soon</span>)}
             </p>
           )}
         </div>
@@ -171,15 +219,16 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
           <div className="launch-platforms">
             {live.status === "loading" && <p className="muted">Checking what is available…</p>}
             {live.status === "unavailable" && <p className="notice" role="note"><IconInfo className="inline-icon" /> Downloads could not be checked right now. Try again shortly.</p>}
-            {groupByPlatform(files).map(([platform, group]) => (
+            {groupByPlatform(files, visitor).map(([platform, group]) => (
               <article key={platform} className="launch-platform launch-platform--available" aria-labelledby={`plat-${platform}`}>
                 <header>
-                  <h3 id={`plat-${platform}`}>{PLATFORMS[platform as keyof typeof PLATFORMS]?.label ?? platform}</h3>
+                  <h3 id={`plat-${platform}`}>{platformName(platform)}</h3>
                   <span className="launch-badge launch-badge--live">Available now</span>
+                  {platform === visitor && <span className="launch-badge">Your platform</span>}
                 </header>
                 {group.map((f) => (
                   <div key={f.id} className="launch-platform__file">
-                    <p className="launch-platform__target">{targetLabel(platform, f.details.architectures)}</p>
+                    <p className="launch-platform__target">{targetLabel(platform, f.details.architectures)}{group.length > 1 && ` · ${formatName(platform, f.details.format)}`}</p>
                     <dl className="launch-platform__facts">
                       <div><dt>Status</dt><dd>{statusOf(f.details.channel)}</dd></div>
                       <div><dt>Version</dt><dd>{f.details.version}</dd></div>
@@ -193,7 +242,7 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
                 ))}
               </article>
             ))}
-            {landing.upcoming.map((u) => (
+            {upcoming.map((u) => (
               <article key={u.platform} className="launch-platform launch-platform--upcoming" aria-labelledby={`plat-up-${u.platform}`}>
                 <header>
                   <h3 id={`plat-up-${u.platform}`}>{PLATFORMS[u.platform].label}</h3>
@@ -212,7 +261,12 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
           <SectionHead eyebrow="Details" id="details-title" title="Technical information" />
           <div className="launch-details">
             <Details title="Known beta limitations" open>
-              <ul className="launch-list">{release.knownLimitations.map((l) => <li key={l}>{l}</li>)}</ul>
+              {shownReleases.map(({ platform, release: r }) => (
+                <div key={r!.id}>
+                  {shownReleases.length > 1 && platform && <h3 className="launch-detail__sub">{platformName(platform)}</h3>}
+                  <ul className="launch-list">{r!.knownLimitations.map((l) => <li key={l}>{l}</li>)}</ul>
+                </div>
+              ))}
             </Details>
             <Details title="System requirements">
               <ul className="launch-list">
@@ -221,27 +275,32 @@ export function ProductLaunch({ catalogue, product }: { catalogue: Catalogue; pr
               </ul>
             </Details>
             <Details title="Installation">
-              <InstallSteps files={files} />
+              <InstallSteps files={files} visitor={visitor} />
             </Details>
             <Details title={`Release notes · ${release.version}`}>
-              <ul className="launch-list">{release.releaseNotes.map((n) => <li key={n}>{n}</li>)}</ul>
+              {shownReleases.map(({ platform, release: r }) => (
+                <div key={r!.id}>
+                  {shownReleases.length > 1 && platform && <h3 className="launch-detail__sub">{platformName(platform)} · {r!.version}</h3>}
+                  <ul className="launch-list">{r!.releaseNotes.map((n) => <li key={n}>{n}</li>)}</ul>
+                </div>
+              ))}
             </Details>
             <Details title="Signing and verification" id="verify">
               {files.length === 0 && <p className="muted">File details appear when downloads are available.</p>}
               {files.map((f) => (
                 <div key={f.id} className="launch-verify">
                   <p>
-                    <strong>{f.fileName}</strong> · {f.details.signing === "unsigned" ? "Not code-signed" : f.details.signing === "notarized" ? "Signed and notarised" : f.details.signing === "signed" ? "Signed" : "Signing not stated"} ·{" "}
+                    <strong>{f.fileName}</strong> · {platformName(f.details.platform)} · {f.details.signing === "unsigned" ? "Not code-signed" : f.details.signing === "notarized" ? "Signed and notarised" : f.details.signing === "signed" ? (f.details.platform === "macos" ? "Developer ID signed" : "Signed") : "Signing not stated"} ·{" "}
                     {f.details.sizeBytes.toLocaleString("en")} bytes
                   </p>
                   <Checksum value={f.details.sha256 ?? ""} />
                   {f.details.platform === "windows" && <p className="muted">In PowerShell: <code>Get-FileHash .\{f.fileName}</code> must print the same SHA-256.</p>}
-                  {f.details.platform === "macos" && <p className="muted">In Terminal: <code>shasum -a 256 {f.fileName}</code> must print the same SHA-256.</p>}
+                  {f.details.platform === "macos" && <p className="muted">In Terminal: <code>shasum -a 256 "{f.fileName}"</code> must print the same SHA-256.</p>}
                 </div>
               ))}
             </Details>
             <Details title="Release history">
-              <ReleaseHistory catalogue={catalogue} product={product} current={release} />
+              <ReleaseHistory catalogue={catalogue} product={product} current={new Set([current.id, ...liveReleases.map((r) => r.release?.id ?? "")])} />
             </Details>
             <Details title="Support and feedback">
               <ul className="launch-list">
@@ -396,26 +455,41 @@ function Checksum({ value }: { value: string }) {
   );
 }
 
-function InstallSteps({ files }: { files: File[] }) {
+function InstallSteps({ files, visitor }: { files: File[]; visitor: string | null }) {
   const win = files.find((f) => f.details.platform === "windows");
-  return (
-    <ol className="launch-list launch-list--steps">
-      {win ? (
-        <>
+  const pkg = files.find((f) => f.details.platform === "macos" && f.details.format === "pkg");
+  const zip = files.find((f) => f.details.platform === "macos" && f.details.format === "zip");
+  const mac = (pkg || zip) && (
+    <div key="macos">
+      {win && <h3 className="launch-detail__sub">macOS</h3>}
+      <ol className="launch-list launch-list--steps">
+        {pkg && <li>Installer: download <code>{pkg.fileName}</code> ({formatBytes(pkg.details.sizeBytes)}), open it and follow the steps. HCG Mail is installed in Applications.</li>}
+        {zip && <li>{pkg ? "Or, without an installer: " : ""}download <code>{zip.fileName}</code> ({formatBytes(zip.details.sizeBytes)}), open it to unpack HCG Mail, and drag HCG Mail to Applications.</li>}
+        <li>Optional, recommended: check the file's SHA-256 (see Signing and verification).</li>
+        {[pkg, zip].some((f) => f && (f.details.signing === "signed" || f.details.signing === "notarized"))
+          ? <li>macOS confirms the app comes from an identified developer the first time you open it. Choose Open.</li>
+          : <li>macOS may block the first start; open it from System Settings → Privacy &amp; Security only if the SHA-256 matches.</li>}
+        <li>Add your email account with its IMAP and SMTP settings and run the connection test.</li>
+      </ol>
+    </div>
+  );
+  const windows = win && (
+    <div key="windows">
+      {mac && <h3 className="launch-detail__sub">Windows</h3>}
+      <ol className="launch-list launch-list--steps">
           <li>Download <code>{win.fileName}</code> ({formatBytes(win.details.sizeBytes)}).</li>
           <li>Optional, recommended: check its SHA-256 (see Signing and verification).</li>
           <li>Double-click the file. It is a single self-contained program: no installation, administrator rights or .NET installation needed.</li>
           <li>If SmartScreen appears, choose More info → Run anyway (the beta is not code-signed).</li>
           <li>Add your email account with its IMAP and SMTP settings and run the connection test.</li>
-        </>
-      ) : (
-        <li>Installation steps appear here when a download is available for your platform.</li>
-      )}
-    </ol>
+      </ol>
+    </div>
   );
+  if (!mac && !windows) return <ol className="launch-list launch-list--steps"><li>Installation steps appear here when a download is available for your platform.</li></ol>;
+  return <>{visitor === "macos" ? [mac, windows] : [windows, mac]}</>;
 }
 
-function ReleaseHistory({ catalogue, product, current }: { catalogue: Catalogue; product: Product; current: Release }) {
+function ReleaseHistory({ catalogue, product, current }: { catalogue: Catalogue; product: Product; current: Set<string> }) {
   const rels = catalogue.releases.filter((r) => r.productId === product.id).sort((a, b) => (b.releaseDate ?? "").localeCompare(a.releaseDate ?? ""));
   return (
     <>
@@ -423,7 +497,8 @@ function ReleaseHistory({ catalogue, product, current }: { catalogue: Catalogue;
         {rels.map((r) => (
           <li key={r.id}>
             <strong>{r.version}</strong> · {statusOf(r.channel)} · {r.releaseDate ?? "date not stated"}
-            {r.id === current.id ? " · current" : r.status === "withdrawn" ? " · withdrawn" : ""}
+            {r.artifacts.length > 0 && ` · ${[...new Set(r.artifacts.map((a) => platformName(a.platform)))].join(", ")}`}
+            {current.has(r.id) ? " · current" : r.status === "withdrawn" ? " · withdrawn" : ""}
           </li>
         ))}
       </ul>
@@ -466,10 +541,11 @@ function AdminLink({ productId }: { productId: string }) {
   );
 }
 
-function groupByPlatform(files: File[]): [string, File[]][] {
+function groupByPlatform(files: File[], visitor: string | null = null): [string, File[]][] {
   const m = new Map<string, File[]>();
   for (const f of files) m.set(f.details.platform, [...(m.get(f.details.platform) ?? []), f]);
-  return [...m.entries()].sort((a, b) => PLATFORM_ORDER.indexOf(a[0]) - PLATFORM_ORDER.indexOf(b[0]));
+  const rank = (p: string) => (p === visitor ? -1 : PLATFORM_ORDER.indexOf(p));
+  return [...m.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
 }
 
 /** The compact download bar shows once the hero has scrolled away, and hides again at the bottom call to action. */

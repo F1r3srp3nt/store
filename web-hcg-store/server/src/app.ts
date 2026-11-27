@@ -431,7 +431,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     res.writeHead(200, {
       "content-type": contentType,
       "content-length": String(size),
-      "content-disposition": `attachment; filename="${fileName.replace(/["\\]/g, "_")}"`,
+      // ASCII fallback plus the exact name (RFC 6266/5987), e.g. "HCG Mail.app.zip".
+      "content-disposition": `attachment; filename="${fileName.replace(/["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       "cache-control": "private, no-store, max-age=0",
       vary: "Cookie, Authorization",
       "x-content-type-options": "nosniff",

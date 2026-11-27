@@ -33,6 +33,26 @@ export const ImportRequestSchema = z.object({
   }),
   requestedEligibility: z.enum(["private", "internal-testing", "public"]),
   knownLimitations: z.array(z.string().min(1).max(500)).max(30).default([]),
+  /**
+   * CI-run only: release notes reviewed for HCG Store, replacing the run's own (e.g. where the run calls a permanently
+   * free edition "free during testing"). The files are never changed.
+   */
+  reviewedReleaseNotes: z.array(z.string().min(1).max(500)).min(1).max(50).optional(),
+  /**
+   * CI-run only: a file the run reports as Developer ID "signed" that HCG Store itself verified as notarized (stapled
+   * ticket, Gatekeeper "Notarized Developer ID" on the quarantined download), with that verification as evidence.
+   * Only "signed" can become "notarized"; nothing else is upgraded.
+   */
+  storeVerifiedSigning: z.record(z.string(), z.object({ status: z.literal("notarized"), evidence: z.string().min(20).max(1000) })).optional(),
+  /**
+   * CI-run only: reviewed corrections to how a file is DESCRIBED where the run's draft does not fit HCG Store's record
+   * (a minimum OS written as a sentence; a bundle identifier in the Debian-only package field). Never the bytes,
+   * size, hash, platform, architecture, format, kind or provenance.
+   */
+  reviewedFileFields: z.record(z.string(), z.strictObject({
+    minimumOs: z.string().trim().min(1).max(40).optional(),
+    package: z.null().optional(),
+  })).optional(),
 }).passthrough();
 
 export type ImportRequest = z.infer<typeof ImportRequestSchema>;
@@ -50,4 +70,40 @@ export function draftFromRequest(request: ImportRequest): ImportDraft {
     },
     artifacts: request.release.artifacts,
   };
+}
+
+/**
+ * Files HCG Store verified and refused for publication (release-imports/rejected-artifacts.json; a test keeps the two
+ * lists equal). No import accepts them, whatever their name or request.
+ */
+export const REJECTED_SHA256: ReadonlySet<string> = new Set([
+  "72029dbd965e4d9cda1f429b55552810eb15a71fc1b0e34cfc42d4fd79610a91", // HCG.Mail.app.zip: broken ad-hoc signature, not notarized
+  "84dc5b50f6ac59bc7f6e4b62f1c626ce548b0a7f4171a433f4c499a67013cc00", // HCG.Mail-1.0.0-osx-arm64.pkg: unsigned, not notarized
+]);
+
+export function refuseRejected(draft: ImportDraft): void {
+  for (const a of draft.artifacts as { fileName?: string; sha256?: string }[]) {
+    if (a.sha256 && REJECTED_SHA256.has(a.sha256)) throw new HttpError(400, "artifact_rejected", `${a.fileName}: HCG Store refused this file earlier (rejected-artifacts.json). It is never imported.`);
+  }
+}
+
+/** The committed request's reviewed changes to a CI run's draft (release notes, Store-verified notarization). */
+export function withReviewedChanges(request: ImportRequest, draft: ImportDraft): ImportDraft {
+  if (request.source.kind === "github-release") {
+    if (request.reviewedReleaseNotes || request.storeVerifiedSigning || request.reviewedFileFields) throw new HttpError(400, "request_mismatch", "A GitHub release import declares its release record directly.");
+    return draft;
+  }
+  const names = new Set((draft.artifacts as { fileName: string }[]).map((a) => a.fileName));
+  for (const n of [...Object.keys(request.storeVerifiedSigning ?? {}), ...Object.keys(request.reviewedFileFields ?? {})]) {
+    if (!names.has(n)) throw new HttpError(400, "request_mismatch", `The request names ${n}, which the draft does not list.`);
+  }
+  const artifacts = (draft.artifacts as { fileName: string; signing?: { status?: string } }[]).map((orig) => {
+    const fields = request.reviewedFileFields?.[orig.fileName];
+    const a = fields ? { ...orig, ...fields } : orig;
+    const v = request.storeVerifiedSigning?.[a.fileName];
+    if (!v) return a;
+    if (a.signing?.status !== "signed") throw new HttpError(400, "request_mismatch", `${a.fileName}: only a file the run reports as signed can be recorded as notarized (the run says ${a.signing?.status ?? "nothing"}).`);
+    return { ...a, signing: { status: "notarized", evidence: v.evidence } };
+  });
+  return { release: request.reviewedReleaseNotes ? { ...draft.release, releaseNotes: request.reviewedReleaseNotes } : draft.release, artifacts };
 }

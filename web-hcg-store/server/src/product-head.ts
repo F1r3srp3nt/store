@@ -24,11 +24,13 @@ export function productHead(opts: { catalogue: Catalogue; slug: string; origin: 
   const product = opts.catalogue.products.find((p) => p.slug === opts.slug && p.visibility !== "draft" && !p.supersededBy);
   if (!product) return null;
   const url = `${opts.origin}/apps/${product.slug}`;
+  // Several releases can be current at once (one per platform, e.g. Windows and macOS): the head covers all of them.
   const release = opts.live[0] ?? null;
   const free = product.editions.some((e) => e.pricingModel === "free");
   const landing = product.landing;
-  const status = release ? (release.channel === "beta" ? `Public Beta ${release.version}` : `Version ${release.version}`) : null;
-  const osList = release ? [...new Set(release.files.map((f) => `${OS_NAMES[f.platform] ?? f.platform}${f.architectures.length ? ` (${f.architectures.join(", ")})` : ""}`))] : [];
+  const versions = [...new Set(opts.live.map((r) => r.version))];
+  const status = release ? `${opts.live.every((r) => r.channel === "beta") ? "Public Beta" : "Version"} ${versions.join(" / ")}` : null;
+  const osList = [...new Set(opts.live.flatMap((r) => r.files.map((f) => `${OS_NAMES[f.platform] ?? f.platform}${f.architectures.length ? ` (${[...new Set(f.architectures)].join(", ")})` : ""}`)))];
   const title = landing && release ? `${product.name}: ${landing.headline.replace(/\.$/, "")}` : product.name;
   const description = landing && release
     ? `${landing.tagline} ${status} for ${osList.join(" and ")}${free ? ". Free download, no account required." : "."}`.replace(/\s+/g, " ")
@@ -60,7 +62,7 @@ export function productHead(opts: { catalogue: Catalogue; slug: string; origin: 
       url,
       applicationCategory: product.category === "communication" ? "CommunicationApplication" : "BusinessApplication",
       operatingSystem: osList.join(", "),
-      softwareVersion: release.version,
+      softwareVersion: versions.join(", "),
       ...(icon ? { image: icon } : {}),
       ...(free ? { offers: { "@type": "Offer", price: "0", priceCurrency: "NOK", url } } : {}),
       publisher: { "@type": "Organization", name: "Hakmi Capital Group" },

@@ -1,3 +1,4 @@
+import { applyLivePublications } from "./domain/live-publications";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -659,6 +660,78 @@ describe("Launch page (published product with landing content)", () => {
     expect(container.querySelectorAll(".launch-gallery li")).toHaveLength(6);
     // No ratings, review counts, download statistics or invented prices (the downloads here are the server's).
     for (const re of FORBIDDEN) expect(container.textContent ?? "").not.toMatch(re);
+  });
+
+  const MAC_RELEASE = "rel-1111111111111111";
+  const macFile = (id: string, fileName: string, format: string, sizeBytes: number) => ({
+    id, fileName, releaseId: MAC_RELEASE,
+    details: { version: "1.0.0-beta.1", channel: "beta", architectures: ["arm64"], platform: "macos", format, sizeBytes, sha256: (format === "pkg" ? "b" : "c").repeat(64), minimumOs: "macOS 11", signing: "notarized", publishedAt: 1795800000000 },
+  });
+  const bothAccess = (slug: string) => slug === "hcg-mail"
+    ? [...mailAccess(slug), access({ productId: "hcg-mail", editionId: "macos-desktop", state: "free", anonymous: true, downloadsAvailable: true, downloadsMessage: "Free download.",
+        artifacts: [macFile("art-2222222222222222", "HCG Mail.app.zip", "zip", 60_000_000), macFile("art-1111111111111111", "HCG Mail-1.0.0-beta.1-osx-arm64.pkg", "pkg", 61_000_000)] })]
+    : [];
+  /** The catalogue as the live overlay leaves it after the macOS release is published (applyLivePublications). */
+  const withMac = () => applyLivePublications(published(), { format: "hcg.store.published/1", products: { "hcg-mail": [
+    { releaseId: MAIL_RELEASE, editionId: "windows-desktop", version: "1.0.0-beta.1", build: "1.0.0.0", channel: "beta", distribution: "free", publishedAt: 1795757739075, releaseNotes: [], knownLimitations: [], files: [{ id: "art-cdf727e41e4fb77d", fileName: "HCGMail.exe", platform: "windows", format: "exe", architectures: ["x64"], minimumOs: "Windows 10", sizeBytes: 119023581, sha256: details.sha256, signing: "unsigned" }] },
+    { releaseId: MAC_RELEASE, editionId: "macos-desktop", version: "1.0.0-beta.1", build: "4", channel: "beta", distribution: "free", publishedAt: 1795800000000,
+      releaseNotes: ["HCG Mail 1.0.0-beta.1 for Mac with Apple silicon: public beta. Free."], knownLimitations: ["The window needs a display at least 1040 points wide."],
+      files: [macFile("art-1111111111111111", "HCG Mail-1.0.0-beta.1-osx-arm64.pkg", "pkg", 61_000_000), macFile("art-2222222222222222", "HCG Mail.app.zip", "zip", 60_000_000)].map((f) => ({ id: f.id, fileName: f.fileName, ...f.details })) },
+  ] } });
+  const asVisitor = (userAgent: string, platform: string) => {
+    const nav = window.navigator as unknown as Record<string, unknown>;
+    const saved = { userAgent: nav.userAgent, platform: nav.platform };
+    Object.defineProperty(window.navigator, "userAgent", { value: userAgent, configurable: true });
+    Object.defineProperty(window.navigator, "platform", { value: platform, configurable: true });
+    return () => {
+      Object.defineProperty(window.navigator, "userAgent", { value: saved.userAgent, configurable: true });
+      Object.defineProperty(window.navigator, "platform", { value: saved.platform, configurable: true });
+    };
+  };
+
+  it("once macOS is published: a Mac visitor is offered the macOS installer first, with the ZIP and Windows still offered", async () => {
+    const restore = asVisitor("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", "MacIntel");
+    try {
+      server = { session: { configured: true, signedIn: false }, access: bothAccess };
+      const { container } = renderAt("/apps/hcg-mail", withMac());
+      const downloads = await screen.findAllByTestId("launch-download");
+      expect(downloads[0]).toHaveTextContent("Download for macOS");
+      expect(downloads[0]).toHaveTextContent("Apple Silicon (M-series) · Installer (.pkg)");
+      expect(downloads[0]!.getAttribute("href")).toBe("/api/v1/downloads/art-1111111111111111");
+      const hrefs = downloads.map((d) => d.getAttribute("href"));
+      for (const id of ["art-1111111111111111", "art-2222222222222222", "art-cdf727e41e4fb77d"]) expect(hrefs).toContain(`/api/v1/downloads/${id}`);
+      expect(screen.getByTestId("launch-also")).toHaveTextContent("Also available for Windows.");
+      // macOS is no longer "coming soon"; both platforms are available now, macOS first for this visitor.
+      expect(screen.queryByText("No download is offered yet.")).toBeNull();
+      expect(container.querySelector(".launch-hero__upcoming")).toBeNull();
+      expect([...container.querySelectorAll(".launch-platform--available h3")].map((x) => x.textContent)).toEqual(["macOS", "Windows"]);
+      // Notarized: no Gatekeeper warning next to the macOS download; the Windows file keeps its SmartScreen note.
+      expect(container.querySelector(".launch-hero")!.textContent).not.toMatch(/Not notarised/);
+      expect(screen.getAllByText("Not code-signed.").length).toBeGreaterThan(0);
+      expect(container.querySelector(".launch-hero__facts")).toHaveTextContent(/1\.0\.0-beta\.1.*Free.*Apple Silicon \(M-series\).*None required/);
+      // Each platform's own release notes and limitations, and both in the release history.
+      expect(container.textContent).toContain("HCG Mail 1.0.0-beta.1 for Mac with Apple silicon: public beta. Free.");
+      expect(container.textContent).toContain("The window needs a display at least 1040 points wide.");
+      expect(container.textContent).toMatch(/shasum -a 256 "HCG Mail\.app\.zip"/);
+      for (const re of FORBIDDEN) expect(container.textContent ?? "").not.toMatch(re);
+    } finally {
+      restore();
+    }
+  });
+
+  it("a Windows visitor still gets the unchanged Windows file first, with macOS offered next to it", async () => {
+    const restore = asVisitor("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", "Win32");
+    try {
+      server = { session: { configured: true, signedIn: false }, access: bothAccess };
+      const { container } = renderAt("/apps/hcg-mail", withMac());
+      const downloads = await screen.findAllByTestId("launch-download");
+      expect(downloads[0]!.getAttribute("href")).toBe("/api/v1/downloads/art-cdf727e41e4fb77d");
+      expect(downloads[0]).toHaveTextContent("Windows x64 · EXE · 114 MB");
+      expect(screen.getByTestId("launch-also")).toHaveTextContent("Also available for macOS.");
+      expect([...container.querySelectorAll(".launch-platform--available h3")].map((x) => x.textContent)).toEqual(["Windows", "macOS"]);
+    } finally {
+      restore();
+    }
   });
 
   it("without a current release, the product keeps its detail page", async () => {
