@@ -268,6 +268,24 @@ HCG Store Manager (native macOS) uses this same publishing API. There is no seco
 
 ## Distribution Studio (HCG Executable Maker) — additive API (proposed, branch `claude/distribution-studio-api`)
 
+> **Review note (27 Nov 2026), for the HCG Store review of this branch.** HCG Store main has moved on (#27,
+> `2fb1e3c`, "Control Center"). It adds its own release lifecycle:
+> - availability endpoints (disable, enable, archive, revoke);
+> - browser-only supersede and restore;
+> - per-target current releases;
+> - `supersedePreviousOnPublish` on drafts;
+> - `capabilities.operations`.
+>
+> HCG Store main is authoritative. HCG Executable Maker (Distribution Studio, `feature/distribution-studio`) discovers
+> the contract and uses main's endpoints when `capabilities.operations` is present; this branch's requests are used
+> only where they exist. Maker's CI runs against both. Given main, the parts of this branch still worth reviewing are:
+> - **official product metadata** in `GET /publishing/products` (`productMetadata`: summary, category, status,
+>   platforms, icon, cover, current release, product URL);
+> - **descriptive draft products** (description, category, platforms).
+>
+> The recorded availability requests and the "compatible" supersede scope overlap with main's lifecycle, which
+> switches per target. They can be dropped in favour of main. Nothing here is merged or deployed.
+
 Capability flags in `GET /api/v1/publishing/capabilities` and `whoami` (`productMetadata`, `publicationRequests`,
 `availabilityRequests`, `supersedeCompatible`) let an app tell these apart from an older server; nothing is assumed.
 
