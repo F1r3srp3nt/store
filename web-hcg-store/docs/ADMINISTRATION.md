@@ -131,17 +131,32 @@ unchanged. New fields are additive, and clients ignore unknown keys.
 
 | Purpose | Method and path |
 | --- | --- |
-| Capability discovery | `GET /capabilities` (formats, limits, storage, `operations`, `lifecycle`, concurrency rule), `GET /me` (permissions now; CSRF token for browsers) |
-| Authorised catalogue | `GET /products` (may publish) · `GET /products?scope=review` (may publish, approve or publish releases) |
+| Capability discovery | `GET /capabilities` (formats, limits, storage, `operations`, `lifecycle`, concurrency rule, and the flags below), `GET /me` (permissions now; CSRF token for browsers) |
+| Authorised catalogue | `GET /products` (may publish) · `GET /products?scope=review` (may publish, approve or publish releases). Each product carries `slug`, `summary`, `category`, `developmentStatus`, `visibility`, `platforms[]`, the **official** `icon` and `cover` (HCG Store's public media URLs; concept artwork is never returned as official; `null` when there is none), `currentReleaseId` and `productUrl` |
 | Product lookup and editions | `GET /products/:id` (metadata, editions, current release of each target, release counts) |
-| Product drafts | `POST /products` (`id`, `title`, optional `metadata`) · `PATCH /products/:id` (draft products only; If-Match) |
-| Releases and version history | `POST /releases` (incl. `supersedePreviousOnPublish`) · `GET /releases?productId=` · `GET /releases/:id` (files, validation, passports, targets, lifecycle, audit) · `GET /manager?productId=&include=archived` · `GET /compare?from=&to=` |
+| Product drafts | `POST /products` (`id`, `title`, optional `metadata`, or Distribution Studio's `description`, `category`, `platforms`; all stored in the same revisioned metadata) · `PATCH /products/:id` (draft products only; If-Match) |
+| Releases and version history | `POST /releases` (incl. `supersedePreviousOnPublish`, or Distribution Studio's `publicationRequest: { makeCurrent, supersedePrevious: "none" \| "compatible", note? }`) · `GET /releases?productId=` · `GET /releases/:id` (files, validation, passports, targets, lifecycle, audit) · `GET /manager?productId=&include=archived` · `GET /compare?from=&to=` |
 | Uploads | `POST /releases/:id/artifacts` → `PUT /publishing-upload/v1/:token` (Content-Range) · `POST /artifacts/:id/upload-url` (resume) · `POST /artifacts/:id/complete` · `DELETE /artifacts/:id` |
 | Release Passport | `POST /artifacts/:id/passport` |
 | Review | `POST /releases/:id/submit` · `/approve` · `/publish` (`supersedePrevious`) |
 | Lifecycle | `POST /releases/:id/disable` · `/enable` · `/archive` · `/revoke` · `/withdraw` · `/supersede` · `/restore` |
+| Requests (desktop apps) | `POST /releases/:id/requests { action: disable \| enable \| restore \| supersede \| make-current, reason, confirm: <version> }` → 202. Recorded in the audit and shown in Release Manager and on the review page; it changes nothing. Refused (409) when it cannot apply (for example restoring a release that is already current, or anything about a revoked release). |
 | Integrity | `POST /releases/:id/verify-checksums` |
 | Synchronisation | `GET /changes?since=<seq>` (audited changes after a sequence number; clients refetch what changed) |
+
+Capability flags (`capabilities.capabilities`), all additive; a flag a Store does not send means "not available":
+`products`, `drafts`, `uploads`, `resumableUploads`, `passports`, `submission`, `approval`, `publication`,
+`publicDelivery`, `offers`, `productMetadata`, `publicationRequests`, `availabilityRequests`, `supersedeCompatible`,
+`withdraw`, `availability`, `restore`, `perTargetCurrent`, `revisions`, `changes`.
+
+Compatibility: HCG Executable Maker 0.4.0 (its `HcgStoreClient` on Maker main) works unchanged. Every request it makes
+is covered by a test with its exact shapes (`server/test/distribution-studio.test.ts`). Maker's Distribution Studio
+(branch `feature/distribution-studio`) sends `publicationRequest`, the draft product fields and `/requests` only when
+the matching flag is present, so it works against this Store and against older ones.
+
+`POST /releases/:id/publish` accepts `scope: "compatible"` (how supersede always works now). `scope: "edition"` is
+refused with `400 edition_scope_removed`: retiring every published release of an edition retired unrelated platforms,
+architectures and channels.
 
 Coordination for the desktop teams (Executable Maker, Store Manager, the future Executable Maker Unleashed):
 
@@ -208,9 +223,16 @@ Server acceptance suite `server/test/admin-lifecycle.test.ts` (real server, mock
 | 16–17 | Uploads mode: website uploads privately; approve, publish and restore refused; no customer delivery; production `fly.toml`: payments `none`, downloads `disabled`, publication key absent; device policy cannot be switched on | `16–17. …` |
 | — | Revisions and If-Match across website and Store Manager; draft product editing; listed products refused | `concurrent clients …` |
 
+Distribution Studio (`server/test/distribution-studio.test.ts`): official metadata and artwork in the product list;
+descriptive draft products; a beta x64 update with `supersedePrevious: "compatible"` replaces only the beta x64 release
+(stable and ARM64 stay current); the edition-wide scope is refused; failed publication supersedes nothing; requests are
+recorded, validated against the lifecycle and change nothing; uploads mode keeps approval off; the full Executable Maker
+0.4.0 request sequence, including an interrupted and resumed upload.
+
 Migration 10 (`server/test/migration.test.ts`): the v7 production-shaped backup upgrades without losing a row. A v9
 database with published releases gets one current release per target (newest publication), AABs and unpublished
-releases excluded; revoked is final and revisions bump.
+releases excluded; revoked is final and revisions bump. Migration 11 (Distribution Studio: `pub_releases.publication_request`)
+upgrades a database at 9 (production today) or at 10 without losing a row.
 
 Browser (`e2e/admin.spec.ts`, Chromium, TEST Store): genuine Windows PE executables (x86-64 and ARM64 launchers) and
 a 6 MB macOS app ZIP uploaded through the website; the ZIP upload interrupted, the tab reloaded and the upload resumed

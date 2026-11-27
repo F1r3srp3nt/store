@@ -2,7 +2,7 @@
 /**
  * Upgrading the production database. The fixture is the schema the deployed server (835ac1a) created — migrations 1-7,
  * dumped from that commit's own openDatabase — with representative rows in every table, including Ship to Store
- * records and a hash-chained publishing audit. This build must upgrade it in place (migrations 8 to 10) losing nothing.
+ * records and a hash-chained publishing audit. This build must upgrade it in place (migrations 8 to 11) losing nothing.
  */
 import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +26,7 @@ describe("migration from the deployed schema (v7)", () => {
     const r = checkMigration({ backup });
     expect(r.problems).toEqual([]);
     expect(r).toMatchObject({ ok: true, versionBefore: 7, versionAfter: MIGRATION_COUNT, integrity: "ok", foreignKeyProblems: 0, publishingAuditIntact: true });
-    expect(MIGRATION_COUNT).toBe(10);
+    expect(MIGRATION_COUNT).toBe(11);
     expect(r.tables.pub_current).toEqual({ before: null, after: 0 });
     expect(r.tables.sessions).toEqual({ before: 3, after: 3 });
     expect(r.tables.pub_audit).toEqual({ before: 3, after: 3 });
@@ -106,4 +106,22 @@ describe("migration from the deployed schema (v7)", () => {
     expect((db.prepare("SELECT revision FROM pub_releases WHERE id = 'rel-b'").get() as { revision: number }).revision).toBe(before + 1);
     db.close();
   });
+
+  it("migration 11 (Distribution Studio) is additive: a database at 9 (production today) or at 10 upgrades without losing a row", () => {
+    for (const from of [9, 10]) {
+      const dir = mkdtempSync(join(tmpdir(), `hcg-v${from}-`));
+      const before = openDatabase(dir, { upTo: from });
+      before.prepare(`INSERT INTO pub_releases (id, product_id, product_source, edition_id, version, build, channel, release_notes, compatibility, distribution, requested_eligibility, destinations, status, created_by, created_at, updated_at)
+                      VALUES ('rel-0000000000000001', 'p', 'catalogue', NULL, '1.0.0', '1', 'stable', '["n"]', '{}', 'paid', 'public', '["hcg-store"]', 'draft', 'u', 1, 1)`).run();
+      before.prepare("INSERT INTO pub_products (id, title, created_by, created_at) VALUES ('d', 'Draft', 'u', 1)").run();
+      before.close();
+      const db = openDatabase(dir);
+      expect((db.prepare("SELECT version FROM schema_version").get() as { version: number }).version).toBe(MIGRATION_COUNT);
+      const r = db.prepare("SELECT status, release_notes, publication_request, availability FROM pub_releases").get() as Record<string, unknown>;
+      expect(r).toEqual({ status: "draft", release_notes: '["n"]', publication_request: null, availability: "available" });
+      expect((db.prepare("SELECT metadata FROM pub_products").get() as { metadata: string }).metadata).toBe("{}");
+      db.close();
+    }
+  });
 });
+

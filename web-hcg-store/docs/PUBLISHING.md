@@ -268,3 +268,27 @@ HCG Store Manager (native macOS) uses this same publishing API. There is no seco
 - **What the apps see:** `/api/v1/health` reports `publishing`; `whoami` and `capabilities` report each switch
   (`capabilities.uploads`, `.approval`, `.publication`, `.publicDelivery`, `.offers`).
 - **Customers:** private drafts are never visible to customers in any mode.
+
+## Distribution Studio (HCG Executable Maker): reviewed and integrated
+
+Proposed on branch `claude/distribution-studio-api` and reviewed against main before integration. The full contract
+is in [ADMINISTRATION.md](ADMINISTRATION.md) §5. What changed in review:
+
+- **Migration renumbered.** The branch's migration 10 collided with main's migration 10 (release lifecycle). It is
+  now migration 11, and it adds only `pub_releases.publication_request`. The draft product fields (`description`,
+  `category`, `platforms`) are stored in main's revisioned draft metadata instead of three new columns.
+- **Supersede corrected.** The branch kept the edition-wide supersede as the default (it retired every published
+  release of the edition, so a macOS update retired Windows and a beta retired stable). Its "compatible" scope also
+  left a partly replaced release published, so customers could get both builds of one platform. Supersede now uses
+  main's explicit current release per product, edition, platform, architecture and channel. `scope: "compatible"`
+  is accepted, `scope: "edition"` is refused, and `supersedePrevious: "compatible"` sets the draft's
+  `supersedePreviousOnPublish`. The switch happens in the publication's transaction after the stored files are
+  re-hashed. Superseded releases keep their files and history.
+- **Requests validated against the lifecycle.** "restore" of a withdrawn release was allowed; withdrawn releases
+  cannot be restored. A request now needs a release that the action can apply to (superseded, disabled or archived
+  for restore; not revoked). Approvers and publishers may record requests too, and "enable" was added.
+- **Official artwork only.** `icon` and `cover` are returned only when the catalogue marks them official.
+- **Review page.** It keeps main's CSRF token and CSP nonce, shows recorded requests and the submitter's publication
+  request, and pre-ticks supersede when the draft asked for it.
+- **makeCurrent** pre-selects the catalogue's current release at a public approval (the approver can still change it).
+

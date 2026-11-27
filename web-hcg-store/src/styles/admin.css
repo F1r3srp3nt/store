@@ -111,3 +111,4 @@
 .button--danger { border: 1px solid rgb(var(--rose-rgb) / 0.55); color: var(--rose); background: rgb(var(--rose-rgb) / 0.06); }
 .button--danger:hover { background: rgb(var(--rose-rgb) / 0.14); }
 .manage-product { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
+.cc-requests { margin: 10px 0 0; padding: 10px 14px 10px 30px; border-radius: var(--radius); border: 1px solid rgb(var(--amber-rgb) / 0.35); background: rgb(var(--amber-rgb) / 0.06); font-size: 13.5px; display: grid; gap: 4px; overflow-wrap: anywhere; }

@@ -35,6 +35,9 @@ export interface AdminRelease {
   supersedePreviousOnPublish: boolean; uploadSource: { via: string; client: string | null } | null; reviewUrl: string;
   artifacts?: AdminArtifact[]; files?: number; audit?: { seq: number; at: number; actor: string; action: string; detail: Record<string, unknown> }[];
   mayApprove?: boolean; mayPublish?: boolean; mayPublication?: boolean;
+  /** Distribution Studio: what the submitter asks for at publication, and requests recorded for the publishers. */
+  publicationRequest?: { makeCurrent: boolean; supersedePrevious: "none" | "compatible"; note?: string } | null;
+  requests?: { seq: number; at: number; by: string; action: string; reason: string; via?: string; status?: string }[];
 }
 export interface AdminProduct { id: string; title: string; source: "catalogue" | "draft"; editions: { id: string; name: string; platforms: unknown }[]; centralId: string | null; revision?: number }
 export interface ProductDetail {
