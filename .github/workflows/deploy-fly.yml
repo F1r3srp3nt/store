@@ -431,7 +431,11 @@ jobs:
           printf 'put %s /tmp/release-diagnosis.mjs\n' "$RUNNER_TEMP/release-diagnosis.mjs" | flyctl ssh sftp shell --app "$APP"
           out=$(flyctl ssh console --app "$APP" --command "sh -c 'chmod 644 /tmp/release-diagnosis.mjs && node --no-warnings server-dist/with-machine-env.mjs /tmp/release-diagnosis.mjs; rm -f /tmp/release-diagnosis.mjs'" | grep '^{' | tail -1)
           echo "$out" | jq -e '.format == "hcg.store.release-diagnosis/1"' >/dev/null
-          { echo "## Release diagnosis"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          { echo "## Release diagnosis"; echo '```json'; echo "$out" | jq .; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "DIAG_SESSIONS $(echo "$out" | jq -c '[.sessions[] | [.session_ref, .account, .ended]]')"
+          echo "$out" | jq -r '.releases[] | "DIAG_RELEASE \(.id) \(.productId)/\(.editionId) \(.version)+\(.build) status=\(.status) avail=\(.availability) req=\(.requestedEligibility) appr=\(.approvedEligibility) created=\(.createdBy) submitted=\(.submittedBy) approvedBy=\(.approvedBy) source=\(.uploadSource // "-" | tostring | .[0:60]) files=\([.files[] | "\(.fileName)[\(.status),\(.signing),\(.problems|length)p]"] | join(";")) exceptions=\([.exceptions[] | "\(.id):\(.subject):applies=\(.appliesToCurrentFiles)"] | join(";")) updated=\(.updatedAt)"'
+          echo "$out" | jq -r '.audit[0:40][] | "DIAG_AUDIT \(.seq) \(.at) \(.actor) \(.action) \(.release // "-") \(.detail | tostring | .[0:160])"'
+          echo "DIAG_CURRENT $(echo "$out" | jq -c '[.current[] | [.product_id, .edition_key, .platform, .arch, .channel, .release_id]]')"
       - name: Restart the Machine
         if: inputs.mode == 'restart'
         run: flyctl apps restart "$APP"
