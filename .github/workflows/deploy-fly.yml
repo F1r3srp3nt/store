@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run]
+        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run, permission-diagnosis]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -402,6 +402,16 @@ jobs:
           A="$A --performed-by-b64 $(b "$PB")"
           out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/release-exception.mjs $A" | grep '^{' | tail -1)
           { echo "## Release exception"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$out" | jq -e 'has("error") | not' >/dev/null
+      # ---- permission-diagnosis: replay HCG's /me and the hcg.store feature checks for one verified sign-in, with that
+      # person's own token. Read-only towards HCG; prints no account ID, organisation ID, e-mail address or token. ----
+      - name: Publishing permission diagnosis (sanitised)
+        if: inputs.mode == 'permission-diagnosis'
+        run: |
+          ref='${{ inputs.session_ref }}'
+          [[ "$ref" =~ ^[0-9a-f]{12}$ ]] || { echo "::error::session_ref must be the 12-hex reference from mode=evidence"; exit 1; }
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/permission-diagnosis.mjs --session-ref $ref" | grep '^{' | tail -1)
+          { echo "## Publishing permission diagnosis"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$out" | jq -e 'has("error") | not' >/dev/null
       - name: Restart the Machine
         if: inputs.mode == 'restart'
