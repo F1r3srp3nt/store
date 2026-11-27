@@ -13,6 +13,7 @@ import "./styles/storefront.css";
 import "./styles/effects.css";
 import "./styles/v3.css";
 import "./styles/launch.css";
+import "./styles/gateway.css";
 import "./styles/admin.css";
 import { App } from "./App";
 

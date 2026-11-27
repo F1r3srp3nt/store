@@ -1,4 +1,7 @@
 import { Link } from "react-router-dom";
+import { useStoreHealth } from "../account/useStoreHealth";
+import { useCatalogueState } from "../app/catalogue-context";
+import { listedProducts } from "../domain/model";
 import { IconInfo, IconShield } from "../components/Icons";
 import { PageMeta } from "../components/PageMeta";
 import { CHECKSUM_COMMANDS } from "../domain/install-guidance";
@@ -12,6 +15,13 @@ const SECTIONS = [
 ] as const;
 
 export function GettingStartedPage() {
+  const health = useStoreHealth();
+  const cat = useCatalogueState();
+  const h = health.status === "ready" ? health.health : null;
+  const anonymous =
+    h && h.protectedDownloads !== "disabled" && cat.status === "ready"
+      ? (h.anonymousFreeProducts ?? []).map((id) => listedProducts(cat.catalogue).find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p)
+      : [];
   return (
     <>
       <PageMeta title="Getting started" description="How access and downloads work in HCG Store, how to verify a file, and platform-specific installation notes." />
@@ -47,17 +57,35 @@ export function GettingStartedPage() {
                   checksum. If it says <em>Coming soon</em>, there is nothing to download yet.
                 </li>
                 <li>
-                  <strong>Sign in.</strong> Every download requires your HCG account, including free tools. Paid products also require ownership that HCG
-                  has confirmed. HCG Store checks this on its server every time; files are never published at public links.
+                  <strong>Sign in where needed.</strong> Free releases HCG approves for it download without an account, and the product page says so
+                  {anonymous.length > 0 && (
+                    <>
+                      {" "}(today:{" "}
+                      {anonymous.map((p, i) => (
+                        <span key={p.slug}>
+                          {i > 0 && ", "}
+                          <Link to={`/apps/${p.slug}`}>{p.name}</Link>
+                        </span>
+                      ))}
+                      )
+                    </>
+                  )}
+                  . Other
+                  downloads need your HCG account, and paid or licensed products also require ownership that HCG has confirmed. HCG Store checks this on
+                  its server every time; files are never published at public links.
                 </li>
                 <li>
                   <strong>Download or install.</strong> Owners download from the product page. Jailbreak packages are installed through HCG Repo, linked from
                   the product page.
                 </li>
               </ol>
+              {health.status === "ready" && health.health.protectedDownloads === "disabled" && (
+                <p className="notice">
+                  <IconInfo className="inline-icon" /> Downloads are switched off on this site right now.
+                </p>
+              )}
               <p className="notice">
-                <IconInfo className="inline-icon" /> Downloads are not available yet. They will be switched on only after sign-in and server-side access
-                checks have been verified and HCG approves the launch.
+                <IconInfo className="inline-icon" /> Purchases are not open yet: nothing can be bought or charged in HCG Store today.
               </p>
             </section>
 
@@ -156,8 +184,8 @@ export function GettingStartedPage() {
             <section id="accounts" aria-labelledby="h-accounts">
               <h2 id="h-accounts">Accounts and access</h2>
               <p>
-                You do not need an account to browse the catalogue. Your library, purchases and every download use your HCG account through HCG
-                Connect, the central HCG identity service. Your HCG role never implies ownership of a product. See{" "}
+                You do not need an account to browse the catalogue, or to download the free releases HCG has approved for download without one. Other
+                downloads, your library and purchases use your HCG account through HCG Connect, the central HCG identity service. Your HCG role never implies ownership of a product. See{" "}
                 <Link to="/account">Account &amp; Connections</Link> for the current status.
               </p>
             </section>

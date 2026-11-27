@@ -1,16 +1,16 @@
 import { useId, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { DOWNLOADS_NOT_AVAILABLE } from "../account/api";
 import { CatalogueGate } from "../app/catalogue-context";
 import { storefrontStatus } from "../components/Badges";
 import { CinematicHero } from "../components/home/CinematicHero";
 import { EcosystemExplorer } from "../components/home/EcosystemExplorer";
+import { EcosystemGateway } from "../components/home/EcosystemGateway";
 import { NewsAnnouncements, PromotionSlot } from "../components/home/Placements";
-import { IconArrowRight, IconExternal, IconLock, IconSearch, IconShield, IconTerminal } from "../components/Icons";
+import { IconArrowRight, IconExternal, IconSearch, IconTerminal } from "../components/Icons";
 import { PageMeta } from "../components/PageMeta";
 import { ProductCard } from "../components/ProductCard";
 import { ProductMark } from "../components/ProductArt";
-import { hcgRepoProductUrl, runtimeConfig } from "../config/runtime";
+import { hcgRepoProductUrl } from "../config/runtime";
 import type { Catalogue } from "../domain/catalogue";
 import {
   availability,
@@ -143,7 +143,7 @@ function Home({ catalogue }: { catalogue: Catalogue }) {
         </ul>
       </section>
 
-      <Guidance />
+      <EcosystemGateway catalogue={catalogue} />
     </>
   );
 }
@@ -362,40 +362,3 @@ function JailbreakCollection({ products }: { products: Product[] }) {
   );
 }
 
-/** Account, purchase and delivery guidance. Wording matches what is enforced today. */
-function Guidance() {
-  const staticSite = runtimeConfig.accountService === "none";
-  return (
-    <section className="page-width guidance-band" aria-labelledby="guidance-title" data-reveal>
-      <h2 id="guidance-title" className="section-kicker">
-        Accounts, purchases and delivery
-      </h2>
-      <ol className="guidance-steps">
-        <li>
-          <h3>Browse freely</h3>
-          <p>Product pages, editions and status are public. No account is needed to look around.</p>
-        </li>
-        <li>
-          <h3>
-            <IconLock className="inline-icon" /> Sign in with HCG Connect
-          </h3>
-          <p>
-            Downloads and purchases use your HCG account.{" "}
-            {staticSite ? "Sign-in is not available on this site yet." : "Your library shows what your account owns."}
-          </p>
-        </li>
-        <li>
-          <h3>
-            <IconShield className="inline-icon" /> Ownership is checked by HCG
-          </h3>
-          <p>
-            Every download is authorised on the server; paid products also need ownership confirmed by HCG. {DOWNLOADS_NOT_AVAILABLE}
-          </p>
-        </li>
-      </ol>
-      <Link to="/getting-started" className="text-link">
-        How access and installation work <IconArrowRight />
-      </Link>
-    </section>
-  );
-}

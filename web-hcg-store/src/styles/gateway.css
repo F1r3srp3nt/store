@@ -1,0 +1,459 @@
+/* ==========================================================================
+ * Ecosystem gateway (homepage bottom): constellation, latest releases, access.
+ * Motion: compositor-only (transform, stroke-dashoffset), off for reduced motion
+ * and when the visitor turns effects off.
+ * ========================================================================== */
+.gateway {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: 72px;
+  padding: 72px 0 24px;
+  background:
+    radial-gradient(800px 420px at 50% 32%, rgb(var(--accent-rgb) / 0.09), transparent 70%),
+    radial-gradient(620px 360px at 80% 60%, rgb(150 92 255 / 0.08), transparent 70%);
+}
+.gateway::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.6) 30%, rgb(150 92 255 / 0.6) 70%, transparent);
+}
+.gateway__circuit {
+  position: absolute;
+  inset: -260px 0 0;
+  z-index: -1;
+  background: url("/brand/circuit.svg") repeat;
+  background-size: 260px 260px;
+  opacity: 0.28;
+  -webkit-mask-image: radial-gradient(60% 55% at 50% 40%, #000, transparent 80%);
+  mask-image: radial-gradient(60% 55% at 50% 40%, #000, transparent 80%);
+  animation: gateway-drift 90s linear infinite;
+  will-change: transform;
+  pointer-events: none;
+}
+@keyframes gateway-drift {
+  to {
+    transform: translate3d(0, 260px, 0);
+  }
+}
+.gateway__head {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 8px;
+}
+.gateway__title {
+  margin: 8px 0 10px;
+  text-wrap: balance;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  background: linear-gradient(100deg, var(--text) 20%, #d7dee8 45%, var(--cyan) 70%, #a978ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-theme="frost"] .gateway__title {
+  background: linear-gradient(100deg, #0b1624 20%, #0070b0 65%, #6b3fd0);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.gateway__lead {
+  margin: 0;
+  text-wrap: balance;
+  color: var(--text-muted);
+}
+.gateway__subtitle {
+  margin: 0 0 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ---------- Constellation ---------- */
+.constellation {
+  position: relative;
+  height: 640px;
+  margin: 88px auto 72px;
+  max-width: 1120px;
+}
+.constellation__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.constellation__orbit {
+  fill: none;
+  stroke: rgb(var(--hairline-rgb) / 0.1);
+  stroke-width: 1;
+  stroke-dasharray: 2 8;
+  vector-effect: non-scaling-stroke;
+}
+.constellation__line {
+  stroke: rgb(var(--hairline-rgb) / 0.18);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+  transition: stroke var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+  animation: constellation-flow 9s linear infinite;
+}
+.constellation__line.is-live {
+  stroke: rgb(var(--accent-rgb) / 0.6);
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 3px rgb(var(--accent-rgb) / 0.6));
+  animation: none;
+}
+@keyframes constellation-flow {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+.constellation.has-active .constellation__line:not(.is-active) {
+  opacity: 0.35;
+}
+.constellation__line.is-active {
+  stroke: #b78cff;
+  stroke-width: 2;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 4px rgb(150 92 255 / 0.9));
+  opacity: 1;
+}
+.constellation__core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 340px;
+  padding: 38px 24px 26px;
+  border-radius: 50%;
+  aspect-ratio: 1.7;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  background: radial-gradient(closest-side, rgb(var(--surface-rgb) / 0.92), rgb(var(--surface-rgb) / 0.55) 70%, transparent);
+  box-shadow: 0 0 80px -20px rgb(var(--accent-rgb) / 0.35);
+}
+.constellation__wordmark {
+  width: 280px;
+  max-width: 100%;
+  height: auto;
+}
+.constellation__count {
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.constellation__nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.constellation-node {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
+  width: 132px;
+}
+.constellation-node__link {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 8px 9px;
+  border-radius: 16px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+  background: rgb(var(--surface-rgb) / 0.62);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  animation: constellation-float 8s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * -0.73s);
+}
+/* Everything holds still while the pointer or keyboard focus is in the constellation, so a node is easy to select. */
+.constellation:hover .constellation-node__link,
+.constellation:focus-within .constellation-node__link {
+  animation-play-state: paused;
+}
+@keyframes constellation-float {
+  from {
+    transform: translateY(-4px);
+  }
+  to {
+    transform: translateY(4px);
+  }
+}
+.constellation-node__link:hover,
+.constellation-node__link:focus-visible,
+.constellation-node.is-active .constellation-node__link {
+  border-color: rgb(150 92 255 / 0.65);
+  box-shadow: 0 0 0 1px rgb(150 92 255 / 0.25), 0 10px 30px -12px rgb(150 92 255 / 0.7), 0 0 24px -10px rgb(var(--accent-rgb) / 0.8);
+}
+.constellation-node__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.2;
+}
+.constellation-node__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.constellation-node__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.constellation-node--released .constellation-node__dot {
+  background: var(--mint, #5eead4);
+  box-shadow: 0 0 8px var(--mint, #5eead4);
+}
+.constellation-node--testing .constellation-node__dot {
+  background: var(--cyan);
+}
+.constellation-node--active .constellation-node__dot {
+  background: #a978ff;
+}
+.constellation-node--released .constellation-node__link {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+}
+
+/* ---------- Latest releases + access ---------- */
+.gateway__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 28px;
+  align-items: start;
+}
+.latest-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.latest-card__link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  text-decoration: none;
+  color: var(--text);
+  background: linear-gradient(150deg, rgb(var(--surface-rgb) / 0.85), rgb(var(--surface-rgb) / 0.55));
+  border: 1px solid rgb(var(--accent-rgb) / 0.35);
+  box-shadow: 0 18px 40px -28px rgb(var(--accent-rgb) / 0.8);
+  transition: border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+.latest-card__link:hover {
+  border-color: rgb(150 92 255 / 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 22px 44px -26px rgb(150 92 255 / 0.8);
+}
+.latest-card__body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.latest-card__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+}
+.latest-card__version {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--cyan);
+}
+.latest-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.latest-card__cta {
+  color: var(--text-faint);
+}
+.gateway-latest > .text-link {
+  display: inline-flex;
+  margin-top: 14px;
+}
+.access-lanes {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.access-lane {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgb(var(--surface-rgb) / 0.58);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: border-color var(--t-fast) var(--ease);
+}
+.access-lane:hover {
+  border-color: var(--line-strong);
+}
+.access-lane__state {
+  margin: 0 0 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.access-lane__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.access-lane--open .access-lane__dot {
+  background: var(--mint, #5eead4);
+  box-shadow: 0 0 8px var(--mint, #5eead4);
+}
+.access-lane--account .access-lane__dot {
+  background: var(--cyan);
+}
+.access-lane--later .access-lane__dot {
+  background: #a978ff;
+}
+.access-lane__title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+.access-lane__text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.access-lane__links {
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 13.5px;
+}
+
+/* ---------- Motion off ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .gateway__circuit,
+  .constellation__line,
+  .constellation-node__link {
+    animation: none;
+  }
+}
+html[data-effects="off"] .gateway__circuit,
+html[data-effects="off"] .constellation__line,
+html[data-effects="off"] .constellation-node__link {
+  animation: none;
+}
+
+/* ---------- Layouts ---------- */
+@media (max-width: 1100px) {
+  .gateway__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 900px) {
+  .constellation {
+    height: auto;
+    margin: 24px auto 32px;
+  }
+  .constellation__lines {
+    display: none;
+  }
+  .constellation__core {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    margin: 0 auto 20px;
+    width: min(320px, 100%);
+  }
+  .constellation__nodes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .constellation-node {
+    position: static;
+    transform: none;
+    width: auto;
+  }
+  .constellation-node__link {
+    animation: none;
+    height: 100%;
+  }
+}
+@media (max-width: 640px) {
+  /* Phones: compact two-column list (icon, name, status) instead of tall tiles. */
+  .constellation-node__link {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "icon name" "icon status";
+    justify-items: start;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 2px;
+    padding: 9px 10px;
+    text-align: left;
+  }
+  .constellation-node__icon {
+    grid-area: icon;
+  }
+  .constellation-node__icon .product-mark {
+    width: 38px;
+    height: 38px;
+  }
+  .constellation-node__name {
+    grid-area: name;
+    font-size: 13px;
+  }
+  .constellation-node__status {
+    grid-area: status;
+    font-size: 11px;
+  }
+}
+@media (max-width: 640px) {
+  .gateway {
+    padding-top: 56px;
+  }
+  .access-lanes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .constellation__nodes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .latest-card__link {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .latest-card__cta {
+    display: none;
+  }
+}
