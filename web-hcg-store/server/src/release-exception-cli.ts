@@ -40,7 +40,16 @@ try {
     process.stdout.write(JSON.stringify({ revoked: show(revokeException(db, arg("--id") ?? "", { reason: b64("--reason-b64"), ...who }, now)) }) + "\n");
   } else if (cmd === "list") {
     const releaseId = arg("--release") ?? "";
-    process.stdout.write(JSON.stringify({ releaseId, filesDigest: artifactSetDigest(db, releaseId), exceptions: exceptionsFor(db, releaseId).map((x) => ({ ...x, createdAt: iso(x.createdAt), revokedAt: iso(x.revokedAt) })) }) + "\n");
+    // Release state and, per exception, whether it names the account that submitted the release (true/false only:
+    // no account ID is printed). An exception for someone else does not let the submitter approve or publish.
+    const rel = db.prepare("SELECT status, approved_eligibility, availability FROM pub_releases WHERE id = ?").get(releaseId) as { status: string; approved_eligibility: string | null; availability: string } | undefined;
+    const submitter = (db.prepare("SELECT actor FROM pub_audit WHERE release_id = ? AND action = 'release.submitted' ORDER BY seq DESC LIMIT 1").get(releaseId) as { actor: string } | undefined)?.actor ?? null;
+    const subjects = new Map((db.prepare("SELECT id, subject FROM release_exceptions WHERE release_id = ?").all(releaseId) as { id: string; subject: string }[]).map((x) => [x.id, x.subject]));
+    process.stdout.write(JSON.stringify({
+      releaseId, status: rel?.status ?? null, approvedEligibility: rel?.approved_eligibility ?? null, availability: rel?.availability ?? null,
+      submitted: submitter !== null, filesDigest: artifactSetDigest(db, releaseId),
+      exceptions: exceptionsFor(db, releaseId).map((x) => ({ ...x, createdAt: iso(x.createdAt), revokedAt: iso(x.revokedAt), namesSubmitter: submitter === null ? null : subjects.get(x.id) === submitter })),
+    }) + "\n");
   } else {
     throw new ReleaseExceptionError("Use: grant | revoke | list");
   }

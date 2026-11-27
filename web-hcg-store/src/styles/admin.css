@@ -108,7 +108,13 @@
 }
 
 .badge--warn { color: var(--amber); border-color: rgb(var(--amber-rgb) / 0.45); background: rgb(var(--amber-rgb) / 0.08); }
-.button--danger { border: 1px solid rgb(var(--rose-rgb) / 0.55); color: var(--rose); background: rgb(var(--rose-rgb) / 0.06); }
-.button--danger:hover { background: rgb(var(--rose-rgb) / 0.14); }
+.button--danger { border: 1px solid rgb(var(--rose-rgb) / 0.85); color: var(--text); background: rgb(var(--rose-rgb) / 0.22); font-weight: 700; }
+.button--danger:hover { background: rgb(var(--rose-rgb) / 0.34); }
+/* Confirmation buttons: a solid accent fill with the theme's own ink (readable in every theme), touch-sized. */
+.cc-opform .cc-actions .button { min-height: 44px; padding: 0 18px; font-size: 15px; font-weight: 700; }
+.cc-opform .cc-actions .button--primary { color: var(--accent-ink); background: rgb(var(--accent-rgb)); box-shadow: 0 0 0 1px rgb(var(--accent-rgb)), 0 8px 20px -10px rgb(var(--accent-rgb) / 0.7); }
+.cc-opform .cc-actions .button--primary:hover { color: var(--accent-ink); filter: brightness(1.08); }
+.cc-opform .cc-actions .button--ghost { color: var(--text); border-color: var(--line-strong); background: rgb(var(--surface-rgb) / 0.8); }
+.cc-exception { margin: 10px 0 0; padding: 10px 14px; border-radius: 10px; border: 1px solid rgb(var(--amber-rgb) / 0.55); background: rgb(var(--amber-rgb) / 0.08); color: var(--text); font-size: 14px; }
 .manage-product { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
 .cc-requests { margin: 10px 0 0; padding: 10px 14px 10px 30px; border-radius: var(--radius); border: 1px solid rgb(var(--amber-rgb) / 0.35); background: rgb(var(--amber-rgb) / 0.06); font-size: 13.5px; display: grid; gap: 4px; overflow-wrap: anywhere; }

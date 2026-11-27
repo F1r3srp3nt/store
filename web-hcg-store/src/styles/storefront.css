@@ -39,7 +39,9 @@
 
 /* ---------- Header ---------- */
 .site-header {
-  background: rgb(var(--deep-rgb) / 0.78);
+  /* Opaque enough that page content scrolling underneath never shows through the navigation (headings looked as if
+     they overlapped it, notably on iPad). */
+  background: rgb(var(--deep-rgb) / 0.97);
 }
 .site-header::after {
   background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.32), rgb(var(--hairline-rgb) / 0.18), transparent);
