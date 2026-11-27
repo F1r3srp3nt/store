@@ -132,6 +132,9 @@ export interface Health {
   entitlementAuthority: "none" | "test-ledger" | "hcg-ecosystem";
   payments: string;
   protectedDownloads: "enabled" | "free-testing-only" | "disabled";
+  /** Products whose free public releases download without an HCG account (founder-approved, product by product). */
+  anonymousFreeProducts?: string[];
+  publishing?: string;
 }
 
 export class StoreApiError extends Error {

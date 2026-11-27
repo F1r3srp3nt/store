@@ -72,7 +72,9 @@ test.describe("themes", () => {
       await page.addInitScript((id) => localStorage.setItem("hcg-store.theme", id), t);
       await page.goto(REAL + "/apps/hcg-mail");
       await expect(page.locator("html")).toHaveAttribute("data-theme", t);
-      await expect(page.getByText("Downloads are not available yet.").first()).toBeVisible();
+      // Without HCG Store's server (static preview) the download area says so honestly; the footer carries the HCG brand.
+      await expect(page.getByText("Downloads could not be checked right now.", { exact: false }).first()).toBeVisible();
+      await expect(page.locator("footer").getByText("EVERYTHING IS INTERCHANGEABLE.")).toBeVisible();
       const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor);
       expect(bg).not.toBe("rgba(0, 0, 0, 0)");
     });

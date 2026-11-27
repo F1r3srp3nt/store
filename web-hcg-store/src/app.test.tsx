@@ -102,11 +102,31 @@ describe("store pages with the shipped catalogue", () => {
     const all = screen.getByRole("heading", { name: "All products" }).closest("section")!;
     expect(within(all).getAllByRole("listitem")).toHaveLength(11); // RePrompter is now part of Clarity; drafts are never listed
     expect(within(all).queryByText("HCG RePrompter")).toBeNull();
-    expect(screen.getAllByText("Downloads are not available yet.", { exact: false }).length).toBeGreaterThan(0);
-    // No counters, no internal labels, no download links.
+    // Ecosystem gateway: every listed product linked to its page, the latest release, and how access really works.
+    const gateway = screen.getByRole("heading", { name: "One store. Every HCG application." }).closest("section")!;
+    const nodes = gateway.querySelectorAll(".constellation-node__link");
+    expect(nodes).toHaveLength(11);
+    expect([...nodes].map((a) => a.getAttribute("href"))).toContain("/apps/hcg-mail");
+    expect(within(gateway).getByRole("img", { name: "HCG Store" })).toBeInTheDocument();
+    const latest = within(gateway).getByRole("heading", { name: "Latest releases" }).closest("section")!;
+    expect(within(latest).getByText("HCG Mail")).toBeInTheDocument();
+    expect(latest.textContent).toMatch(/1\.0\.0-beta\.1 · Public beta/);
+    expect(latest.textContent).toMatch(/Windows x64/);
+    expect(latest.textContent).toMatch(/Free/);
+    for (const t of ["Public browsing", "Free downloads, no account", "Downloads with your HCG account", "Licensed products", "HCG Connect", "Purchases"]) {
+      expect(within(gateway).getByRole("heading", { name: t })).toBeInTheDocument();
+    }
+    // The old blanket claims are gone.
+    expect(container.textContent).not.toMatch(/Downloads are not available yet|Every download requires|Downloads will require/);
+    // Footer: four groups, the slogan, and no build or catalogue-source details.
+    const footer = container.querySelector("footer")!;
+    for (const g of ["Marketplace", "HCG Ecosystem", "Resources & Support", "Your Account"]) expect(within(footer).getByRole("list", { name: g })).toBeInTheDocument();
+    expect(footer.textContent).toContain("EVERYTHING IS INTERCHANGEABLE.");
+    expect(footer.textContent).not.toMatch(/Catalogue source|Build|Provisional local catalogue/);
+    // No counters, no internal labels, no file links.
     expect(screen.queryByLabelText("Catalogue status")).toBeNull();
     expect(container.textContent).not.toMatch(/generated tile/i);
-    expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
+    expect([...container.querySelectorAll("a")].some((a) => (a.getAttribute("href") ?? "").includes("/api/v1/downloads"))).toBe(false);
     expectNoFabrication(container);
   });
 
@@ -207,7 +227,7 @@ describe("store pages with the shipped catalogue", () => {
     cleanup();
     renderAt("/apps/hcg-server");
     await screen.findByRole("heading", { level: 1, name: "HCG Server" });
-    expect(screen.getByRole("link", { name: "HCG Executable Maker" })).toHaveAttribute("href", "/apps/hcg-executable-maker");
+    expect(within(screen.getByRole("main")).getByRole("link", { name: "HCG Executable Maker" })).toHaveAttribute("href", "/apps/hcg-executable-maker");
     cleanup();
     renderAt("/apps/hcg-ads");
     expect(await screen.findByText(/not found|doesn.t exist|could not find/i)).toBeInTheDocument();
@@ -325,7 +345,7 @@ describe("store pages with the shipped catalogue", () => {
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
     await user.click(screen.getByRole("radio", { name: "Release approved" }));
     expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "HCG Mail" })).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).getByRole("link", { name: "HCG Mail" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Linux" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
@@ -419,7 +439,7 @@ describe("account and ownership (stubbed HCG Store server)", () => {
   it("asks signed-out visitors to sign in for the library", async () => {
     server = { session: { configured: true, signedIn: false } };
     renderAt("/library");
-    expect(await screen.findByRole("link", { name: "Sign in with HCG Connect" })).toHaveAttribute("href", "/auth/login?return_to=%2Flibrary");
+    expect(await within(screen.getByRole("main")).findByRole("link", { name: "Sign in with HCG Connect" })).toHaveAttribute("href", "/auth/login?return_to=%2Flibrary");
   });
 
   it("shows Owned and 'Get from HCG Repo' only when the server says the edition is owned", async () => {

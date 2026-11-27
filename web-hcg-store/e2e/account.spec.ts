@@ -106,7 +106,7 @@ test.describe("account, purchase and protected delivery (TEST mode)", () => {
 
     await page.goto(`${ACCOUNT}/account`);
     await page.getByRole("button", { name: "Sign out of HCG Store" }).click();
-    await expect(page.getByRole("link", { name: "Sign in with HCG Connect" })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("link", { name: "Sign in with HCG Connect" })).toBeVisible();
     expect((await page.request.get(`${ACCOUNT}/api/v1/downloads/fixture-quasar-unleashed-1-0-0-arm64`)).status()).toBe(401);
     expect(errors).toEqual([]);
   });

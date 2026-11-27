@@ -5,22 +5,16 @@ import { assetUrl } from "../lib/format";
 import { useAccount } from "../account/account-context";
 import { signInUrl } from "../account/api";
 import { useCatalogueState } from "../app/catalogue-context";
+import type { Catalogue } from "../domain/catalogue";
 import { listedProducts } from "../domain/model";
 import { CATEGORIES, PLATFORMS, PLATFORM_IDS, type CategoryId } from "../domain/taxonomy";
 import { AmbientBackground } from "../theme/AmbientBackground";
-import { ThemeProvider } from "../theme/ThemeContext";
+import { ThemeProvider, useThemeId } from "../theme/ThemeContext";
+import { resolveStorefront } from "../storefront/config";
 import { ThemeChoices, ThemeMenu } from "../theme/ThemeMenu";
 import { IconChevronDown, IconClose, IconExternal, IconGrid, IconMenu, IconNew, IconOrbit, IconSearch, IconUser } from "./Icons";
 import { RouteFocus } from "./RouteFocus";
 
-const FOOTER_NAV = [
-  { to: "/", label: "Discover" },
-  { to: "/apps", label: "All products" },
-  { to: "/apps?availability=released", label: "New releases" },
-  { to: "/getting-started", label: "Getting started" },
-  { to: "/library", label: "My Library" },
-  { to: "/account", label: "Account & Connections" },
-];
 
 /** Categories and platforms that have at least one listed product, with counts (never empty entries). */
 function useFacets() {
@@ -122,6 +116,7 @@ function Shell() {
   const menuId = useId();
   const { categories, platforms } = useFacets();
   useRevealObserver();
+  useHashScroll();
   // NavLink ignores the query string, so the catalogue's own sections are matched here.
   const section =
     location.pathname === "/apps" ? (new URLSearchParams(location.search).get("availability") === "released" ? "releases" : "products") : null;
@@ -346,48 +341,136 @@ function AccountChip({ mobile = false }: { mobile?: boolean }) {
   return null;
 }
 
+/**
+ * The global footer: the official HCG STORE wordmark and slogan, then four groups of real destinations. Technical
+ * details (catalogue source, build) live with the service status on Account & Connections, not here.
+ */
 function SiteFooter() {
   const state = useCatalogueState();
-  const { deployment } = runtimeConfig;
-  const source = state.status === "error" ? state.result.source : state.source;
+  const { state: account } = useAccount();
+  const location = useLocation();
+  const theme = useThemeId();
+  const variant = theme === "frost" ? "light" : "dark";
+  const spotlight = state.status === "ready" ? footerProducts(state.catalogue) : [];
+  const groups: { title: string; links: { label: string; to?: string; href?: string; external?: boolean }[] }[] = [
+    {
+      title: "Marketplace",
+      links: [
+        { label: "Discover", to: "/" },
+        { label: "All products", to: "/apps" },
+        { label: "New releases", to: "/apps?availability=released" },
+        { label: "Coming soon", to: "/apps?availability=coming-soon" },
+      ],
+    },
+    {
+      title: "HCG Ecosystem",
+      links: [
+        { label: "Ecosystem map", to: "/#ecosystem" },
+        ...spotlight.map((p) => ({ label: p.name, to: `/apps/${p.slug}` })),
+        { label: "HCG Repo", href: runtimeConfig.repoBaseUrl, external: true },
+      ],
+    },
+    {
+      title: "Resources & Support",
+      links: [
+        { label: "Getting started", to: "/getting-started" },
+        { label: "How downloads work", to: "/getting-started#how-downloads-work" },
+        { label: "Verify a download", to: "/getting-started#verify" },
+        { label: "Platform notes", to: "/getting-started#platforms" },
+        { label: "Security principles", to: "/getting-started#security" },
+      ],
+    },
+    {
+      title: "Your Account",
+      links: [
+        ...(account.status === "signed-out" ? [{ label: "Sign in with HCG Connect", href: signInUrl(location.pathname + location.search) }] : []),
+        { label: "Account & Connections", to: "/account" },
+        { label: "My Library", to: "/library" },
+        { label: "Store status", to: "/account#store-status" },
+      ],
+    },
+  ];
   return (
     <footer className="site-footer">
+      <div className="site-footer__circuit" aria-hidden="true" />
       <div className="site-footer__inner">
         <div className="site-footer__brand">
-          <p className="site-footer__title">HCG Store</p>
-          <p>Applications and developer tools from Hakmi Capital Group.</p>
-          <p className="site-footer__fine">
-            Browsing is open to everyone. Downloads will require your HCG account, and paid products will also require ownership confirmed by HCG.
-            Downloads are not available yet.
-          </p>
+          <Link to="/" className="site-footer__wordmark-link" aria-label="HCG Store home">
+            <img
+              className="site-footer__wordmark"
+              src={assetUrl(`brand/hcg-store-wordmark-${variant}-720.webp`)}
+              srcSet={`${assetUrl(`brand/hcg-store-wordmark-${variant}-720.webp`)} 720w, ${assetUrl(`brand/hcg-store-wordmark-${variant}-1440.webp`)} 1440w`}
+              sizes="260px"
+              width={1440}
+              height={variant === "light" ? 276 : 282}
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
+          </Link>
+          <p className="site-footer__byline">A Hakmi Capital Group platform</p>
+          <p className="site-footer__about">Applications and developer tools from Hakmi Capital Group, each one useful on its own and better together.</p>
+          <p className="site-footer__slogan">EVERYTHING IS INTERCHANGEABLE.</p>
         </div>
-        <nav aria-label="Footer">
-          <ul className="site-footer__links">
-            {FOOTER_NAV.map((n) => (
-              <li key={n.to + n.label}>
-                <Link to={n.to}>{n.label}</Link>
-              </li>
-            ))}
-            <li>
-              <a href={runtimeConfig.repoBaseUrl}>HCG Repo</a>
-            </li>
-          </ul>
+        <nav className="site-footer__nav" aria-label="Footer">
+          {groups.map((g) => (
+            <div key={g.title} className="site-footer__group">
+              <p className="site-footer__heading" id={`footer-${g.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
+                {g.title}
+              </p>
+              <ul aria-labelledby={`footer-${g.title.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
+                {g.links.map((l) => (
+                  <li key={l.label}>
+                    {l.to ? (
+                      <Link to={l.to}>{l.label}</Link>
+                    ) : (
+                      <a href={l.href}>
+                        {l.label}
+                        {l.external && <IconExternal />}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </nav>
-        <dl className="site-footer__status">
-          <div>
-            <dt>Catalogue source</dt>
-            <dd>{source.authority === "central" ? "HCG ERP (central)" : "Provisional local catalogue"}</dd>
-          </div>
-          <div>
-            <dt>Build</dt>
-            <dd>
-              {deployment.deployEnv === "production" ? "Production" : deployment.deployEnv === "preview" ? "Preview (not indexed)" : "Local development (not indexed)"}
-            </dd>
-          </div>
-        </dl>
+      </div>
+      <div className="site-footer__bar">
+        <p>
+          <img src={assetUrl("brand/hcg-mark-240.webp")} width={240} height={109} alt="" className="site-footer__mark" loading="lazy" decoding="async" />
+          <span>HCG Store · Hakmi Capital Group</span>
+        </p>
+        <p className="site-footer__bar-note">Browsing is open to everyone. Payments are not open yet.</p>
       </div>
     </footer>
   );
+}
+
+/** Up to three products the storefront spotlights or features (public, listed products only). */
+function footerProducts(catalogue: Catalogue) {
+  const listed = listedProducts(catalogue);
+  const store = resolveStorefront(catalogue);
+  const ids = [...store.spotlight, ...store.featured].map((p) => p.id);
+  return [...new Set(ids)].map((id) => listed.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p).slice(0, 3);
+}
+
+/** Section links (#…) scroll to their section after client-side navigation, as on a full page load. */
+function useHashScroll() {
+  const location = useLocation();
+  useEffect(() => {
+    if (!location.hash) return;
+    const id = decodeURIComponent(location.hash.slice(1));
+    let tries = 0;
+    const t = window.setInterval(() => {
+      const el = document.getElementById(id);
+      if (el || ++tries > 20) {
+        window.clearInterval(t);
+        el?.scrollIntoView({ block: "start" });
+      }
+    }, 50);
+    return () => window.clearInterval(t);
+  }, [location.pathname, location.hash]);
 }
 
 /**
