@@ -162,7 +162,7 @@ function Shell() {
               height={109}
               alt=""
             />
-            <span className="brand__store">Store</span>
+            <BrandStore />
           </Link>
 
           <nav className="site-nav" aria-label="Primary">
@@ -387,5 +387,29 @@ function SiteFooter() {
         </dl>
       </div>
     </footer>
+  );
+}
+
+/**
+ * The STORE lettering of the approved HCG STORE wordmark (homepage branding), cut from the same artwork
+ * (assets/brand/hcg-store-nav-store-dark.webp): never a font. Sized and placed against the HCG mark in the artwork's own
+ * proportions (layout.css). If the image cannot load, the word appears as text.
+ */
+function BrandStore() {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="brand__store brand__store--text">Store</span>;
+  const src = (w: number) => assetUrl(`brand/hcg-store-nav-store-${w}.webp`);
+  return (
+    <img
+      className="brand__store"
+      src={src(264)}
+      srcSet={`${src(132)} 132w, ${src(264)} 264w, ${src(396)} 396w`}
+      sizes="(max-width: 480px) 108px, 131px"
+      width={1079}
+      height={228}
+      alt=""
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
   );
 }

@@ -190,9 +190,10 @@ html.theme-switching *::after {
     box-shadow 360ms var(--ease) !important;
 }
 
-/* The official chrome HCG mark is made for dark grounds: on the light theme it sits on a small titanium plate. */
-html[data-theme="frost"] .brand__mark {
-  padding: 4px 6px;
+/* The HCG STORE lockup is artwork made for dark grounds: on the light theme it sits on a small titanium plate. */
+html[data-theme="frost"] .brand {
+  box-sizing: content-box;
+  padding: 4px 8px;
   border-radius: 8px;
   background: linear-gradient(160deg, #1b2433, #0b111b);
   box-shadow: 0 1px 0 rgb(255 255 255 / 0.6), 0 6px 16px -8px rgb(40 70 110 / 0.6);
