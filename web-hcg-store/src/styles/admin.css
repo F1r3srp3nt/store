@@ -118,3 +118,27 @@
 .cc-exception { margin: 10px 0 0; padding: 10px 14px; border-radius: 10px; border: 1px solid rgb(var(--amber-rgb) / 0.55); background: rgb(var(--amber-rgb) / 0.08); color: var(--text); font-size: 14px; }
 .manage-product { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
 .cc-requests { margin: 10px 0 0; padding: 10px 14px 10px 30px; border-radius: var(--radius); border: 1px solid rgb(var(--amber-rgb) / 0.35); background: rgb(var(--amber-rgb) / 0.06); font-size: 13.5px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+
+/* ---- Release Readiness Inspector ---- */
+.cc-readiness { margin-top: 14px; padding: 16px; border: 1px solid var(--line-strong); border-radius: 14px; background: rgb(var(--surface-rgb) / 0.55); }
+.cc-readiness__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cc-readiness__head h4 { margin: 0; font-size: 15px; }
+.cc-readiness h5 { margin: 16px 0 6px; font-size: 13px; font-family: var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); font-weight: 500; }
+.cc-readiness__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 18px; margin: 0; }
+.cc-readiness__grid dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+.cc-readiness__grid dd { margin: 2px 0 0; font-size: 13.5px; }
+.cc-perms { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.cc-ok { color: var(--mint, #5eead4); }
+.cc-no { color: #ff8a8a; }
+html[data-theme="frost"] .cc-ok { color: #0a7a5a; }
+html[data-theme="frost"] .cc-no { color: #b42318; }
+.cc-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+.cc-step { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.cc-step.is-ready { border-color: rgb(var(--accent-rgb) / 0.45); }
+.cc-step.is-done { opacity: 0.8; }
+.cc-step__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.cc-step__head b { margin-right: auto; }
+.cc-step__why { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-muted); display: grid; gap: 3px; }
+.cc-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.cc-hash { font-size: 11.5px; word-break: break-all; }
+.cc-readiness textarea { width: 100%; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: rgb(var(--deep-rgb) / 0.5); color: var(--text); }

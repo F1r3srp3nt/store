@@ -22,6 +22,9 @@ interface FileRow {
   platforms: string[];
   format: string | null;
   architectures: string[];
+  /** What the uploader checked on their own Mac or PC (codesign/spctl/stapler, signtool); recorded as reported. */
+  signing: "not-checked" | "unsigned" | "signed" | "notarized";
+  signingEvidence: string;
   note: string | null;
   progress: UploadProgress | null;
   controller: AbortController | null;
@@ -240,7 +243,7 @@ function DraftFiles({ release, onChange, onDone, onClose }: { release: AdminRele
       if (resume && (file.name !== resume.fileName || file.size !== resume.size)) { setError(`Choose ${resume.fileName} (${formatBytes(resume.size)}) to resume that upload.`); continue; }
       const g = guessFile(file.name);
       const declared = resume ? release.artifacts?.find((a) => a.id === resume.artifactId) : undefined;
-      next.push({ key: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`, file, platform: declared?.platform ?? g.platform ?? "", platforms: declared ? [declared.platform] : g.platforms, format: declared?.format ?? g.format, architectures: declared?.architectures ?? g.architectures, note: g.note, progress: null, controller: null, resumeArtifactId: resume?.artifactId });
+      next.push({ key: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`, file, platform: declared?.platform ?? g.platform ?? "", platforms: declared ? [declared.platform] : g.platforms, format: declared?.format ?? g.format, architectures: declared?.architectures ?? g.architectures, signing: "not-checked", signingEvidence: "", note: g.note, progress: null, controller: null, resumeArtifactId: resume?.artifactId });
     }
     setRows((r) => [...r, ...next]);
   };
@@ -249,7 +252,7 @@ function DraftFiles({ release, onChange, onDone, onClose }: { release: AdminRele
     if (!row.format || !row.platform) return;
     const controller = new AbortController();
     update(row.key, { controller, progress: null });
-    const out = await uploadFile(row.file, release.id, { platform: row.platform, format: row.format, architectures: row.architectures, minimumOs: null }, (p) => update(row.key, { progress: p }), controller.signal, row.resumeArtifactId ?? (row.progress?.phase === "paused" || row.progress?.phase === "failed" ? row.progress.artifactId ?? undefined : undefined));
+    const out = await uploadFile(row.file, release.id, { platform: row.platform, format: row.format, architectures: row.architectures, minimumOs: null, signing: { status: row.signing, evidence: row.signingEvidence.trim() || null } }, (p) => update(row.key, { progress: p }), controller.signal, row.resumeArtifactId ?? (row.progress?.phase === "paused" || row.progress?.phase === "failed" ? row.progress.artifactId ?? undefined : undefined));
     update(row.key, { controller: null, progress: out, resumeArtifactId: out.phase === "paused" || out.phase === "failed" ? out.artifactId ?? undefined : undefined });
     void refresh();
   };
@@ -364,8 +367,24 @@ function FileRowView({ row, onChange, onStart, onPause, onCancel }: { row: FileR
             ))}
           </fieldset>
           <span className="muted">{row.format.toUpperCase()}{row.architectures.length === 0 ? " · any architecture" : ""}</span>
+          {(row.platform === "macos" || row.platform === "windows") && (
+            <label>Signing, as you checked it{" "}
+              <select aria-label="Signing, as you checked it" value={row.signing} disabled={locked} onChange={(e) => onChange({ signing: e.target.value as FileRow["signing"] })}>
+                <option value="not-checked">Not checked</option>
+                <option value="unsigned">Unsigned</option>
+                <option value="signed">{row.platform === "macos" ? "Developer ID signed (not notarized)" : "Signed (Authenticode)"}</option>
+                {row.platform === "macos" && <option value="notarized">Developer ID signed and notarized</option>}
+              </select>
+            </label>
+          )}
+          {(row.signing === "signed" || row.signing === "notarized") && (
+            <label className="cc-file__evidence">Evidence (recorded){" "}
+              <input aria-label="Signing evidence (recorded)" required disabled={locked} value={row.signingEvidence} placeholder={row.platform === "macos" ? "e.g. spctl: accepted, source=Notarized Developer ID; stapler validate: worked" : "e.g. signtool verify /pa: Successfully verified"} onChange={(e) => onChange({ signingEvidence: e.target.value })} />
+            </label>
+          )}
         </div>
       )}
+      {(row.signing === "signed" || row.signing === "notarized") && <p className="fine">Recorded as reported by you on the website, with your evidence; HCG Store also checks the signature structure in the file.</p>}
       {row.note && row.format && <p className="fine">{row.note}</p>}
       {p && (
         <div className="cc-progress" aria-live="polite">
@@ -385,7 +404,7 @@ function FileRowView({ row, onChange, onStart, onPause, onCancel }: { row: FileR
       )}
       <div className="cc-actions">
         {row.format && !row.controller && (!p || ["paused", "failed"].includes(p.phase)) && (
-          <button type="button" className="button button--primary button--small" onClick={onStart}>{p || row.resumeArtifactId ? "Resume" : "Upload"}</button>
+          <button type="button" className="button button--primary button--small" disabled={(row.signing === "signed" || row.signing === "notarized") && !row.signingEvidence.trim()} onClick={onStart}>{p || row.resumeArtifactId ? "Resume" : "Upload"}</button>
         )}
         {row.controller && <button type="button" className="button button--ghost button--small" onClick={onPause}>Pause</button>}
         {p?.phase !== "verified" && <button type="button" className="button button--ghost button--small" onClick={onCancel}>Cancel</button>}

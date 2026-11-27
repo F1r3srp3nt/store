@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { StoreApiError } from "../account/api";
 import { adminApi, type AdminRelease, type Me, type SwitchResult } from "./admin-api";
 import { PLATFORM_NAMES } from "./formats";
+import { ReadinessInspector } from "./ReadinessInspector";
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
 const date = (ms: number | null) => (ms ? new Date(ms).toISOString().slice(0, 16).replace("T", " ") : "—");
@@ -90,8 +91,9 @@ function ReleaseCard({ me, release: summary, onChanged }: { me: Me; release: Adm
   const P = me.permissions;
   const pub = me.capabilities.publication;
   const ops: Op[] = [];
-  if (r.status === "submitted" && P.approve && me.capabilities.approval) ops.push("approve");
-  if (r.status === "approved" && r.approvedEligibility === "public" && P.publish && pub) ops.push("publish");
+  // Submit, founder exception, approve, publish, request changes, reject and edit live in the Readiness Inspector, which
+  // explains every step that cannot run (never a silently missing button).
+  const inReview = ["draft", "submitted", "approved"].includes(r.status);
   // Make current: a published release that is current nowhere (published without "supersede"). Restore (rollback): an
   // earlier published release that some of its platforms no longer get, whatever replaced it.
   const notCurrentSomewhere = r.targets.some((t) => !t.current);
@@ -153,6 +155,7 @@ function ReleaseCard({ me, release: summary, onChanged }: { me: Me; release: Adm
         <p className="fine">At publication the submitter asks: {r.publicationRequest.makeCurrent ? "make it the catalogue's current release" : "do not make it the catalogue's current release"}; {r.publicationRequest.supersedePrevious === "compatible" ? "supersede the previous compatible release" : "supersede nothing"}.</p>
       )}
       {message && <p className="notice" role="status">{message}</p>}
+      {inReview && <ReadinessInspector release={r} onChanged={(m) => { setMessage(m); onChanged(); }} />}
       {op && <OperationForm release={r} op={op} onDone={(m) => { setOp(null); setMessage(m); onChanged(); }} onCancel={() => setOp(null)} />}
       {open && <ReleaseDetails release={r} onMessage={setMessage} />}
     </li>
