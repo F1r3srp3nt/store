@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { realCatalogue } from "../test/fixtures";
+import { realCatalogue as shipped } from "../test/fixtures";
+import type { Catalogue } from "./catalogue";
+
+/** The shipped catalogue without HCG Mail's explicit current release (what the overlay has to work from). */
+const realCatalogue = (): Catalogue => {
+  const c = shipped();
+  return { ...c, products: c.products.map((p) => (p.id === "hcg-mail" ? { ...p, currentReleaseId: null } : p)) };
+};
 import { applyLivePublications, type LivePublication } from "./live-publications";
 import { currentRelease } from "./model";
 

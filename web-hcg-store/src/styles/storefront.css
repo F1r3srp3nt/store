@@ -96,11 +96,11 @@
   gap: 18px;
   padding-block: clamp(14px, 2.4vw, 28px) clamp(18px, 3vw, 32px);
 }
-/* The approved banner, always complete: 3:1, never cropped (object-fit: contain). */
+/* The approved banner, always complete: 3:1, never cropped or stretched (object-fit: contain). */
 .hero-banner {
   position: relative;
   margin: 0;
-  aspect-ratio: 2000 / 667;
+  aspect-ratio: 2172 / 724;
   max-height: 360px;
   width: 100%;
   margin-inline: auto;
@@ -156,6 +156,14 @@
   }
   .hero-banner {
     border-radius: var(--radius);
+  }
+  /* Keep the label in the corner, clear of the lettering, on small banners. */
+  .hero-banner .art-label {
+    right: 6px;
+    bottom: 5px;
+    padding: 1px 5px;
+    font-size: 8px;
+    letter-spacing: 0.08em;
   }
 }
 

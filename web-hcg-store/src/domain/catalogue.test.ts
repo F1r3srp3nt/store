@@ -53,12 +53,13 @@ describe("shipped catalogue", () => {
       "hcg-reprompter": "hcg.reprompter",
     };
     for (const p of c.products) {
-      expect(p.currentReleaseId).toBeNull();
+      // Only HCG Mail has a current release: designated explicitly by the founder after publication (27 Nov 2026).
+      expect(p.currentReleaseId, p.id).toBe(p.id === "hcg-mail" ? "rel-bc6c2096b73a977f" : null);
       expect(p.registry.centralId, p.id).toBe(confirmed[p.id] ?? null);
       expect(p.registry.status, p.id).toBe(confirmed[p.id] ? "central" : "provisional");
       // Not registered centrally yet (decision D3): no edition may be mapped either.
       if (!confirmed[p.id]) for (const e of p.editions) expect(e.centralEditionKey, `${p.id}/${e.id}`).toBeNull();
-      for (const pl of p.platforms) expect(pl.support).not.toBe("confirmed");
+      for (const pl of p.platforms) expect(pl.support === "confirmed", `${p.id}/${pl.platform}`).toBe(p.id === "hcg-mail" && pl.platform === "windows");
     }
   });
 

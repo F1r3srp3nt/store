@@ -131,7 +131,7 @@ describe("store pages with the shipped catalogue", () => {
   it("collapses homepage sections without eligible content (no news or campaigns exist; one published release)", async () => {
     renderAt("/");
     await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
-    expect(screen.queryByRole("heading", { name: "New releases" })).toBeNull(); // no explicit current release in the static catalogue
+    expect(within(screen.getByRole("heading", { name: "New releases" }).closest("section")!).getByText("HCG Mail")).toBeInTheDocument();
     expect(within(screen.getByRole("heading", { name: "Recently updated" }).closest("section")!).getByText("HCG Mail")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
     expect(screen.queryByText("Sponsored")).toBeNull();
@@ -149,22 +149,45 @@ describe("store pages with the shipped catalogue", () => {
     expect(within(nav).getByRole("button", { name: "Platforms" })).toBeInTheDocument();
   });
 
-  it("home hero uses the banner as a labelled illustration and keeps the heading if it fails", async () => {
+  it("home hero: banner first, then the wordmark heading, attribution, tagline, lead and actions", async () => {
     renderAt("/");
-    await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
-    const banner = screen.getByRole("img", { name: /HCG Store wordmark/i });
+    const h1 = await screen.findByRole("heading", { level: 1, name: "HCG Store" });
+    const banner = screen.getByRole("img", { name: /HCG STORE wordmark/ });
     expect(banner).toHaveAttribute("loading", "eager");
-    expect(banner).toHaveAttribute("width", "2000");
-    expect(banner).toHaveAttribute("height", "667");
+    expect(banner).toHaveAttribute("width", "2172");
+    expect(banner).toHaveAttribute("height", "724");
     expect(banner.getAttribute("srcset")).toMatch(/hcg-store-hero-800\.webp 800w/);
+    expect(banner.closest("picture")?.querySelector('source[type="image/avif"]')?.getAttribute("srcset")).toMatch(/hcg-store-hero-2172\.avif 2172w/);
     expect(screen.getAllByText("Illustration").length).toBeGreaterThan(0);
+    // The wordmark image is decorative inside the h1; the heading's name comes from its text.
+    const wordmark = h1.querySelector("img")!;
+    expect(wordmark).toHaveAttribute("alt", "");
+    expect(wordmark.getAttribute("src")).toMatch(/hcg-store-wordmark-dark-1440\.webp$/);
+    // Document order: banner, wordmark heading, attribution, tagline, lead, Browse Products, Explore the ecosystem.
+    const hero = h1.closest("section")!;
+    const order = [
+      banner,
+      h1,
+      within(hero).getByText("A Hakmi Capital Group Platform"),
+      within(hero).getByText("The marketplace of an interconnected future"),
+      within(hero).getByText(/Apps, infrastructure, security instruments/),
+      within(hero).getByRole("link", { name: /Browse Products/ }),
+      within(hero).getByRole("link", { name: "Explore the ecosystem" }),
+    ];
+    for (let i = 1; i < order.length; i++) expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(hero).queryByText(/^Hakmi Capital Group$/)).toBeNull();
+    // Failures leave the heading readable.
+    fireEvent.error(wordmark);
+    expect(h1.querySelector("img")).toBeNull();
+    expect(within(h1).getByText("HCG Store")).not.toHaveClass("visually-hidden");
     fireEvent.error(banner);
-    expect(screen.queryByRole("img", { name: /HCG Store wordmark/i })).toBeNull();
-    expect(screen.getByRole("heading", { level: 1, name: /HCG Store/ })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /HCG STORE wordmark/ })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: "HCG Store" })).toBeInTheDocument();
   });
 
-  it("product page shows 'Coming soon', editions, and 'Downloads are not available yet.'", async () => {
-    const { container } = renderAt("/apps/hcg-mail");
+  it("product page shows 'Coming soon', editions, and 'Downloads are not available yet.' (HCG Mail before its release)", async () => {
+    const c = realCatalogue();
+    const { container } = renderAt("/apps/hcg-mail", { ...c, products: c.products.map((p) => (p.id === "hcg-mail" ? { ...p, currentReleaseId: null } : p)) });
     expect(await screen.findByRole("heading", { level: 1, name: "HCG Mail" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Coming soon" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Windows desktop" })).toBeInTheDocument();
@@ -300,6 +323,9 @@ describe("store pages with the shipped catalogue", () => {
     expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
     await user.click(screen.getByRole("radio", { name: "Release approved" }));
+    expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "HCG Mail" })).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Linux" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
     expect(screen.getByText("11 products")).toBeInTheDocument();

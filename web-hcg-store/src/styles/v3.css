@@ -30,33 +30,50 @@
   height: 120%;
   pointer-events: none;
   background:
-    radial-gradient(600px 340px at 72% 38%, rgb(var(--accent-rgb) / 0.16), transparent 70%),
-    radial-gradient(520px 300px at 20% 70%, rgb(var(--accent-2-rgb) / 0.12), transparent 70%);
+    radial-gradient(720px 320px at 50% 26%, rgb(var(--accent-rgb) / 0.16), transparent 70%),
+    radial-gradient(560px 260px at 50% 66%, rgb(var(--accent-2-rgb) / 0.12), transparent 70%);
   transform: translate3d(calc(var(--px) * -14px), calc(var(--py) * -10px + var(--sy) * 0.12px), 0);
 }
+/* Banner first, then the wordmark and copy, centred beneath it (one column at every width). */
 .hero3__stage {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
-  gap: clamp(20px, 4vw, 56px);
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(18px, 3vw, 34px);
+  justify-items: center;
 }
-.hero3__kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--cyan);
-  margin-bottom: 14px;
+.hero3__visual {
+  width: 100%;
+  max-width: 1080px;
+}
+.hero3__copy {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  max-width: 760px;
 }
 .hero3__title {
-  display: grid;
-  gap: 8px;
+  margin: 0;
+  width: min(100%, 640px);
+  line-height: 0;
 }
+/* The wordmark is transparent artwork: the theme only tints the light around it, never the letters. */
+.hero3__wordmark {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 0 26px rgb(var(--accent-rgb) / 0.28)) drop-shadow(0 10px 22px rgb(var(--shadow-rgb) / 0.55));
+  transform: translate3d(calc(var(--px) * -5px), calc(var(--py) * -3px), 0);
+}
+html[data-theme="frost"] .hero3__wordmark {
+  filter: drop-shadow(0 8px 16px rgb(var(--shadow-rgb) / 0.22));
+}
+.hero3__title--text {
+  line-height: 1;
+}
+/* Fallback only: shown if the wordmark image cannot load. */
 .hero3__brandline {
+  display: block;
   font-size: clamp(2.3rem, 1.5rem + 3.4vw, 4.4rem);
   letter-spacing: -0.035em;
   background: var(--metal);
@@ -70,24 +87,49 @@ html[data-theme="frost"] .hero3__brandline {
   -webkit-background-clip: text;
   background-clip: text;
 }
+.hero3__attribution {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: clamp(10px, 1.6vw, 16px);
+  font-size: clamp(0.68rem, 0.62rem + 0.25vw, 0.8rem);
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  /* letter-spacing adds space after the last letter; balance it so the line stays centred */
+  padding-left: 0.34em;
+}
+.hero3__attribution::before,
+.hero3__attribution::after {
+  content: "";
+  width: clamp(18px, 5vw, 56px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.7));
+}
+.hero3__attribution::after {
+  background: linear-gradient(270deg, transparent, rgb(var(--accent-2-rgb) / 0.7));
+}
 .hero3__tagline {
+  margin-top: clamp(14px, 2vw, 22px);
   font-family: var(--font-mono);
   font-weight: 500;
   font-size: clamp(0.78rem, 0.7rem + 0.35vw, 0.98rem);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
   line-height: 1.45;
 }
 .hero3__lead {
-  margin-top: 16px;
+  margin-top: 12px;
   color: var(--text-muted);
   font-size: clamp(1rem, 0.95rem + 0.25vw, 1.12rem);
-  max-width: 46ch;
+  max-width: 52ch;
 }
 .hero3__actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   margin-top: 22px;
 }
@@ -260,19 +302,15 @@ html[data-theme="frost"] .hero3__brandline {
 }
 
 @media (max-width: 920px) {
-  .hero3__stage {
-    grid-template-columns: 1fr;
-  }
-  .hero3__visual {
-    order: -1;
-  }
   .hero3__symbol {
     display: none;
   }
 }
 @media (max-width: 600px) {
-  .hero3__kicker {
-    margin-bottom: 8px;
+  .hero3__attribution {
+    gap: 10px;
+    letter-spacing: 0.24em;
+    padding-left: 0.24em;
   }
   .hero3__lead {
     margin-top: 10px;
@@ -910,6 +948,7 @@ html[data-theme="frost"] .hero3__brandline {
   }
   .hero3__glow,
   .hero3__visual,
+  .hero3__wordmark,
   .hero3__symbol {
     transform: none !important;
   }
@@ -921,6 +960,7 @@ html[data-effects="off"] .spotlight__slide {
 }
 html[data-effects="off"] .hero3__glow,
 html[data-effects="off"] .hero3__visual,
+html[data-effects="off"] .hero3__wordmark,
 html[data-effects="off"] .hero3__symbol {
   transform: none !important;
 }

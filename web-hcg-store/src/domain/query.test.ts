@@ -47,8 +47,8 @@ describe("search and filters (shipped catalogue)", () => {
   });
 
   it("filters by release availability", () => {
-    expect(ids(c, q({ availability: "released" }))).toEqual([]);
-    expect(ids(c, q({ availability: "coming-soon" }))).toHaveLength(listedProducts(c).length);
+    expect(ids(c, q({ availability: "released" }))).toEqual(["hcg-mail"]);
+    expect(ids(c, q({ availability: "coming-soon" }))).toHaveLength(listedProducts(c).length - 1);
   });
 
   it("combines filters", () => {

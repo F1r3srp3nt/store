@@ -119,7 +119,10 @@ test.describe("honest homepage", () => {
   test("drafts, releases, news and campaigns appear only when the data supports them", async ({ page }) => {
     await page.goto(REAL + "/");
     await expect(page.getByRole("heading", { name: "Upcoming technology" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "New releases" })).toHaveCount(0);
+    // One release exists (HCG Mail 1.0.0-beta.1, published in HCG Store and current): New releases shows exactly it.
+    const newReleases = page.getByRole("heading", { name: "New releases" }).locator("xpath=ancestor::section[1]");
+    await expect(newReleases).toContainText("HCG Mail");
+    await expect(newReleases.getByRole("heading", { level: 3 })).toHaveCount(1);
     await expect(page.getByRole("heading", { name: "Announcements" })).toHaveCount(0);
     await expect(page.getByText("Sponsored")).toHaveCount(0);
     await expect(page.locator("main")).not.toContainText(/HCG ADS|Signal Contractor|System Tester|Representation/);

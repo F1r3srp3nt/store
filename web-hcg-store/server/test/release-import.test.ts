@@ -111,7 +111,13 @@ function windowedCatalogue(): string {
   const ed = mail.editions.find((e: { id: string }) => e.id === "windows-desktop");
   ed.pricingModel = "not-set";
   ed.access = "hcg-account";
+  // Before any HCG Mail release was published: no current release, no generated release record.
+  mail.currentReleaseId = null;
+  for (const pl of mail.platforms) if (pl.platform === "windows") Object.assign(pl, { support: "in-development", architectures: [], minimumOs: null });
   writeFileSync(join(dir, "products.json"), JSON.stringify(products));
+  const releases = JSON.parse(readFileSync(join(dir, "releases.json"), "utf8"));
+  releases.releases = releases.releases.filter((r: { productId: string }) => r.productId !== "hcg-mail");
+  writeFileSync(join(dir, "releases.json"), JSON.stringify(releases));
   return dir;
 }
 
