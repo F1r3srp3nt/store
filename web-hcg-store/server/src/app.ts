@@ -31,7 +31,7 @@ import type { CentralGrantOutbox } from "./grants";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, parseCookies, readBody, readJson, redirect, safeReturnTo, send } from "./http";
 import { PaymentLedger, signTestEvent, TEST_SIGNATURE_HEADER, verifyTestEvent, type PaymentEventType } from "./payments";
-import { currentReleaseOf, findArtifact, findByRepoKey, findProduct, type Registry } from "./registry";
+import { currentReleaseOf, findArtifact, findByRepoKey, findProduct, type ProtectedArtifact, type Registry } from "./registry";
 import { getProfile } from "./profiles";
 import { createPublishing } from "./publishing";
 import { SessionStore, type Session } from "./sessions";
@@ -370,7 +370,40 @@ export function createStoreApp(deps: AppDeps): StoreApp {
 
   // ---------------------------------------------------------------- downloads
 
+  // Downloads without an HCG account: per visitor address, at most this many file requests a minute.
+  const ANON_DOWNLOADS_PER_MINUTE = 20;
+  const anonWindows = new Map<string, { start: number; n: number }>();
+  function anonymousAllowed(req: IncomingMessage): boolean {
+    const header = req.headers["fly-client-ip"];
+    const ip = (Array.isArray(header) ? header[0] : header) ?? req.socket.remoteAddress ?? "unknown";
+    const t = Date.now();
+    const w = anonWindows.get(ip);
+    if (!w || t - w.start >= 60_000) {
+      anonWindows.set(ip, { start: t, n: 1 });
+      if (anonWindows.size > 10_000) for (const [k, v] of anonWindows) if (t - v.start >= 60_000) anonWindows.delete(k);
+      return true;
+    }
+    return ++w.n <= ANON_DOWNLOADS_PER_MINUTE;
+  }
+
+  /**
+   * A free public file of a product approved for downloads without an account: no session needed. Only files that
+   * freePublicFor returns right now (published, approved public and free, current, available, verified, free basis
+   * open), so withdrawn, revoked, superseded or private files are never served this way.
+   */
+  function anonymousFreeFile(artifactId: string): ProtectedArtifact | undefined {
+    if (!cfg.freeDownloads || !cfg.anonymousFreeProducts.length) return undefined;
+    const a = findArtifact(registry, artifactId);
+    if (!a || !cfg.anonymousFreeProducts.includes(a.productId)) return undefined;
+    return (registry.published?.freePublicFor(a.productId, a.editionId) ?? []).find((x) => x.id === a.id);
+  }
+
   async function download(req: IncomingMessage, res: ServerResponse, artifactId: string) {
+    const open = anonymousFreeFile(artifactId);
+    if (open) {
+      if (!anonymousAllowed(req)) return errorJson(res, 429, "rate_limited", "Too many downloads from your address. Try again in a minute.", { "retry-after": "60" });
+      return streamArtifact(res, open.storageKey, open.fileName, open.contentType);
+    }
     // Order matters: never reveal anything about a file to someone who may not have it.
     const fresh = await freshSession(req);
     if (fresh.unavailable) return errorJson(res, 503, "hcg_unavailable", "Your access could not be checked right now. Try again shortly.");
@@ -543,6 +576,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         entitlementAuthority: authority.kind,
         payments: cfg.paymentProvider === "none" ? "disabled" : `${cfg.paymentProvider}-mode`,
         protectedDownloads: cfg.protectedDownloads ? "enabled" : cfg.freeDownloads ? "free-testing-only" : "disabled",
+        anonymousFreeProducts: cfg.anonymousFreeProducts,
         // Ship to Store clients (HCG Executable Maker, HCG Store Manager) read this before signing in.
         publishing: cfg.publishing.mode,
       });

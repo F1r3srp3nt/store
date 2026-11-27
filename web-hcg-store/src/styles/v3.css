@@ -1037,3 +1037,132 @@ html[data-effects="off"] .hero3__symbol {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* ---------- Product downloads (published releases) ---------- */
+.badge--beta {
+  color: rgb(var(--accent-rgb));
+  background: rgb(var(--accent-rgb) / 0.12);
+  border: 1px solid rgb(var(--accent-rgb) / 0.45);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.downloads {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+.downloads__lead {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.downloads__grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+.download-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(160deg, rgb(var(--accent-rgb) / 0.08), transparent 55%), rgb(var(--surface-rgb) / 0.6);
+}
+.download-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.download-card__platform {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+}
+.download-card__files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.download-file {
+  display: grid;
+  gap: 10px;
+}
+.download-file + .download-file {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.download-file__target {
+  margin: 0;
+  font-weight: 600;
+}
+.download-file__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+}
+.download-file__facts dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.download-file__facts dd {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+.download-file__note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+.download-file__button {
+  justify-self: start;
+  min-height: 44px;
+}
+.download-file__checksum summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.download-file__checksum code {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.8rem;
+}
+.download-card__help {
+  display: grid;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.download-card__help-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.download-card__steps {
+  display: grid;
+  gap: 4px;
+  padding-left: 1.2em;
+  list-style: decimal;
+}
+.download-card__warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--amber-rgb, 255 190 90) / 0.45);
+  background: rgb(var(--amber-rgb, 255 190 90) / 0.1);
+}
+@media (max-width: 600px) {
+  .download-file__button {
+    justify-self: stretch;
+    justify-content: center;
+  }
+}

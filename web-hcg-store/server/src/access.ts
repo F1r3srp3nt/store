@@ -4,7 +4,7 @@
  */
 import type { StoreConfig } from "./config";
 import type { EntitlementAuthority } from "./entitlements";
-import { currentReleaseOf, findEdition, offersFor, type Offer, type ProtectedArtifact, type Registry } from "./registry";
+import { currentReleaseOf, findEdition, offersFor, type Offer, type ProtectedArtifact, type PublishedFileMeta, type Registry } from "./registry";
 import type { SessionStore, Session } from "./sessions";
 import type { Product } from "../../src/domain/schema";
 
@@ -37,10 +37,20 @@ export interface EditionAccess {
   downloadsAvailable: boolean;
   downloadsMessage: string;
   /** Files the person may download now; only when downloadsAvailable. */
-  artifacts: { id: string; fileName: string; releaseId: string }[];
+  artifacts: AccessFile[];
+  /** No HCG account is needed to download these files (product approved for downloads without an account). */
+  anonymous?: boolean;
   /** A free testing period is open for this edition: free to download with an HCG account until endsAt (ms). */
   freeTesting?: { endsAt: number } | null;
   message: string | null;
+}
+
+/** A downloadable file with the public facts shown beside its button (published releases only). */
+export interface AccessFile {
+  id: string;
+  fileName: string;
+  releaseId: string;
+  details?: PublishedFileMeta | null;
 }
 
 export interface AccessDeps {
@@ -113,6 +123,21 @@ export async function decideAccess(
     })(),
   };
 
+  // Downloads without an account: only for products the founder approved for it, and only their free public files.
+  const files = (list: ProtectedArtifact[]) => list.map((a) => ({ id: a.id, fileName: a.fileName, releaseId: a.releaseId, details: registry.published?.publishedMeta(a.id) ?? null }));
+  if (!session && cfg.freeDownloads && cfg.anonymousFreeProducts.includes(product.id)) {
+    const free = registry.published?.freePublicFor(product.id, editionId) ?? [];
+    if (free.length) {
+      return {
+        ...base,
+        state: "free",
+        anonymous: true,
+        downloadsAvailable: true,
+        downloadsMessage: "Free download. No HCG account or payment needed.",
+        artifacts: files(free),
+      };
+    }
+  }
   if (sessionUnavailable) return { ...base, state: "unavailable", message: "Your access could not be checked right now. Try again shortly." };
   if (!session) return { ...base, message: "Sign in with HCG Connect to check access." };
 
@@ -127,7 +152,7 @@ export async function decideAccess(
       state: "free",
       downloadsAvailable: available,
       downloadsMessage: available ? (signedIn.freeTesting ? "Free during public testing, with your HCG account." : "Free with your HCG account.") : DOWNLOADS_NOT_AVAILABLE,
-      artifacts: available ? freeFiles.map((a) => ({ id: a.id, fileName: a.fileName, releaseId: a.releaseId })) : [],
+      artifacts: available ? files(freeFiles) : [],
     };
   };
   if (!centralId) {
@@ -147,15 +172,15 @@ export async function decideAccess(
 
   // With only free-testing downloads switched on, an owner (licence, purchase, Founder/Owner grant) gets exactly the
   // free files anyone signed in gets, and nothing else.
-  const files = cfg.protectedDownloads ? deliverableArtifacts(registry, product, editionId) : cfg.freeDownloads ? freeFiles : [];
-  const downloadsAvailable = files.length > 0;
+  const ownedFiles = cfg.protectedDownloads ? deliverableArtifacts(registry, product, editionId) : cfg.freeDownloads ? freeFiles : [];
+  const downloadsAvailable = ownedFiles.length > 0;
   return {
     ...signedIn,
     state: "owned",
     owned: true,
     downloadsAvailable,
     downloadsMessage: downloadsAvailable ? "Available to your HCG account." : DOWNLOADS_NOT_AVAILABLE,
-    artifacts: downloadsAvailable ? files.map((a) => ({ id: a.id, fileName: a.fileName, releaseId: a.releaseId })) : [],
+    artifacts: downloadsAvailable ? files(ownedFiles) : [],
   };
 }
 

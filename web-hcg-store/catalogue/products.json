@@ -113,8 +113,9 @@
       "monogram": "M",
       "summary": "Use your existing mailbox over encrypted IMAP and SMTP, with passwords in the system's secure store and remote content blocked by default.",
       "description": [
-        "HCG Mail connects to existing mailboxes over standard IMAP and SMTP, with encrypted connections, passwords in the operating system's secure credential store and remote content in messages blocked by default.",
-        "The Windows desktop app (x64 and ARM64) is in public beta; an iPhone and iPad app shares its code and is not yet device-tested. Microsoft and Google account sign-in exist in the code but are not set up in the Windows beta: use IMAP and SMTP with a password or app password."
+        "HCG Mail is a dedicated desktop email client developed by Hakmi Capital Group, bringing a modern and refined email experience to Windows, with macOS on Apple Silicon to follow.",
+        "The first public beta focuses on IMAP and SMTP email communication, account management, message viewing, application appearance and connection diagnostics. Microsoft OAuth authentication is outside the scope of this public beta: use IMAP and SMTP with a password or app password.",
+        "HCG Mail is currently available as a free public beta. Users may encounter limitations or unexpected behaviour while development continues."
       ],
       "category": "communication",
       "tags": [
@@ -124,14 +125,14 @@
         "privacy"
       ],
       "developmentStatus": "testing",
-      "developmentNote": "Windows: public beta 0.1.0-beta.1 (x64 and ARM64, installer and portable ZIP) built and checked in CI: installation, start-up, window rendering, restart, Windows Credential Manager and TLS certificate validation passed on GitHub-hosted Windows runners. Signing in to a mailbox, sending and receiving have not been tested on Windows yet. iPhone and iPad: implemented, not yet device-tested.",
+      "developmentNote": "Windows x64: Public Beta 1 (1.0.0-beta.1), a single self-contained HCGMail.exe that the HCG Mail team built and attached to a GitHub release (there is no CI build record or Release Passport for it). HCG Store verified its SHA-256, embedded version (1.0.0), architecture (x64) and that it starts and opens its window on a GitHub-hosted Windows runner. It is not code-signed. Signing in to a mailbox, sending and receiving were not tested by HCG Store. macOS (Apple Silicon): built, held back until its files are correctly signed. iPhone and iPad: implemented, not yet device-tested.",
       "platforms": [
         {
           "platform": "windows",
           "support": "in-development",
           "architectures": [],
           "minimumOs": null,
-          "note": "Public beta 0.1.0-beta.1 for x64 and ARM64, not code-signed. Windows 10 version 1607 or later (x64) or Windows 11 (ARM64)."
+          "note": "Public Beta 1 (1.0.0-beta.1) for x64, not code-signed. No ARM64 build in this release."
         },
         {
           "platform": "ios",
@@ -149,10 +150,10 @@
         },
         {
           "platform": "macos",
-          "support": "planned",
+          "support": "in-development",
           "architectures": [],
           "minimumOs": null,
-          "note": "The desktop code runs on macOS for development; a Mac release is not started."
+          "note": "Apple Silicon build in preparation: offered once its files are correctly signed. No Intel Mac build."
         }
       ],
       "media": [
@@ -201,22 +202,26 @@
           }
         ]
       },
-      "catalogueNotes": [],
+      "catalogueNotes": [
+        "Features as stated by the HCG Mail team for Public Beta 1. HCG Store checked the file itself (checksum, version, architecture, start-up), not each feature."
+      ],
       "editions": [
         {
           "id": "windows-desktop",
           "name": "Windows desktop",
-          "summary": "Self-contained Windows app for x64 and ARM64 (.NET 10, Avalonia): a per-user installer (no administrator rights) or a portable ZIP.",
+          "summary": "Self-contained Windows app for x64 (.NET 10, Avalonia): a single HCGMail.exe that runs without installation.",
           "platforms": [
             "windows"
           ],
           "channel": "direct-download",
-          "status": "Public beta 0.1.0-beta.1. Not code-signed.",
+          "status": "Public Beta 1 (1.0.0-beta.1), Windows x64. Free. Not code-signed.",
           "identifiers": [],
           "layouts": [],
           "note": null,
           "centralEditionKey": "windows-desktop",
-          "tier": null
+          "tier": null,
+          "pricingModel": "free",
+          "access": "none"
         },
         {
           "id": "ios",
@@ -271,21 +276,22 @@
         "accent": "cyan"
       },
       "currentFeatures": [
-        "Receive, read, flag, archive and delete over IMAP (tested against a real Dovecot server; not yet on Windows)",
-        "Send, reply and forward over SMTP (tested against a real Postfix server; not yet on Windows)",
-        "Six-step connection test and Mail Health checks (SPF, DKIM, DMARC)",
-        "Safe HTML display with remote images blocked",
-        "Passwords in Windows Credential Manager; TLS with certificate validation (checked on Windows in CI)"
+        "IMAP email synchronisation and SMTP sending",
+        "Multiple email accounts",
+        "HTML and plain-text message viewing",
+        "Mailbox and folder management",
+        "HCG Dark and Light appearance",
+        "Mail Health connection diagnostics"
       ],
       "plannedFeatures": [
-        "HTML composing",
-        "System notifications",
-        "Code-signed installers and store submissions",
-        "Microsoft and Google sign-in in a release build"
+        "macOS app for Apple Silicon, correctly signed",
+        "Microsoft account sign-in (OAuth)",
+        "Code-signed Windows build",
+        "System notifications"
       ],
       "requirements": [
-        "Windows 10 version 1607 or later, or Windows 11 (x64); Windows 11 (ARM64)",
-        "No administrator rights and no .NET installation needed (self-contained)",
+        "Windows 10 or Windows 11, 64-bit (x64)",
+        "No installation, administrator rights or .NET installation needed (self-contained)",
         "An email account with IMAP and SMTP access (password or app password)",
         "iPhone and iPad: iOS 16.0 or later (not yet device-tested)"
       ],
@@ -295,12 +301,7 @@
           "url": "https://github.com/F1r3srp3nt/HCG-Mail/issues"
         }
       ],
-      "documentation": [
-        {
-          "label": "HCG Mail for Windows 0.1.0-beta.1 release notes",
-          "url": "https://github.com/F1r3srp3nt/HCG-Mail/blob/8bb1a4f078326da6373962cb81a96f88675bc3f4/Windows-executable-Application/docs/RELEASE_NOTES_0.1.0-beta.1.md"
-        }
-      ]
+      "documentation": []
     },
     {
       "id": "hcg-one-unleashed",

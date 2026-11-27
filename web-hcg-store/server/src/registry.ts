@@ -86,7 +86,22 @@ export interface PublishedSource {
   /** The open free testing window of this edition (when it ends), if any. Public information, no account data. */
   freeWindowFor?(productId: string, editionId: string | null): { endsAt: number; releaseId: string | null } | null;
   publishedById(id: string): ProtectedArtifact | undefined;
-  publishedMeta(id: string): { version: string; architectures: string[] } | undefined;
+  publishedMeta(id: string): PublishedFileMeta | undefined;
+}
+
+/** Public facts about a published file, shown with its download button. Never a URL or an account detail. */
+export interface PublishedFileMeta {
+  version: string;
+  channel: string;
+  architectures: string[];
+  platform: string;
+  format: string;
+  sizeBytes: number;
+  sha256: string | null;
+  minimumOs: string | null;
+  /** As reported at import or upload and as the Store's own check found it (e.g. "unsigned"). */
+  signing: string;
+  publishedAt: number | null;
 }
 
 /** A deliverable file by ID: the static registry first, then approved Ship to Store releases. */

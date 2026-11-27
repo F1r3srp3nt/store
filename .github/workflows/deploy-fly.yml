@@ -241,6 +241,13 @@ jobs:
           [ -n "$AB" ] || { echo "::error::operator_args.authorised_by is required"; exit 1; }
           [[ "$PR" =~ ^[0-9]*$ ]] || { echo "::error::operator_args.preserved_run must be a run ID of this repository's release-import workflow"; exit 1; }
           echo "request=release-imports/$REQ" >> "$GITHUB_OUTPUT"
+          KIND=$(jq -r '.source.kind // "ci-run"' "release-imports/$REQ")
+          echo "kind=$KIND" >> "$GITHUB_OUTPUT"
+          if [ "$KIND" = github-release ]; then
+            # Files a person attached to a GitHub release: downloaded and verified in the next step.
+            [ -z "$PR" ] || { echo "::error::preserved_run applies to CI-run imports only"; exit 1; }
+            exit 0
+          fi
           FILES=$(jq -r .source.filesArtifact "release-imports/$REQ")
           if [ -n "$PR" ]; then
             # The verified copy the release-import workflow kept. Only a successful run of THIS repository's
@@ -257,7 +264,7 @@ jobs:
             echo "files=$FILES" >> "$GITHUB_OUTPUT"
             echo "draft=$(jq -r .source.draftArtifact "release-imports/$REQ")" >> "$GITHUB_OUTPUT"
           fi
-      - if: inputs.mode == 'import-release' && steps.imp.outputs.preserved != 'true'
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.kind != 'github-release' && steps.imp.outputs.preserved != 'true'
         uses: actions/download-artifact@v4
         with:
           repository: ${{ steps.imp.outputs.repo }}
@@ -266,14 +273,14 @@ jobs:
           path: ${{ runner.temp }}/import/files
           github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
       # The preserved copy holds files/ and draft/ side by side.
-      - if: inputs.mode == 'import-release' && steps.imp.outputs.preserved == 'true'
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.kind != 'github-release' && steps.imp.outputs.preserved == 'true'
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ steps.imp.outputs.run }}
           name: ${{ steps.imp.outputs.files }}
           path: ${{ runner.temp }}/import
           github-token: ${{ github.token }}
-      - if: inputs.mode == 'import-release' && steps.imp.outputs.preserved != 'true'
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.kind != 'github-release' && steps.imp.outputs.preserved != 'true'
         uses: actions/download-artifact@v4
         with:
           repository: ${{ steps.imp.outputs.repo }}
@@ -281,7 +288,33 @@ jobs:
           name: ${{ steps.imp.outputs.draft }}
           path: ${{ runner.temp }}/import/draft
           github-token: ${{ secrets.HCG_IMPORT_TOKEN || github.token }}
-      - if: inputs.mode == 'import-release'
+      # ---- GitHub release import: the exact release assets, each checked against the SHA-256 pinned in the committed
+      # request AND GitHub's own asset digest. No CI run, draft or passport exists for them, and none is claimed. ----
+      - name: Download the GitHub release files (exact bytes)
+        if: inputs.mode == 'import-release' && steps.imp.outputs.kind == 'github-release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST: ${{ steps.imp.outputs.request }}
+        run: |
+          REPO=$(jq -r .source.repository "$REQUEST"); TAG=$(jq -r .source.tag "$REQUEST"); TAGC=$(jq -r .source.tagCommit "$REQUEST")
+          mkdir -p "$RUNNER_TEMP/import/files" "$RUNNER_TEMP/import/draft"
+          rel=$(gh api "repos/$REPO/releases/tags/$TAG")
+          got=$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq .object.sha)
+          [ "$got" = "$TAGC" ] || { echo "::error::$TAG points to $got, the request says $TAGC"; exit 1; }
+          jq -r '.expect.sha256 | to_entries[] | "\(.key)\t\(.value)"' "$REQUEST" | while IFS=$'\t' read -r name want; do
+            gh release download "$TAG" --repo "$REPO" --pattern "$name" --dir "$RUNNER_TEMP/import/files"
+            have=$(sha256sum "$RUNNER_TEMP/import/files/$name" | cut -d' ' -f1)
+            size=$(stat -c %s "$RUNNER_TEMP/import/files/$name")
+            digest=$(jq -r --arg n "$name" '.assets[] | select(.name == $n) | .digest' <<<"$rel")
+            declared=$(jq -r --arg n "$name" '.release.artifacts[] | select(.fileName == $n) | .sizeBytes' "$REQUEST")
+            [ "$have" = "$want" ] || { echo "::error::$name: SHA-256 $have, the request pins $want"; exit 1; }
+            [ "$digest" = "sha256:$want" ] || { echo "::error::$name: GitHub's digest is $digest"; exit 1; }
+            [ "$size" = "$declared" ] || { echo "::error::$name: $size bytes, the request declares $declared"; exit 1; }
+            echo "VERIFIED $name  $size bytes  sha256 $have  (= pinned, = GitHub digest)" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          n=$(ls "$RUNNER_TEMP/import/files" | wc -l); want=$(jq -r .expect.files "$REQUEST")
+          [ "$n" = "$want" ] || { echo "::error::$n files downloaded, the request expects $want"; exit 1; }
+      - if: inputs.mode == 'import-release' && steps.imp.outputs.kind != 'github-release'
         uses: actions/checkout@v4
         with:
           repository: F1r3srp3nt/hcg-repo
@@ -294,9 +327,11 @@ jobs:
           ARGS: ${{ inputs.operator_args }}
           REQUEST: ${{ steps.imp.outputs.request }}
         run: |
-          pip install --quiet jsonschema==4.23.0
-          python3 scripts/verify-release-import.py --request "$REQUEST" --files "$RUNNER_TEMP/import/files" --draft "$RUNNER_TEMP/import/draft" \
-            --schema ../hcg-repo/docs/schemas/release-passport-v1.schema.json --out "$RUNNER_TEMP/import/report.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.imp.outputs.kind }}" != github-release ]; then
+            pip install --quiet jsonschema==4.23.0
+            python3 scripts/verify-release-import.py --request "$REQUEST" --files "$RUNNER_TEMP/import/files" --draft "$RUNNER_TEMP/import/draft" \
+              --schema ../hcg-repo/docs/schemas/release-passport-v1.schema.json --out "$RUNNER_TEMP/import/report.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           cp "$REQUEST" "$RUNNER_TEMP/import/request.json"
           NAME="import-$GITHUB_RUN_ID"
           tar -C "$RUNNER_TEMP/import" -czf "$RUNNER_TEMP/$NAME.tar.gz" files draft request.json

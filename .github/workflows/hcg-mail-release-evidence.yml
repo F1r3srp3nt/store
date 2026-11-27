@@ -1,0 +1,182 @@
+# HCG Mail GitHub release evidence (read-only).
+#
+# Downloads the exact assets of HCG Mail's manually created GitHub releases and records, without changing any byte:
+# name, size, SHA-256, file format, embedded version, operating system, architecture, signing and notarization, and a
+# short launch check. Windows evidence comes from a Windows runner, macOS evidence from an Apple Silicon runner.
+# Nothing is sent to the production Store; no secret is used. The files are kept as an Actions artifact (exact bytes).
+name: HCG Mail release evidence
+
+on:
+  push:
+    branches: [claude/hcg-mail-1.0.0-beta.1]
+    paths: [".github/workflows/hcg-mail-release-evidence.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: F1r3srp3nt/HCG-Mail
+  WIN_TAG: v1.0.0.0-beta.1-windows-x64
+  MAC_TAG: v1.0.0-beta.1-macos-arm64
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Release metadata (as GitHub reports it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/files/windows" "$RUNNER_TEMP/files/macos" "$RUNNER_TEMP/meta"
+          for tag in "$WIN_TAG" "$MAC_TAG"; do
+            gh api "repos/$SOURCE_REPO/releases/tags/$tag" > "$RUNNER_TEMP/meta/$tag.json"
+            jq '{tag_name, name, draft, prerelease, created_at, published_at, target_commitish, author: .author.login,
+                 body, assets: [.assets[] | {name, size, digest, content_type, uploader: .uploader.login, created_at, updated_at}]}' \
+              "$RUNNER_TEMP/meta/$tag.json" | tee "$RUNNER_TEMP/meta/$tag.summary.json"
+          done
+          gh api "repos/$SOURCE_REPO/git/ref/tags/$WIN_TAG" --jq '"windows tag -> \(.object.type) \(.object.sha)"'
+          gh api "repos/$SOURCE_REPO/git/ref/tags/$MAC_TAG" --jq '"macos tag -> \(.object.type) \(.object.sha)"'
+          gh api "repos/$SOURCE_REPO/releases?per_page=20" --jq '.[] | "release: \(.tag_name) | \(.name) | prerelease=\(.prerelease) draft=\(.draft) | assets=\([.assets[].name] | join(", "))"'
+      - name: Download the exact assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$WIN_TAG" --repo "$SOURCE_REPO" --dir "$RUNNER_TEMP/files/windows"
+          gh release download "$MAC_TAG" --repo "$SOURCE_REPO" --dir "$RUNNER_TEMP/files/macos"
+          cd "$RUNNER_TEMP/files"
+          echo "== size, SHA-256, format"
+          find . -type f | sort | while read -r f; do
+            printf '%s\n  size=%s\n  sha256=%s\n  sha512=%s\n  file=%s\n' "$f" "$(stat -c %s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)" \
+              "$(sha512sum "$f" | cut -d' ' -f1)" "$(file -b "$f")"
+          done
+          echo "== GitHub's own digest vs. computed"
+          for tag in "$WIN_TAG" "$MAC_TAG"; do
+            dir=$([ "$tag" = "$WIN_TAG" ] && echo windows || echo macos)
+            jq -r '.assets[] | "\(.name)\t\(.digest)"' "$RUNNER_TEMP/meta/$tag.summary.json" | while IFS=$'\t' read -r name digest; do
+              got="sha256:$(sha256sum "$dir/$name" | cut -d' ' -f1)"
+              [ "$got" = "$digest" ] && echo "MATCH $name $got" || echo "DIFFERENT $name github=$digest computed=$got"
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hcg-mail-1.0.0-beta.1-release-assets
+          path: |
+            ${{ runner.temp }}/files
+            ${{ runner.temp }}/meta
+          retention-days: 90
+          compression-level: 0
+
+  windows:
+    needs: fetch
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hcg-mail-1.0.0-beta.1-release-assets
+          path: ${{ runner.temp }}/a
+      - name: PE header, version resources, Authenticode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem -Recurse -File "$env:RUNNER_TEMP/a/files/windows" | ForEach-Object {
+            $f = $_.FullName
+            "== $($_.Name)  ($($_.Length) bytes)"
+            "SHA256 " + (Get-FileHash -Algorithm SHA256 $f).Hash.ToLower()
+            $v = (Get-Item $f).VersionInfo
+            "FileVersion=$($v.FileVersion) ProductVersion=$($v.ProductVersion) ProductName=$($v.ProductName) CompanyName=$($v.CompanyName) FileDescription=$($v.FileDescription) OriginalFilename=$($v.OriginalFilename) InternalName=$($v.InternalName) Copyright=$($v.LegalCopyright)"
+            $b = [IO.File]::ReadAllBytes($f)
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $machine = [BitConverter]::ToUInt16($b, $pe + 4)
+            $chars = [BitConverter]::ToUInt16($b, $pe + 22)
+            $magic = [BitConverter]::ToUInt16($b, $pe + 24)
+            $sub = [BitConverter]::ToUInt16($b, $pe + 24 + 68)
+            "PE machine=0x{0:X4} (8664=x64, AA64=ARM64, 014C=x86) characteristics=0x{1:X4} optionalMagic=0x{2:X3} (20B=PE32+) subsystem={3} (2=GUI, 3=console)" -f $machine, $chars, $magic, $sub
+            $s = Get-AuthenticodeSignature $f
+            "Authenticode status=$($s.Status) message=$($s.StatusMessage) signer=$($s.SignerCertificate.Subject) timestamp=$($s.TimeStamperCertificate.Subject)"
+            $text = [Text.Encoding]::ASCII.GetString($b)
+            foreach ($m in @('Inno Setup', 'Nullsoft', 'NSIS', 'WiX', 'Squirrel', 'Velopack', 'DOTNET_BUNDLE', '.NETCoreApp,Version=', 'Avalonia', 'HCG.Mail')) {
+              "marker '$m': " + ($text.Contains($m))
+            }
+            $bundle = [Text.RegularExpressions.Regex]::Matches($text, '\.NETCoreApp,Version=v[0-9.]+') | Select-Object -First 1
+            "target framework marker: $bundle"
+          }
+      - name: Launch check (starts, stays up 20 s, then closed)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -File "$env:RUNNER_TEMP/a/files/windows" -Filter *.exe | Select-Object -First 1
+          $work = Join-Path $env:RUNNER_TEMP 'launch'; New-Item -ItemType Directory -Force $work | Out-Null
+          Copy-Item $exe.FullName $work
+          $p = Start-Process -FilePath (Join-Path $work $exe.Name) -PassThru
+          Start-Sleep -Seconds 20
+          $p.Refresh()
+          "exited=$($p.HasExited) " + ($(if ($p.HasExited) { "exitCode=$($p.ExitCode)" } else { "running; mainWindowTitle='$($p.MainWindowTitle)' workingSetMB=$([math]::Round($p.WorkingSet64/1MB))" }))
+          Get-Process | Where-Object { $_.ProcessName -match 'HCG|Mail|setup|unins' } | Format-Table ProcessName, Id, MainWindowTitle -AutoSize | Out-String
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          Get-Process | Where-Object { $_.ProcessName -match 'HCG|Mail' } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+  macos:
+    needs: fetch
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hcg-mail-1.0.0-beta.1-release-assets
+          path: ${{ runner.temp }}/a
+      - name: App bundle (ZIP) and installer (PKG)
+        shell: bash {0}
+        run: |
+          set -u
+          sw_vers; uname -m
+          cd "$RUNNER_TEMP/a/files/macos"
+          ls -l
+          for f in *; do echo "== $f"; shasum -a 256 "$f"; file "$f"; done
+          zip=$(ls *.zip | head -1); pkg=$(ls *.pkg | head -1)
+          echo "######## ZIP: $zip"
+          unzip -l "$zip" | head -15; unzip -l "$zip" | tail -2
+          mkdir -p "$RUNNER_TEMP/zip" && ditto -x -k "$zip" "$RUNNER_TEMP/zip"
+          app=$(find "$RUNNER_TEMP/zip" -maxdepth 2 -name '*.app' -type d | head -1)
+          echo "app bundle: $app"
+          plist="$app/Contents/Info.plist"
+          for k in CFBundleIdentifier CFBundleName CFBundleDisplayName CFBundleShortVersionString CFBundleVersion CFBundleExecutable LSMinimumSystemVersion LSApplicationCategoryType NSHighResolutionCapable; do
+            echo "$k=$(/usr/libexec/PlistBuddy -c "Print :$k" "$plist" 2>/dev/null)"
+          done
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")"
+          echo "main executable: $exe"; file "$exe"; lipo -archs "$exe"; shasum -a 256 "$exe"
+          otool -l "$exe" | grep -A4 LC_BUILD_VERSION | head -8
+          echo "-- codesign (app)"; codesign -dvvv "$app" 2>&1; codesign --verify --deep --strict --verbose=2 "$app" 2>&1; echo "verify exit=$?"
+          echo "-- Gatekeeper (app, as downloaded: quarantined)"; xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$app"; spctl -a -vvv -t exec "$app" 2>&1; echo "spctl exit=$?"
+          echo "-- notarization ticket (app)"; xcrun stapler validate "$app" 2>&1; echo "stapler exit=$?"
+          echo "######## PKG: $pkg"
+          echo "-- signature"; pkgutil --check-signature "$pkg" 2>&1; echo "pkgutil exit=$?"
+          echo "-- Gatekeeper (installer)"; spctl -a -vvv -t install "$pkg" 2>&1; echo "spctl exit=$?"
+          echo "-- notarization ticket (pkg)"; xcrun stapler validate "$pkg" 2>&1; echo "stapler exit=$?"
+          rm -rf "$RUNNER_TEMP/pkgx"; pkgutil --expand "$pkg" "$RUNNER_TEMP/pkgx"
+          find "$RUNNER_TEMP/pkgx" -maxdepth 2 | head -20
+          for d in "$RUNNER_TEMP/pkgx/Distribution" "$RUNNER_TEMP"/pkgx/*/PackageInfo "$RUNNER_TEMP/pkgx/PackageInfo"; do [ -f "$d" ] && { echo "-- $d"; cat "$d"; echo; }; done
+          for sc in "$RUNNER_TEMP"/pkgx/*/Scripts "$RUNNER_TEMP/pkgx/Scripts"; do [ -d "$sc" ] && { echo "-- install scripts in $sc"; ls -la "$sc"; }; done
+          payload=$(find "$RUNNER_TEMP/pkgx" -name Payload | head -1)
+          mkdir -p "$RUNNER_TEMP/payload" && (cd "$RUNNER_TEMP/payload" && cat "$payload" | gunzip -dc 2>/dev/null | cpio -i --quiet 2>/dev/null || (cd "$RUNNER_TEMP/payload" && aa extract -i "$payload" 2>/dev/null) || true)
+          papp=$(find "$RUNNER_TEMP/payload" -maxdepth 3 -name '*.app' -type d | head -1)
+          echo "app in pkg payload: $papp"
+          if [ -n "$papp" ]; then
+            pplist="$papp/Contents/Info.plist"
+            echo "pkg app version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$pplist") build $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$pplist") id $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$pplist")"
+            pexe="$papp/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$pplist")"
+            echo "pkg main executable sha256: $(shasum -a 256 "$pexe" | cut -d' ' -f1)  zip main executable sha256: $(shasum -a 256 "$exe" | cut -d' ' -f1)"
+            echo "-- tree difference between ZIP app and PKG app (empty = identical files)"
+            diff -rq "$app" "$papp" 2>&1 | head -20
+          fi
+      - name: Launch check (ZIP app, quarantine removed as a user would after Open Anyway)
+        if: always()
+        shell: bash {0}
+        run: |
+          app=$(find "$RUNNER_TEMP/zip" -maxdepth 2 -name '*.app' -type d | head -1)
+          xattr -dr com.apple.quarantine "$app"
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          "$exe" > "$RUNNER_TEMP/launch.log" 2>&1 &
+          pid=$!; sleep 20
+          if kill -0 $pid 2>/dev/null; then echo "running after 20 s (pid $pid)"; ps -o pid,rss,command -p $pid; kill $pid; else wait $pid; echo "exited early, code $?"; fi
+          echo "-- output (first 40 lines)"; head -40 "$RUNNER_TEMP/launch.log"

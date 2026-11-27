@@ -147,7 +147,8 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
     const files = deliverableArtifacts(ctx.registry, product, edition.id).filter((f) => mayDownload(a, f.id)).filter((f) => {
       const rel = ctx.registry.catalogue.releases.find((r) => r.id === f.releaseId);
       const cat = rel?.artifacts.find((x) => x.id === f.catalogueArtifactId);
-      const meta = rel ? { version: rel.version, architectures: cat?.architectures ?? [] } : ctx.registry.published?.publishedMeta(f.id);
+      const pm = rel ? undefined : ctx.registry.published?.publishedMeta(f.id);
+      const meta = rel ? { version: rel.version, architectures: cat?.architectures ?? [] } : pm ? { version: pm.version, architectures: pm.architectures } : undefined;
       return !!meta && meta.architectures.includes(arch) && (!version || version === meta.version || version.startsWith(`${meta.version}-`));
     });
     const file = files[0];

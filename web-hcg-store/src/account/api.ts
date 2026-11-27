@@ -55,6 +55,27 @@ export interface PublicOffer {
   testOnly: boolean;
 }
 
+/** Public facts about a published file, from the HCG Store server (never a URL). */
+export interface AccessFileDetails {
+  version: string;
+  channel: string;
+  architectures: string[];
+  platform: string;
+  format: string;
+  sizeBytes: number;
+  sha256: string | null;
+  minimumOs: string | null;
+  signing: string;
+  publishedAt: number | null;
+}
+
+export interface AccessFile {
+  id: string;
+  fileName: string;
+  releaseId: string;
+  details?: AccessFileDetails | null;
+}
+
 export interface EditionAccess {
   productId: string;
   editionId: string | null;
@@ -66,7 +87,9 @@ export interface EditionAccess {
   checkoutUnavailableReason: string | null;
   downloadsAvailable: boolean;
   downloadsMessage: string;
-  artifacts: { id: string; fileName: string; releaseId: string }[];
+  artifacts: AccessFile[];
+  /** No HCG account is needed to download these files. */
+  anonymous?: boolean;
   message: string | null;
   /** An open free testing window for this edition (server-side), with its end. Not a price. */
   freeTesting?: { endsAt: number } | null;

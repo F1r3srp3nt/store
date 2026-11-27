@@ -8,6 +8,7 @@ import { currentRelease } from "../domain/model";
 import type { Edition, Product } from "../domain/schema";
 import { ACCESS_REQUIREMENTS, EDITION_CHANNELS, EDITION_TIERS, IDENTIFIER_KINDS, PLATFORMS, PRICING_MODELS } from "../domain/taxonomy";
 import { IconArrowRight, IconCheck, IconDownload, IconInfo, IconLock, IconShield } from "./Icons";
+import { DownloadSection } from "./DownloadSection";
 
 type Loaded = { status: "loading" } | { status: "ok"; editions: EditionAccess[] } | { status: "unavailable"; message: string };
 
@@ -196,7 +197,11 @@ function EditionCard({
       <div className="edition__commerce">
         <p className="edition__price">
           <span className="visually-hidden">Price: </span>
-          {access?.freeTesting ? (
+          {access?.anonymous || (edition?.pricingModel === "free" && access?.state === "free") ? (
+            <>
+              <strong>Free</strong> <span className="edition__free-until">No payment, card or subscription. {access?.anonymous ? "No HCG account needed." : ""}</span>
+            </>
+          ) : access?.freeTesting ? (
             // A free testing window is open (server-side): free with an HCG account until it ends. Not a price.
             <>
               <span className="badge badge--free">Temporarily free</span>{" "}
@@ -261,7 +266,7 @@ function OwnershipBadge({ access, loading, signInAvailable }: { access: EditionA
         </span>
       );
     case "free":
-      return <span className="badge badge--muted">{access.freeTesting ? "Free during testing" : "Free with your HCG account"}</span>;
+      return <span className="badge badge--muted">{access.anonymous ? "Free download" : access.freeTesting ? "Free during testing" : "Free with your HCG account"}</span>;
     case "not-owned":
       return <span className="badge badge--muted">Not owned</span>;
     case "not-for-sale":
@@ -309,6 +314,10 @@ function BuyButton({ access, offerId }: { access: EditionAccess | undefined; off
 }
 
 function Downloads({ access }: { access: EditionAccess | undefined }) {
+  // Published files carry their version, platform and size: show the full download section.
+  if (access?.downloadsAvailable && access.artifacts.length && access.artifacts.every((a) => a.details)) {
+    return <DownloadSection files={access.artifacts} anonymous={!!access.anonymous} />;
+  }
   if (access?.downloadsAvailable && access.artifacts.length) {
     return (
       <ul className="edition__downloads" aria-label="Your downloads">

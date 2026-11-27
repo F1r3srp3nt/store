@@ -28,13 +28,20 @@ kill_timeout = 10
   HCG_REPO_BASE_URL = "https://repo.hakmicapitalgroup.com/"
   HCG_ECOSYSTEM_API_URL = "https://beta.hakmicapitalgroup.com/api/public/ecosystem/v1"
   HCG_STORE_ENTITLEMENT_AUTHORITY = "hcg-ecosystem"
-  # Off until their own end-to-end tests pass and the founder approves.
+  # Payments: off until their own end-to-end tests pass and the founder approves.
   HCG_STORE_PAYMENT_PROVIDER = "none"
-  HCG_STORE_PROTECTED_DOWNLOADS = "disabled"
-  # Private uploads only (founder-approved): authorised staff upload to private drafts from HCG Executable Maker (and,
-  # once HCG issues its client, HCG Store Manager) and submit them for review. Approval, publication and every customer
-  # delivery stay off in this mode; "enabled" is a separate, later approval.
-  HCG_STORE_PUBLISHING = "uploads"
+  # Customer downloads: FREE public releases only (HCG Mail 1.0.0 Public Beta 1, founder-approved 27 Nov 2026).
+  # Licensed and paid files stay off for everyone ("enabled" is a separate, later launch decision).
+  HCG_STORE_PROTECTED_DOWNLOADS = "free-testing-only"
+  HCG_STORE_FREE_TESTING_APPROVED = "founder-approved"
+  # Downloads WITHOUT an HCG account: HCG Mail only (founder-approved 27 Nov 2026). Only its published, approved,
+  # public, free and current files; rate-limited per address. Every other product still needs an account.
+  HCG_STORE_ANONYMOUS_FREE_PRODUCTS = "hcg-mail"
+  HCG_STORE_ANONYMOUS_FREE_APPROVED = "founder-approved"
+  # Ship to Store: uploads for every product, as before. Approval, publication and customer delivery are switched on
+  # for HCG Mail ONLY (HCG_STORE_PUBLICATION_PRODUCTS); every other product stays private uploads only.
+  HCG_STORE_PUBLISHING = "enabled"
+  HCG_STORE_PUBLICATION_PRODUCTS = "hcg-mail"
   HCG_STORE_UPLOAD_MAX_MB = "2048"
 
   # Phase 2: HCG Connect sign-in, with HCG Store's dedicated PRODUCTION client (issued by HCG through the Owner
@@ -55,8 +62,8 @@ kill_timeout = 10
   HCG_STORE_PUBLISHER_CENTRAL_ID = "store.publish"
   # Optional in "uploads": lets approvers open private drafts to review them (approval itself stays off).
   HCG_STORE_RELEASE_APPROVER_CENTRAL_ID = "store.release.approve"
-  # Needed only for "enabled" (publication); HCG must create this feature first:
-  # HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID = "store.release.publish"
+  # Publication of approved releases ("enabled"). The feature must exist on hcg.store in HCG ERP and be granted.
+  HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID = "store.release.publish"
 
 [[mounts]]
   source = "hcg_store_data"
