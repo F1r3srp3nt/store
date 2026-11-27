@@ -27,7 +27,19 @@ export interface AdminArtifact {
   provenance: { buildProvider: string | null; sourceCommit: string | null; passport?: { provider: string | null; runId: string | null; commit: string | null } } | null;
   customerDelivery: boolean;
 }
+/** A founder-operated exception recorded for a release (no account ID). */
+export interface ReleaseExceptionView {
+  id: string;
+  kind: string;
+  reason: string;
+  authorisedBy: string;
+  createdAt: number;
+  revokedAt: number | null;
+  appliesToCurrentFiles: boolean;
+}
+
 export interface AdminRelease {
+  exceptions?: ReleaseExceptionView[];
   id: string; productId: string; productTitle: string; productSource: "catalogue" | "draft"; editionId: string | null; version: string; build: string; channel: string;
   status: string; stage: string; availability: string; availabilityReason: string | null; revision: number; lifecycle: Lifecycle; targets: Target[];
   requestedEligibility: string; approvedEligibility: string | null; distribution: string; releaseNotes: string[]; knownLimitations: string[];

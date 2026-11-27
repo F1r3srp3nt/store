@@ -128,6 +128,12 @@ function ReleaseCard({ me, release: summary, onChanged }: { me: Me; release: Adm
           <span key={`${t.platform}-${t.arch}-${t.channel}`} className={`cc-chip${t.current ? " cc-chip--on" : ""}`}>{PLATFORM_NAMES[t.platform] ?? t.platform} {t.arch} · {t.channel}{t.current ? " · current" : ""}</span>
         ))}</p>
       )}
+      {(r.exceptions ?? []).filter((x) => x.appliesToCurrentFiles).map((x) => (
+        <p key={x.id} className="cc-exception" role="note" data-testid="founder-exception">
+          <b>Founder-operated exception</b> <code>{x.id}</code>: the person it names may submit, approve and publish this release, with exactly
+          these files. Recorded in the audit as <b>not an independent review</b>. Each step still needs its HCG permission.
+        </p>
+      ))}
       <div className="rm-release__actions">
         <button type="button" className="button button--ghost button--small" onClick={() => (open ? setOpen(false) : void details())}>{open ? "Hide details" : "Details and history"}</button>
         <button type="button" className="button button--ghost button--small" onClick={() => adminApi.verifyChecksums(r.id).then((c) => setMessage(c.ok ? `All ${c.files.length} stored file(s) match their recorded SHA-256.` : `Mismatch: ${c.files.filter((f) => !f.ok).map((f) => f.fileName).join(", ")}.`)).catch((e) => setMessage(errorText(e)))}>Verify checksums</button>
