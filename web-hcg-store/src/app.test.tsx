@@ -131,7 +131,7 @@ describe("store pages with the shipped catalogue", () => {
   it("collapses homepage sections without eligible content (no news or campaigns exist; one published release)", async () => {
     renderAt("/");
     await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
-    expect(screen.queryByRole("heading", { name: "New releases" })).toBeNull(); // no explicit current release in the static catalogue
+    expect(within(screen.getByRole("heading", { name: "New releases" }).closest("section")!).getByText("HCG Mail")).toBeInTheDocument();
     expect(within(screen.getByRole("heading", { name: "Recently updated" }).closest("section")!).getByText("HCG Mail")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
     expect(screen.queryByText("Sponsored")).toBeNull();
@@ -185,8 +185,9 @@ describe("store pages with the shipped catalogue", () => {
     expect(screen.getByRole("heading", { level: 1, name: "HCG Store" })).toBeInTheDocument();
   });
 
-  it("product page shows 'Coming soon', editions, and 'Downloads are not available yet.'", async () => {
-    const { container } = renderAt("/apps/hcg-mail");
+  it("product page shows 'Coming soon', editions, and 'Downloads are not available yet.' (HCG Mail before its release)", async () => {
+    const c = realCatalogue();
+    const { container } = renderAt("/apps/hcg-mail", { ...c, products: c.products.map((p) => (p.id === "hcg-mail" ? { ...p, currentReleaseId: null } : p)) });
     expect(await screen.findByRole("heading", { level: 1, name: "HCG Mail" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Coming soon" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Windows desktop" })).toBeInTheDocument();
@@ -322,6 +323,9 @@ describe("store pages with the shipped catalogue", () => {
     expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
     await user.clear(screen.getByRole("searchbox", { name: "Search" }));
     await user.click(screen.getByRole("radio", { name: "Release approved" }));
+    expect(screen.getByText("1 of 11 products match")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "HCG Mail" })).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Linux" }));
     expect(screen.getByRole("heading", { name: "No products match these filters" })).toBeInTheDocument();
     await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
     expect(screen.getByText("11 products")).toBeInTheDocument();

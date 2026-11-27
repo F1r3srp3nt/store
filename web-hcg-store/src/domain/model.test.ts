@@ -37,9 +37,9 @@ describe("release model", () => {
     expect(availability(c, findProductBySlug(c, "fixture-nebula-pad")!)).toBe("coming-soon");
   });
 
-  it("reports 'coming-soon' for every product in the shipped catalogue", () => {
+  it("reports 'released' only for HCG Mail (its published, explicitly current release) and 'coming-soon' for the rest", () => {
     const real = realCatalogue();
-    for (const p of real.products) expect(availability(real, p)).toBe("coming-soon");
+    for (const p of real.products) expect(availability(real, p), p.id).toBe(p.id === "hcg-mail" ? "released" : "coming-soon");
   });
 
   it("maps editions to their HCG Repo product pages explicitly", () => {

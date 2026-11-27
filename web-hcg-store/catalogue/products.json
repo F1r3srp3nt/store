@@ -129,10 +129,12 @@
       "platforms": [
         {
           "platform": "windows",
-          "support": "in-development",
-          "architectures": [],
-          "minimumOs": null,
-          "note": "Public Beta 1 (1.0.0-beta.1) for x64, not code-signed. No ARM64 build in this release."
+          "support": "confirmed",
+          "architectures": [
+            "x64"
+          ],
+          "minimumOs": "Windows 10",
+          "note": "Public Beta 1 (1.0.0-beta.1) for x64, free, not code-signed. No ARM64 build in this release."
         },
         {
           "platform": "ios",
@@ -260,7 +262,7 @@
           "appVersion": null
         }
       ],
-      "currentReleaseId": null,
+      "currentReleaseId": "rel-bc6c2096b73a977f",
       "registry": {
         "status": "central",
         "centralId": "hcg.mail",
@@ -278,7 +280,8 @@
         ]
       },
       "catalogueNotes": [
-        "Features as stated by the HCG Mail team for Public Beta 1. HCG Store checked the file itself (checksum, version, architecture, start-up), not each feature."
+        "Features as stated by the HCG Mail team for Public Beta 1. HCG Store checked the file itself (checksum, version, architecture, start-up), not each feature.",
+        "Current release rel-bc6c2096b73a977f (1.0.0-beta.1, Windows x64) designated explicitly by the founder on 27 November 2026, after its approval and publication in HCG Store."
       ],
       "editions": [
         {

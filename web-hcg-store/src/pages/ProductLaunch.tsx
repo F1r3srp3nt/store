@@ -461,7 +461,7 @@ function AdminLink({ productId }: { productId: string }) {
   if (admin.status !== "ok" || !admin.me.administrator) return null;
   return (
     <p className="launch-admin">
-      <Link className="button button--ghost button--small" to={`/control-center?tab=products&product=${encodeURIComponent(productId)}`}>Manage product</Link>
+      <Link className="button button--ghost button--small" data-testid="manage-product" to={`/control-center?tab=products&product=${encodeURIComponent(productId)}`}>Manage product</Link>
     </p>
   );
 }
