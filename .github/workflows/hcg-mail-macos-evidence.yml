@@ -45,7 +45,10 @@ jobs:
           set -euo pipefail
           run=$(gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID")
           jq '{name, path, event, status, conclusion, head_branch, head_sha, run_attempt, created_at, updated_at}' <<<"$run" | tee -a "$GITHUB_STEP_SUMMARY"
-          gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID/jobs?per_page=50" --jq '.jobs[] | "job: \(.name) | \(.status) | \(.conclusion)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          jobs=$(gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID/jobs?per_page=50")
+          jq -r '.jobs[] | "job: \(.name) | \(.status) | \(.conclusion) | steps run: \([.steps[] | select(.conclusion == "success" or .conclusion == "failure") | .name] | join("; "))"' <<<"$jobs" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Notices the run itself wrote (e.g. "Developer ID signing is not configured (missing: <secret names>)"); names only, never values.
+          for j in $(jq -r '.jobs[].id' <<<"$jobs"); do gh api "repos/$SOURCE_REPO/check-runs/$j/annotations" --jq '.[] | "annotation: \(.annotation_level): \(.message)"' 2>/dev/null | grep -v 'Node.js' | tee -a "$GITHUB_STEP_SUMMARY" || true; done
           arts=$(gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID/artifacts?per_page=100")
           jq -r '.artifacts[] | "artifact: \(.name) | \(.size_in_bytes) bytes | expired=\(.expired)"' <<<"$arts" | tee -a "$GITHUB_STEP_SUMMARY"
           has() { jq -e --arg n "$1" '[.artifacts[] | select(.name == $n and .expired == false)] | length == 1' <<<"$arts" >/dev/null; }
