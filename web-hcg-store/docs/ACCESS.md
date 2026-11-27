@@ -5,6 +5,13 @@ server-side access enforcement are implemented, verified against HCG's live syst
 approves launch. Until then every product page, the library and HCG Repo say
 **"Downloads are not available yet."**
 
+**Exception in force (founder-approved, 27 Nov 2026): HCG Mail.**
+- HCG Mail's published, public, free releases download **without an HCG account**
+  (`HCG_STORE_ANONYMOUS_FREE_PRODUCTS=hcg-mail`).
+- Only HCG Mail can be approved, published or delivered (`HCG_STORE_PUBLICATION_PRODUCTS=hcg-mail`).
+- Licensed and paid downloads, and payments, stay off.
+- Details and security implications: [RELEASE-HCG-MAIL-1.0.0-beta.1.md](RELEASE-HCG-MAIL-1.0.0-beta.1.md).
+
 ## Who decides what
 
 | Decision | Owner | Where HCG Store stands |

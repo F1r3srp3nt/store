@@ -29,6 +29,7 @@ export interface LivePublished {
 type Access =
   | { kind: "free-testing"; requiresHcgAccount: true; freeUntil: string }
   | { kind: "free-with-account"; requiresHcgAccount: true }
+  | { kind: "free-public"; requiresHcgAccount: false }
   | { kind: "licence-required"; requiresHcgAccount: true }
   | { kind: "not-available-yet"; requiresHcgAccount: true };
 
@@ -37,7 +38,7 @@ export class ResolutionError extends Error {
 }
 
 export function resolveRelease(
-  deps: { cfg: Pick<StoreConfig, "publicOrigin" | "freeDownloads" | "protectedDownloads">; registry: Registry; live: LivePublished | null; now: number },
+  deps: { cfg: Pick<StoreConfig, "publicOrigin" | "freeDownloads" | "protectedDownloads"> & Partial<Pick<StoreConfig, "anonymousFreeProducts">>; registry: Registry; live: LivePublished | null; now: number },
   idOrSlug: string,
   filter: { platform?: string | null; arch?: string | null },
 ) {
@@ -51,6 +52,10 @@ export function resolveRelease(
   const editionName = (id: string | null) => product.editions.find((e) => e.id === id)?.name ?? null;
   const accessFor = (editionId: string | null, distribution: string, releaseId: string, livePublished: boolean): Access => {
     const w = live?.freeWindowFor(product.id, editionId);
+    const pricing0 = product.editions.find((e) => e.id === editionId)?.pricingModel ?? null;
+    // Free without an account: a published free release of a product approved for it (permanently free or in a window).
+    if (livePublished && distribution === "free" && cfg.freeDownloads && (cfg.anonymousFreeProducts ?? []).includes(product.id)
+        && (pricing0 === "free" || (w && (w.releaseId === null || w.releaseId === releaseId)))) return { kind: "free-public", requiresHcgAccount: false };
     // Free testing only for a published release the open window covers (the named one, or any when it names none).
     if (w && livePublished && (w.releaseId === null || w.releaseId === releaseId) && distribution === "free" && cfg.freeDownloads) return { kind: "free-testing", requiresHcgAccount: true, freeUntil: new Date(w.endsAt).toISOString() };
     const pricing = product.editions.find((e) => e.id === editionId)?.pricingModel ?? null;
@@ -125,6 +130,8 @@ export function resolveRelease(
     releases: [...byRelease.values()],
     options,
     filter: { platform: filter.platform ?? null, arch: filter.arch ?? null },
-    note: "Downloads happen on the product page with an HCG account and HCG Store's access checks. This response grants nothing and contains no download URLs.",
+    note: (cfg.anonymousFreeProducts ?? []).includes(product.id) && cfg.freeDownloads
+      ? "Downloads happen on the product page. Free public files of this product need no HCG account; every other file needs an HCG account and HCG Store's access checks. This response grants nothing and contains no download URLs."
+      : "Downloads happen on the product page with an HCG account and HCG Store's access checks. This response grants nothing and contains no download URLs.",
   };
 }

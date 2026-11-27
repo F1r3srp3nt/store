@@ -60,7 +60,7 @@ import { activeException, exceptionsFor } from "./release-exceptions";
 import type { EntitlementAuthority, Subject } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, readJson } from "./http";
-import { findByPackageId, findProduct, type ProtectedArtifact, type Registry } from "./registry";
+import { findByPackageId, findProduct, type ProtectedArtifact, type Registry, type PublishedFileMeta } from "./registry";
 import type { Session } from "./sessions";
 import { isSemver } from "../../src/domain/version";
 import { BUILD_PROVIDER_IDS } from "../../src/domain/taxonomy";
@@ -313,6 +313,11 @@ export function createPublishing(deps: PublishingDeps) {
     if (!sent || sent.length !== want.length || !timingSafeEqual(Buffer.from(sent), Buffer.from(want))) {
       throw new HttpError(403, "csrf_token_required", "Reload HCG Store and try again (the request did not carry this session's security token).");
     }
+  }
+
+  /** Publication (approval, publication, delivery) is on for this product: mode "enabled" and inside the product limit. */
+  function publicationOn(productId: string): boolean {
+    return P.publicationEnabled && (!P.publicationProducts.length || P.publicationProducts.includes(productId));
   }
 
   // ------------------------------------------------------------- rate limits (per person; per file for upload chunks)
@@ -664,7 +669,7 @@ export function createPublishing(deps: PublishingDeps) {
     if (await permitted(actor, "approve", r.product_id)) return { ok: true, basis: "approver-review" };
     if (await permitted(actor, "publication", r.product_id)) return { ok: true, basis: "publisher-review" };
     // Private uploads only: nothing is delivered to anyone but the staff above.
-    if (!P.publicationEnabled) return { ok: false, status: 403, code: "publication_disabled", message: "This release is not available." };
+    if (!publicationOn(r.product_id)) return { ok: false, status: 403, code: "publication_disabled", message: "This release is not available." };
     if (STAFF_ONLY_FORMATS.has(a.format)) return { ok: false, status: 403, code: "staff_only", message: "This file is for authorised distribution only and is never delivered to customers." };
     if (r.status === "superseded") return { ok: false, status: 410, code: "superseded", message: "A newer release replaced this one." };
     if (r.availability !== "available") return { ok: false, status: 410, code: r.availability, message: `This release is ${r.availability}.` };
@@ -700,7 +705,7 @@ export function createPublishing(deps: PublishingDeps) {
 
   /** Verified files of releases MANUALLY approved for public delivery (used by /api/v1/downloads and Sileo). */
   function publishedFor(productId: string, editionId: string | null): ProtectedArtifact[] {
-    if (!P.publicationEnabled) return [];
+    if (!publicationOn(productId)) return [];
     const rows = db.prepare(
       `SELECT a.* FROM pub_artifacts a JOIN pub_releases r ON r.id = a.release_id
        WHERE r.product_id = ? AND r.edition_id IS ? AND r.status = 'published' AND r.approved_eligibility = 'public' AND r.availability = 'available'
@@ -722,7 +727,7 @@ export function createPublishing(deps: PublishingDeps) {
   }
 
   function freePublicFor(productId: string, editionId: string | null): ProtectedArtifact[] {
-    if (!P.publicationEnabled) return [];
+    if (!publicationOn(productId)) return [];
     const basis = freeBasis(productId, editionId);
     if (!basis) return [];
     const rows = db.prepare(
@@ -744,15 +749,20 @@ export function createPublishing(deps: PublishingDeps) {
     if (!P.publicationEnabled) return undefined;
     const a = artifact(id);
     const r = a ? release(a.release_id) : undefined;
-    if (!a || !r || r.status !== "published" || r.approved_eligibility !== "public" || r.availability !== "available" || a.status !== "verified" || STAFF_ONLY_FORMATS.has(a.format)) return undefined;
+    if (!a || !r || !publicationOn(r.product_id) || r.status !== "published" || r.approved_eligibility !== "public" || r.availability !== "available" || a.status !== "verified" || STAFF_ONLY_FORMATS.has(a.format)) return undefined;
     if (!artifactIsCurrent(db, a, r)) return undefined;
     return asProtected(a, r.product_id, r.edition_id);
   }
 
-  function publishedMeta(id: string): { version: string; architectures: string[] } | undefined {
+  function publishedMeta(id: string): PublishedFileMeta | undefined {
     const a = artifact(id);
     const r = a ? release(a.release_id) : undefined;
-    return a && r ? { version: r.version, architectures: JSON.parse(a.architectures) } : undefined;
+    if (!a || !r) return undefined;
+    return {
+      version: r.version, channel: r.channel, architectures: JSON.parse(a.architectures), platform: a.platform, format: a.format,
+      sizeBytes: a.size_bytes, sha256: a.sha256, minimumOs: a.minimum_os,
+      signing: (JSON.parse(a.signing_reported) as { status: string }).status, publishedAt: r.published_at,
+    };
   }
 
   // ------------------------------------------------------------- HCG Repo: approved and withdrawn packages
@@ -1202,6 +1212,9 @@ export function createPublishing(deps: PublishingDeps) {
       if ((action === "/approve" || action === "/publish") && m === "POST" && !P.publicationEnabled) {
         throw new HttpError(409, "publication_disabled", "This HCG Store accepts private uploads only: approval and publication are switched off (HCG_STORE_PUBLISHING=uploads). Your draft is kept privately.");
       }
+      if ((action === "/approve" || action === "/publish") && m === "POST" && !publicationOn(r.product_id)) {
+        throw new HttpError(409, "publication_disabled", "Approval and publication are not switched on for this product (HCG_STORE_PUBLICATION_PRODUCTS). Your draft is kept privately.");
+      }
       if (action === "/approve" && m === "POST") {
         // Manual approval happens in HCG Store, signed in through the browser; a desktop token cannot approve.
         if (actor.via !== "web") throw new HttpError(403, "manual_approval_required", "Releases are approved manually in HCG Store, not from a desktop app.");
@@ -1285,6 +1298,7 @@ export function createPublishing(deps: PublishingDeps) {
         // withdrawn) current again on its targets; the release it replaces becomes superseded. Both are publication decisions: a person with
         // HCG's publication permission, in the browser, typing the version; never automatic.
         if (!P.publicationEnabled) throw new HttpError(409, "publication_disabled", "This HCG Store accepts private uploads only: publication, supersede and restore are switched off.");
+        if (!publicationOn(r.product_id)) throw new HttpError(409, "publication_disabled", "Publication is not switched on for this product (HCG_STORE_PUBLICATION_PRODUCTS).");
         if (actor.via !== "web") throw new HttpError(403, "manual_publication_required", "Supersede and restore happen in HCG Store in the browser, not from an app.");
         await requirePermission(actor, "publication", r.product_id);
         expectRevision(req, r);
@@ -1321,6 +1335,7 @@ export function createPublishing(deps: PublishingDeps) {
           // Making a published release downloadable again is a publication decision.
           if (r.published_at) {
             if (!P.publicationEnabled) throw new HttpError(409, "publication_disabled", "This HCG Store accepts private uploads only: re-enabling a published release is switched off.");
+            if (!publicationOn(r.product_id)) throw new HttpError(409, "publication_disabled", "Publication is not switched on for this product (HCG_STORE_PUBLICATION_PRODUCTS).");
             if (actor.via !== "web") throw new HttpError(403, "manual_publication_required", "Re-enabling a published release happens in HCG Store in the browser.");
             if (!may.publication) throw new HttpError(403, "not_publication", "HCG has not granted your account permission to publish approved releases.");
           } else if (!may.publish) throw new HttpError(403, "not_publisher", "HCG has not granted your account permission to submit releases of this product.");
@@ -1579,7 +1594,15 @@ export function createPublishing(deps: PublishingDeps) {
     draft: { release: unknown; artifacts: unknown[] };
     filesDir: string;
     passports: Record<string, { artifact: { filename: string; size: number; sha256: string; sha512: string }; source: { commit: string }; build: { run_id: number } }>;
-    source: { repository: string; commit: string; runId: number };
+    /**
+     * ci-run: a product CI run with its HCG Store draft and Release Passports (every file must match its passport).
+     * github-release: files a person built and attached to a GitHub release. There is no CI run and no passport, so
+     * none is claimed: every file must be declared a manual upload (no source commit, build provider or toolchain),
+     * and the review page shows it as such. The tag's commit is recorded as what the tag points to, not as build proof.
+     */
+    source:
+      | { kind?: "ci-run"; repository: string; commit: string; runId: number }
+      | { kind: "github-release"; repository: string; tag: string; tagCommit: string; evidenceRun: number | null };
     requestedEligibility: "private" | "internal-testing" | "public";
     knownLimitations: string[];
     authorisedBy: string;
@@ -1602,18 +1625,25 @@ export function createPublishing(deps: PublishingDeps) {
       const sha256 = sha(path, "sha256");
       if (size !== f.sizeBytes) problems.push(`${f.fileName}: ${size} bytes, the draft says ${f.sizeBytes}.`);
       if (sha256 !== f.sha256) problems.push(`${f.fileName}: SHA-256 ${sha256}, the draft says ${f.sha256}.`);
-      if (f.sourceCommit !== opts.source.commit) problems.push(`${f.fileName}: built from ${f.sourceCommit}, the import names ${opts.source.commit}.`);
+      const src = opts.source;
+      if (src.kind === "github-release") {
+        // No build evidence exists for a hand-built file: claim none.
+        if (f.buildProvider !== "manual-upload" || f.sourceCommit || f.toolchain) problems.push(`${f.fileName}: a GitHub release import has no build evidence, so the file must be declared a manual upload with no source commit or toolchain.`);
+        if (opts.passports[f.fileName]) problems.push(`${f.fileName}: a GitHub release import takes no Release Passport.`);
+        continue;
+      }
+      if (f.sourceCommit !== src.commit) problems.push(`${f.fileName}: built from ${f.sourceCommit}, the import names ${src.commit}.`);
       const pp = opts.passports[f.fileName];
       if (!pp) problems.push(`${f.fileName}: no Release Passport.`);
       else {
         if (pp.artifact.size !== size || pp.artifact.sha256 !== sha256 || pp.artifact.sha512 !== sha(path, "sha512")) problems.push(`${f.fileName}: the Release Passport does not match the file.`);
-        if (pp.source.commit !== opts.source.commit || Number(pp.build.run_id) !== Number(opts.source.runId)) problems.push(`${f.fileName}: the Release Passport names another commit or run.`);
+        if (pp.source.commit !== src.commit || Number(pp.build.run_id) !== Number(src.runId)) problems.push(`${f.fileName}: the Release Passport names another commit or run.`);
       }
     }
     if (!files.length) problems.push("The draft lists no files.");
     if (problems.length) throw new HttpError(400, "import_refused", problems.join(" "));
 
-    const creator = `import:${opts.source.repository}#${opts.source.runId}`;
+    const creator = opts.source.kind === "github-release" ? `import:${opts.source.repository}@${opts.source.tag}` : `import:${opts.source.repository}#${opts.source.runId}`;
     const importedFrom = { ...opts.source, authorisedBy: opts.authorisedBy.trim(), performedBy: opts.performedBy.trim(), draftRequestedEligibility: (opts.draft.release as { eligibility?: string }).eligibility ?? null };
     const id = `rel-${randomBytes(8).toString("hex")}`;
     transaction(db, () => {

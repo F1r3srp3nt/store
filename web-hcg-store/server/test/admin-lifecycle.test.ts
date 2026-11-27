@@ -470,16 +470,21 @@ describe("Production controls", () => {
     for (let i = 0; i < 45; i++) if ((await call(owner, "GET", "/api/v1/publishing/me")).status === 429) limited++;
     expect(limited).toBeGreaterThan(0);
 
-    // The production configuration (fly.toml) keeps payments off, protected downloads off and publication off.
+    // The production configuration (fly.toml): payments off; licensed downloads off; publication and free delivery
+    // for HCG Mail only (founder-approved, 27 Nov 2026), with downloads without an account for HCG Mail only.
     const toml = readFileSync(join(__dirname, "..", "..", "fly.toml"), "utf8");
     const env = Object.fromEntries([...toml.split("[env]")[1]!.split(/\n\[/)[0]!.matchAll(/^\s*([A-Z0-9_]+)\s*=\s*"([^"]*)"/gm)].map((m) => [m[1]!, m[2]!]));
     const secret = { HCG_STORE_SECRET_KEY: randomBytes(32).toString("base64") }; // a Fly secret in production
     const cfg = parseStoreConfig({ ...env, ...secret });
-    expect(cfg.publishing.mode).toBe("uploads");
-    expect(cfg.publishing.publicationEnabled).toBe(false);
-    expect(env.HCG_STORE_PAYMENT_PROVIDER ?? "none").toBe("none");
-    expect(env.HCG_STORE_PROTECTED_DOWNLOADS ?? "disabled").toBe("disabled");
-    expect(env.HCG_STORE_RELEASE_PUBLICATION_CENTRAL_ID).toBeUndefined();
+    expect(cfg.publishing.mode).toBe("enabled");
+    expect(cfg.publishing.publicationProducts).toEqual(["hcg-mail"]);
+    expect(cfg.anonymousFreeProducts).toEqual(["hcg-mail"]);
+    expect(cfg.protectedDownloads).toBe(false); // licensed and paid files stay off
+    expect(cfg.freeDownloads).toBe(true);
+    expect(cfg.paymentProvider).toBe("none");
+    expect(env.HCG_STORE_PAYMENT_PROVIDER).toBe("none");
+    expect(env.HCG_STORE_PROTECTED_DOWNLOADS).toBe("free-testing-only");
+    expect(env.HCG_STORE_LAUNCH_APPROVED).toBeUndefined();
     expect(() => parseStoreConfig({ ...env, ...secret, HCG_STORE_DEVICE_POLICY: "require-sovereign-device" })).toThrow(/HCG_STORE_DEVICE_POLICY/);
   });
 });

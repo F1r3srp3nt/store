@@ -18,6 +18,7 @@ import { NoAuthority } from "./entitlements";
 import { HttpError } from "./http";
 import { createPublishing } from "./publishing";
 import { loadRegistry } from "./registry";
+import { draftFromRequest, ImportRequestSchema, type ImportDraft } from "./release-import-request";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name);
@@ -26,18 +27,7 @@ const arg = (name: string) => {
 };
 const b64 = (name: string) => Buffer.from(arg(name) ?? "", "base64").toString("utf8");
 
-export const ImportRequestSchema = z.object({
-  format: z.literal("hcg.store.release-import/1"),
-  source: z.object({ repository: z.string().regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/), commit: z.string().regex(/^[a-f0-9]{40}$/), runId: z.number().int().positive() }).passthrough(),
-  expect: z.object({
-    productId: z.string(), editionId: z.string().nullable(), version: z.string(), build: z.string(), channel: z.string(), distribution: z.string(),
-    files: z.number().int().positive(),
-    /** The exact SHA-256 of every file, committed with the request: any other bytes are refused. */
-    sha256: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
-  }),
-  requestedEligibility: z.enum(["private", "internal-testing", "public"]),
-  knownLimitations: z.array(z.string().min(1).max(500)).max(30).default([]),
-}).passthrough();
+export { ImportRequestSchema } from "./release-import-request";
 
 async function main() {
   const cfg = parseStoreConfig(process.env);
@@ -46,7 +36,8 @@ async function main() {
   try {
     const dir = arg("--dir") ?? "";
     const request = ImportRequestSchema.parse(JSON.parse(readFileSync(arg("--request") ?? "", "utf8")));
-    const draft = JSON.parse(readFileSync(join(dir, "draft", "store-release-draft.json"), "utf8")) as { release: Record<string, unknown>; artifacts: unknown[] };
+    const fromGithub = request.source.kind === "github-release";
+    const draft = fromGithub ? draftFromRequest(request) : (JSON.parse(readFileSync(join(dir, "draft", "store-release-draft.json"), "utf8")) as ImportDraft);
     for (const [k, v] of Object.entries(request.expect)) {
       if (k === "files" || k === "sha256") continue;
       if (String(draft.release[k] ?? null) !== String(v)) throw new HttpError(400, "request_mismatch", `The draft's ${k} is ${String(draft.release[k])}, the request says ${String(v)}.`);
@@ -57,7 +48,7 @@ async function main() {
     }
     if (draft.artifacts.length !== request.expect.files) throw new HttpError(400, "request_mismatch", `The draft lists ${draft.artifacts.length} files, the request expects ${request.expect.files}.`);
     const passports: Record<string, never> = {};
-    for (const f of readdirSync(join(dir, "draft", "passports"))) {
+    for (const f of fromGithub ? [] : readdirSync(join(dir, "draft", "passports"))) {
       const p = JSON.parse(readFileSync(join(dir, "draft", "passports", f), "utf8"));
       (passports as Record<string, unknown>)[p.artifact.filename] = p;
     }
@@ -68,7 +59,9 @@ async function main() {
     });
     const r = await publishing.importRelease({
       draft, filesDir: join(dir, "files"), passports,
-      source: { repository: request.source.repository, commit: request.source.commit, runId: request.source.runId },
+      source: request.source.kind === "github-release"
+        ? { kind: "github-release", repository: request.source.repository, tag: request.source.tag, tagCommit: request.source.tagCommit, evidenceRun: request.source.evidenceRun ?? null }
+        : { repository: request.source.repository, commit: request.source.commit, runId: request.source.runId },
       requestedEligibility: request.requestedEligibility, knownLimitations: request.knownLimitations,
       authorisedBy: b64("--authorised-by-b64"), performedBy: b64("--performed-by-b64"),
     });

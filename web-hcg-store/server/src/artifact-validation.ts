@@ -460,7 +460,9 @@ export function inspectContent(file: string, platform: PublishPlatform, format: 
     r.close();
   }
   report.signature = signature;
-  report.kind ??= kindFromFormat(platform, format) ?? undefined;
+  // A Windows .exe can be an installer or a self-contained app; its header does not say which. The uploader's
+  // declaration stands (shown as declared, not checked); an undeclared .exe is still treated as an installer.
+  if (format !== "exe") report.kind ??= kindFromFormat(platform, format) ?? undefined;
   report.ok = problems.length === 0;
   return report;
 }

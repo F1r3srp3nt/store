@@ -6,7 +6,7 @@
  * The files are small synthetic Windows files in the exact shape of HCG Mail's CI draft and Release Passports.
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
@@ -97,6 +97,24 @@ function importFolder(tamper?: (files: Record<string, Buffer>) => void) {
 const passportsOf = (dir: string, names: string[]) =>
   Object.fromEntries(names.map((n) => [n, JSON.parse(readFileSync(join(dir, "draft", "passports", `${n}.passport.json`), "utf8"))]));
 
+/**
+ * These tests cover the free-testing-window model (0.1.0-beta.1 rehearsal). The real catalogue now makes the HCG Mail
+ * Windows edition permanently free (1.0.0-beta.1, hcg-mail-public-beta.test.ts), so they run on a copy where the
+ * edition's pricing is not set and access needs an account, as it was then.
+ */
+function windowedCatalogue(): string {
+  const src = join(__dirname, "..", "..", "catalogue");
+  const dir = mkdtempSync(join(tmpdir(), "hcg-import-catalogue-"));
+  for (const f of readdirSync(src)) writeFileSync(join(dir, f), readFileSync(join(src, f)));
+  const products = JSON.parse(readFileSync(join(dir, "products.json"), "utf8"));
+  const mail = products.products.find((p: { id: string }) => p.id === "hcg-mail");
+  const ed = mail.editions.find((e: { id: string }) => e.id === "windows-desktop");
+  ed.pricingModel = "not-set";
+  ed.access = "hcg-account";
+  writeFileSync(join(dir, "products.json"), JSON.stringify(products));
+  return dir;
+}
+
 let h: Harness;
 let ledger: TestLedgerAuthority;
 beforeEach(async () => {
@@ -105,7 +123,7 @@ beforeEach(async () => {
   writeFileSync(join(reg, "artifacts.json"), JSON.stringify({ artifacts: [] }));
   h = await startHarness({
     env: {
-      HCG_CATALOGUE_DIR: join(__dirname, "..", "..", "catalogue"),
+      HCG_CATALOGUE_DIR: windowedCatalogue(),
       HCG_STORE_OFFERS_FILE: join(reg, "offers.json"),
       HCG_STORE_ARTIFACTS_FILE: join(reg, "artifacts.json"),
       HCG_STORE_PAYMENT_PROVIDER: "none",

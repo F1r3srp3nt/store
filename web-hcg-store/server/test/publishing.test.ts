@@ -410,7 +410,7 @@ describe("Ship to Store", () => {
     expect((await approverWeb.post(`/api/v1/publishing/releases/${rel.body.id}/publish`, { confirm: "1.0.1" })).status).toBe(200);
     // …and only then, as a normal entitlement-gated Store artifact with its version and layout for Sileo.
     expect(h.app.publishing.publishedFor("fixture-quasar-shell", "unleashed").map((a) => a.id)).toEqual([ok.body.artifact.id]);
-    expect(h.app.publishing.publishedMeta(ok.body.artifact.id)).toEqual({ version: "1.0.1", architectures: ["iphoneos-arm64"] });
+    expect(h.app.publishing.publishedMeta(ok.body.artifact.id)).toMatchObject({ version: "1.0.1", architectures: ["iphoneos-arm64"] });
   });
   it("HCG Repo companion changes: Debian version = release version, free public releases for any signed-in account, and a release listing", async () => {
     const d = await desktop();

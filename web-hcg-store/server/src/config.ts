@@ -66,6 +66,13 @@ export interface StoreConfig {
    * HCG_STORE_PROTECTED_DOWNLOADS=free-testing-only or enabled. Never opens anything that needs a licence.
    */
   freeDownloads: boolean;
+  /**
+   * Products whose free public releases anyone may download WITHOUT an HCG account (HCG_STORE_ANONYMOUS_FREE_PRODUCTS,
+   * comma-separated catalogue product IDs). Only files of releases a person approved as public AND free and published,
+   * that are current, available and free right now (permanently free edition or open free window). Never a licensed,
+   * paid or internal file, and no other product. Empty = every download needs an HCG account (the default).
+   */
+  anonymousFreeProducts: string[];
   /** How old a central session confirmation may be before a protected action re-confirms it. */
   sessionRecheckSeconds: number;
   sessionIdleSeconds: number;
@@ -88,6 +95,12 @@ export interface PublishingSettings {
   mode: "disabled" | "uploads" | "enabled";
   /** Approval, publication and delivery of published releases (mode "enabled" only). */
   publicationEnabled: boolean;
+  /**
+   * HCG_STORE_PUBLICATION_PRODUCTS: when set, approval, publication and customer delivery of published releases are
+   * limited to these catalogue product IDs (comma-separated). Every other product stays uploads-only: drafts and
+   * uploads keep working, nothing is approved, published or delivered. Empty = no product limit.
+   */
+  publicationProducts: string[];
   /** Central permission checked for publishing (edition = Store product ID, or "*" for every product). */
   publisherCentralId: string | null;
   /** Central permission checked for approving releases (edition = Store product ID, or "*"). */
@@ -274,6 +287,15 @@ export function parseStoreConfig(env: Env): StoreConfig {
     }
   }
 
+  const anonymousFreeProducts = (env.HCG_STORE_ANONYMOUS_FREE_PRODUCTS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (anonymousFreeProducts.length) {
+    if (anonymousFreeProducts.some((x) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(x))) problems.push("HCG_STORE_ANONYMOUS_FREE_PRODUCTS must list catalogue product IDs, separated by commas.");
+    if (!freeDownloads) problems.push("HCG_STORE_ANONYMOUS_FREE_PRODUCTS needs HCG_STORE_PROTECTED_DOWNLOADS=free-testing-only or enabled.");
+    if (!test && env.HCG_STORE_ANONYMOUS_FREE_APPROVED !== "founder-approved") {
+      problems.push("Downloads without an HCG account are a founder decision per product. In production they also need HCG_STORE_ANONYMOUS_FREE_APPROVED=founder-approved.");
+    }
+  }
+
   const int = (name: string, def: number, min: number, max: number) => {
     const raw = env[name];
     if (raw === undefined) return def;
@@ -308,6 +330,8 @@ export function parseStoreConfig(env: Env): StoreConfig {
   if (offersCentralId && (!centralPermission.test(offersCentralId) || [publisherCentralId, approverCentralId, publicationCentralId].includes(offersCentralId))) {
     problems.push("HCG_STORE_OFFERS_CENTRAL_ID must be its own central permission, different from the three release permissions.");
   }
+  const publicationProducts = (env.HCG_STORE_PUBLICATION_PRODUCTS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (publicationProducts.some((x) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(x))) problems.push("HCG_STORE_PUBLICATION_PRODUCTS must list catalogue product IDs, separated by commas.");
   const publishingClientIds = (env.HCG_STORE_PUBLISHING_CLIENT_IDS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   if (publishingEnabled) {
     if (!hcgConnect) problems.push("Publishing needs HCG Connect to be configured.");
@@ -355,6 +379,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
     testPaymentWebhookSecret,
     protectedDownloads,
     freeDownloads,
+    anonymousFreeProducts,
     sessionRecheckSeconds: int("HCG_STORE_SESSION_RECHECK_SECONDS", 60, 0, 900),
     sessionIdleSeconds: int("HCG_STORE_SESSION_IDLE_SECONDS", 7 * 24 * 3600, 300, 30 * 24 * 3600),
     sessionAbsoluteSeconds: int("HCG_STORE_SESSION_ABSOLUTE_SECONDS", 30 * 24 * 3600, 3600, 90 * 24 * 3600),
@@ -364,6 +389,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
       enabled: publishingEnabled,
       mode: publishingMode,
       publicationEnabled,
+      publicationProducts,
       clientIds: publishingClientIds,
       publisherCentralId,
       approverCentralId,

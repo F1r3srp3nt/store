@@ -1,0 +1,73 @@
+{
+  "$comment": "HCG Mail 1.0.0 | Public Beta 1 for Windows x64. Import of the file the HCG Mail team attached to the GitHub release v1.0.0.0-beta.1-windows-x64 (a manual build: there is no CI run, Store draft or Release Passport, and none is claimed). The file is imported byte for byte; expect.sha256 pins it (equal to GitHub's own asset digest, verified by HCG Store's evidence run 45940124443). Embedded version: ProductVersion 1.0.0, FileVersion 1.0.0.0; the Store release version 1.0.0-beta.1 is the founder's release name. Free, permanently, with no account needed (catalogue pricingModel free, HCG_STORE_ANONYMOUS_FREE_PRODUCTS=hcg-mail).",
+  "format": "hcg.store.release-import/1",
+  "source": {
+    "kind": "github-release",
+    "repository": "F1r3srp3nt/HCG-Mail",
+    "tag": "v1.0.0.0-beta.1-windows-x64",
+    "tagCommit": "90726ae21d42f25cdc5ca81d97ab334d5dd5dfce",
+    "evidenceRun": 45940124443
+  },
+  "expect": {
+    "productId": "hcg-mail",
+    "editionId": "windows-desktop",
+    "version": "1.0.0-beta.1",
+    "build": "1.0.0.0",
+    "channel": "beta",
+    "distribution": "free",
+    "files": 1,
+    "sha256": {
+      "HCGMail.exe": "0424c7c6a264b66da841e320b2661fdcf9b2d8bf0bf17e3ab1ec92af32202fdf"
+    }
+  },
+  "release": {
+    "releaseNotes": [
+      "HCG Mail 1.0.0 | Public Beta 1: the first public beta of HCG Mail for Windows x64. Free, with no HCG account needed.",
+      "Email over IMAP (synchronisation) and SMTP (sending), with multiple accounts.",
+      "HTML and plain-text message viewing; mailbox and folder management.",
+      "HCG Dark and Light appearance, and Mail Health connection diagnostics.",
+      "Microsoft OAuth sign-in is outside the scope of this public beta: use IMAP and SMTP with a password or app password."
+    ],
+    "compatibility": {
+      "minimumOs": { "windows": "Windows 10 (x64)" },
+      "architectures": ["x64"],
+      "notes": ["A single self-contained HCGMail.exe (.NET 10, Avalonia): no installation, administrator rights or .NET installation needed."]
+    },
+    "artifacts": [
+      {
+        "fileName": "HCGMail.exe",
+        "platform": "windows",
+        "format": "exe",
+        "sizeBytes": 119023581,
+        "sha256": "0424c7c6a264b66da841e320b2661fdcf9b2d8bf0bf17e3ab1ec92af32202fdf",
+        "architectures": ["x64"],
+        "minimumOs": "Windows 10",
+        "signing": {
+          "status": "unsigned",
+          "evidence": "Get-AuthenticodeSignature on windows-2025: NotSigned (HCG Store evidence run 45940124443).",
+          "tool": "PowerShell Get-AuthenticodeSignature"
+        },
+        "kind": "portable-app",
+        "package": null,
+        "sourceCommit": null,
+        "buildProvider": "manual-upload",
+        "toolchain": null,
+        "validationReport": {
+          "tool": "HCG Store evidence workflow (hcg-mail-release-evidence.yml, run 45940124443)",
+          "passed": true,
+          "summary": "SHA-256 equals GitHub's asset digest. PE32+ x86-64 GUI executable; ProductVersion 1.0.0, FileVersion 1.0.0.0, CompanyName Hakmi Capital Group; .NET 10 single-file app. Not Authenticode-signed. Started and showed its 'HCG Mail' window for 20 s on a GitHub-hosted Windows Server 2025 x64 runner."
+        },
+        "replaces": null
+      }
+    ]
+  },
+  "requestedEligibility": "public",
+  "knownLimitations": [
+    "Not code-signed (no Authenticode signature): Windows SmartScreen may show \"Windows protected your PC\". Choose More info, then Run anyway, only if the file's SHA-256 matches the published checksum.",
+    "Built by the HCG Mail team and attached to a GitHub release by hand: there is no CI build record or Release Passport for this file. HCG Store verified the file itself (checksum, version, architecture, start-up).",
+    "The program reports version 1.0.0 (file version 1.0.0.0); HCG Store lists it as 1.0.0-beta.1, Public Beta 1.",
+    "Start-up was verified on a GitHub-hosted Windows Server 2025 x64 runner, not yet on testers' own PCs. Signing in to a mailbox, sending and receiving were not tested by HCG Store.",
+    "Microsoft OAuth (Outlook.com, Microsoft 365) sign-in is outside the scope of this beta. Use IMAP and SMTP with a password or app password.",
+    "Windows x64 only: there is no Windows ARM64 build in this release. Updates are not automatic: a new version is a new download."
+  ]
+}
