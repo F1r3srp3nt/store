@@ -22,7 +22,7 @@ on:
         required: true
         default: deploy
         type: choice
-        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run, permission-diagnosis]
+        options: [deploy, status, evidence, restart, profile, import-release, free-window, release-exception, migration-dry-run, permission-diagnosis, release-records]
       org:
         description: "Fly.io organisation for a new app (personal = your own)"
         required: true
@@ -403,6 +403,15 @@ jobs:
           out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/release-exception.mjs $A" | grep '^{' | tail -1)
           { echo "## Release exception"; echo '```json'; echo "$out" | jq .; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$out" | jq -e 'has("error") | not' >/dev/null
+      # ---- release-records: print the published public release records (read-only), the input of
+      # `npm run releases:sync -- --from <file>`. Release metadata only: no account ID, token or file. ----
+      - name: Release records (read-only export)
+        if: inputs.mode == 'release-records'
+        run: |
+          out=$(flyctl ssh console --app "$APP" --command "node --no-warnings server-dist/with-machine-env.mjs server-dist/release-records.mjs" | grep '^{' | tail -1)
+          echo "$out" | jq -e '.records' >/dev/null
+          echo "RELEASE_RECORDS_JSON_BEGIN"; echo "$out"; echo "RELEASE_RECORDS_JSON_END"
+          { echo "## Release records"; echo '```json'; echo "$out" | jq '[.records[] | {storeReleaseId, productId, version, status, artifacts: [.artifacts[] | {fileName, sizeBytes, sha256}]}]'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # ---- permission-diagnosis: replay HCG's /me and the hcg.store feature checks for one verified sign-in, with that
       # person's own token. Read-only towards HCG; prints no account ID, organisation ID, e-mail address or token. ----
       - name: Publishing permission diagnosis (sanitised)
