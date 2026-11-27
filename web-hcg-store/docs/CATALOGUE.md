@@ -202,3 +202,33 @@ left out of My HCG apps. Publish one by filling in HCG's facts and setting `visi
 
 The test fixture in `tests/fixtures/catalogue-demo/` is labelled fake data and is never built for
 production.
+
+## Launch pages for published products (`landing`)
+
+A product with a `landing` block **and** a current published release gets the launch page template
+(`src/pages/ProductLaunch.tsx`); every other product keeps the detail page.
+
+- **Catalogue (`landing`): marketing only.** It holds:
+  - the headline and tagline;
+  - the feature cards, which may name only capabilities of the published build;
+  - the platforms announced as "coming soon", which never offer a download;
+  - the social image;
+  - an HCG principle line.
+- **HCG Store: every release fact.** Version, files, sizes, architectures, signing, price, availability, release
+  notes, known limitations and download buttons come from the release record and the live access decision
+  (`/api/v1/products/<slug>/access`). Downloads use `/api/v1/downloads/<file>`, which checks again on every request.
+- **Publications update the site automatically.** After the catalogue loads, the website reads
+  `GET /api/public/v1/published`: each product's currently published releases, metadata only. A publication made in
+  the Control Center, HCG Executable Maker or HCG Store Manager therefore shows up on these surfaces without a
+  catalogue edit:
+  - the product page;
+  - cards;
+  - New releases;
+  - platform and search listings.
+
+  When HCG Store has exactly one current release for a product, it becomes the product's current release. With
+  several (for example one per platform), nothing is inferred. An explicit `currentReleaseId` is never overridden.
+  `npm run releases:sync` still writes the reviewed record into `releases.json`.
+- **Search and link previews.** The server injects product pages' `<title>`, description, Open Graph and Twitter
+  tags, and `SoftwareApplication` JSON-LD (`server/src/product-head.ts`). These contain no ratings, reviews or
+  download counts, and no file URLs.

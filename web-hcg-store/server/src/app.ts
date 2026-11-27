@@ -15,10 +15,12 @@
  *   GET  /api/v1/downloads/:artifactId         protected file delivery
  *   GET  /api/v1/repo/products/:key/access     access state for HCG Repo product pages (CORS)
  *   GET  /api/public/v1/release-resolution/:product   current approved release and how to get it (public, CORS; no URLs to files)
+ *   GET  /api/public/v1/published                      every product's currently published releases (public, CORS; metadata only)
  *   /repo-api/v1/sileo/*                       Sileo payment-provider API (see sileo.ts)
  *   GET  /repo-api/v1/files/:signed            short-lived file URL issued to Sileo
  */
 import { resolveRelease, ResolutionError } from "./release-resolution";
+import { productHead, withProductHead } from "./product-head";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
@@ -543,7 +545,21 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     if (rel.endsWith("/")) rel += "index.html";
     let file = resolve(staticRoot, "." + rel);
     if (!file.startsWith(staticRoot + sep)) return errorJson(res, 404, "not_found", "Not found.");
-    if (!existsSync(file) || !statSync(file).isFile()) file = join(staticRoot, "index.html"); // SPA fallback
+    if (!existsSync(file) || !statSync(file).isFile()) {
+      file = join(staticRoot, "index.html"); // SPA fallback
+      // Product pages: the product's own title, description, social image and SoftwareApplication data in the HTML.
+      const slug = /^\/apps\/([a-z0-9-]+)\/?$/.exec(rel)?.[1];
+      if (slug) {
+        const product = registry.catalogue.products.find((x) => x.slug === slug);
+        const live = product && registry.published ? publishing.currentPublishedFor(product.id) : [];
+        const head = productHead({ catalogue: registry.catalogue, slug, origin: cfg.publicOrigin, live });
+        if (head) {
+          const html = withProductHead(readFileSync(file, "utf8"), head);
+          res.writeHead(200, { ...staticHeaders, "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+          return res.end(req.method === "HEAD" ? undefined : html);
+        }
+      }
+    }
     const ext = extname(file);
     const immutable = rel.startsWith("/assets/");
     res.writeHead(200, {
@@ -675,6 +691,22 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         if (e instanceof ResolutionError) return errorJson(res, e.status, e.code, e.message, cors);
         throw e;
       }
+    }
+    if (p === "/api/public/v1/published" && (m === "GET" || m === "OPTIONS")) {
+      // Public, read-only: the releases each catalogue product has CURRENTLY published through HCG Store (per-target
+      // current, approved public, available), so pages follow publications without a catalogue edit. Metadata only:
+      // no download URL, no account data. Downloads still go through the access checks on /api/v1/downloads.
+      const cors = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS", "access-control-max-age": "86400", vary: "Origin" };
+      if (m === "OPTIONS") return send(res, 204, "", cors);
+      const products: Record<string, unknown[]> = {};
+      if (cfg.publishing.publicationEnabled) {
+        for (const product of registry.catalogue.products) {
+          if (product.visibility === "draft") continue;
+          const live = publishing.currentPublishedFor(product.id);
+          if (live.length) products[product.id] = live.map(({ targets: _t, ...r }) => r);
+        }
+      }
+      return json(res, 200, { format: "hcg.store.published/1", generatedAt: new Date(now()).toISOString(), products }, { ...cors, "cache-control": "public, max-age=60" });
     }
     if (await publishing.route(req, res, url)) return;
     if (p.startsWith("/repo-api/v1/sileo/")) return handleSileo.route(sileoCtx, req, res, url);

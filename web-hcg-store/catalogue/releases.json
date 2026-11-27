@@ -1,5 +1,65 @@
 {
   "$comment": "Approved release metadata for HCG Store. EMPTY ON PURPOSE: no real release metadata or artifact URL has been supplied. Never add placeholder or invented download links. See docs/CATALOGUE.md#adding-a-release.",
   "schemaVersion": 1,
-  "releases": []
+  "releases": [
+    {
+      "id": "rel-bc6c2096b73a977f",
+      "productId": "hcg-mail",
+      "version": "1.0.0-beta.1",
+      "build": "1.0.0.0",
+      "channel": "beta",
+      "status": "approved",
+      "withdrawnReason": null,
+      "releaseDate": "2026-11-27",
+      "releaseNotes": [
+        "HCG Mail 1.0.0 | Public Beta 1: the first public beta of HCG Mail for Windows x64. Free, with no HCG account needed.",
+        "Email over IMAP (synchronisation) and SMTP (sending), with multiple accounts.",
+        "HTML and plain-text message viewing; mailbox and folder management.",
+        "HCG Dark and Light appearance, and Mail Health connection diagnostics.",
+        "Microsoft OAuth sign-in is outside the scope of this public beta: use IMAP and SMTP with a password or app password."
+      ],
+      "knownLimitations": [
+        "Not code-signed (no Authenticode signature): Windows SmartScreen may show \"Windows protected your PC\". Choose More info, then Run anyway, only if the file's SHA-256 matches the published checksum.",
+        "Built by the HCG Mail team and attached to a GitHub release by hand: there is no CI build record or Release Passport for this file. HCG Store verified the file itself (checksum, version, architecture, start-up).",
+        "The program reports version 1.0.0 (file version 1.0.0.0); HCG Store lists it as 1.0.0-beta.1, Public Beta 1.",
+        "Start-up was verified on a GitHub-hosted Windows Server 2025 x64 runner, not yet on testers' own PCs. Signing in to a mailbox, sending and receiving were not tested by HCG Store.",
+        "Microsoft OAuth (Outlook.com, Microsoft 365) sign-in is outside the scope of this beta. Use IMAP and SMTP with a password or app password.",
+        "Windows x64 only: there is no Windows ARM64 build in this release. Updates are not automatic: a new version is a new download."
+      ],
+      "artifacts": [
+        {
+          "id": "art-cdf727e41e4fb77d",
+          "platform": "windows",
+          "architectures": [
+            "x64"
+          ],
+          "fileName": "HCGMail.exe",
+          "format": "exe",
+          "sizeBytes": 119023581,
+          "sha256": "0424c7c6a264b66da841e320b2661fdcf9b2d8bf0bf17e3ab1ec92af32202fdf",
+          "minimumOs": "Windows 10",
+          "signing": {
+            "status": "unsigned",
+            "evidence": null
+          },
+          "editionId": "windows-desktop",
+          "sourceCommit": null,
+          "buildProvider": "manual-upload",
+          "toolchain": null
+        }
+      ],
+      "source": {
+        "kind": "hcg-store-approval",
+        "approvals": [
+          {
+            "storeReleaseId": "rel-bc6c2096b73a977f",
+            "editionId": "windows-desktop",
+            "build": "1.0.0.0",
+            "approvedAt": "2026-11-27T05:33:34.149Z",
+            "approvalAudit": "ae78493ffca52e1fdc015e1f4d17efe4878b44899fa9753e983cdd6aa73ab4be"
+          }
+        ]
+      }
+    }
+  ]
 }

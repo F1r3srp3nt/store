@@ -36,7 +36,7 @@ export function collectErrors(page: Page): string[] {
   });
   page.on("response", (r) => {
     const u = new URL(r.url());
-    const expectedOnStaticHost = u.pathname.startsWith("/api/v1/") && (u.port === "4173" || u.port === "4174") && r.status() === 404;
+    const expectedOnStaticHost = /^\/api\/(v1|public\/v1)\//.test(u.pathname) && (u.port === "4173" || u.port === "4174") && r.status() === 404;
     const expectedDenial = u.pathname.startsWith("/api/v1/") && (r.status() === 401 || r.status() === 403);
     if (r.status() >= 400 && !expectedOnStaticHost && !expectedDenial) errors.push(`${r.status()} ${u.pathname}`);
   });
