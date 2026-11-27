@@ -126,8 +126,9 @@ jobs:
           name: hcg-mail-1.0.0-beta.1-release-assets
           path: ${{ runner.temp }}/a
       - name: App bundle (ZIP) and installer (PKG)
+        shell: bash {0}
         run: |
-          set -uo pipefail
+          set -u
           sw_vers; uname -m
           cd "$RUNNER_TEMP/a/files/macos"
           ls -l
@@ -169,6 +170,8 @@ jobs:
             diff -rq "$app" "$papp" 2>&1 | head -20
           fi
       - name: Launch check (ZIP app, quarantine removed as a user would after Open Anyway)
+        if: always()
+        shell: bash {0}
         run: |
           app=$(find "$RUNNER_TEMP/zip" -maxdepth 2 -name '*.app' -type d | head -1)
           xattr -dr com.apple.quarantine "$app"
