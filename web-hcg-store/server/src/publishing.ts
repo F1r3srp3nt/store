@@ -27,7 +27,13 @@
  *   POST   /api/v1/publishing/releases/:id/verify-checksums  re-hash the stored files against their recorded SHA-256
  *   GET    /api/v1/publishing/manager                        Release Manager: releases of every product you may publish/approve
  *   GET    /api/v1/publishing/compare?from=&to=              differences between two releases of one product
- *   POST   /api/v1/publishing/releases/:id/withdraw          rollback: stop delivery, keep files and history
+ *   POST   /api/v1/publishing/releases/:id/withdraw          stop delivery and end the review track, keep files and history
+ *   POST   /api/v1/publishing/releases/:id/{disable,enable,archive,revoke}   availability (release-lifecycle.ts)
+ *   POST   /api/v1/publishing/releases/:id/{supersede,restore}               current release per target (browser only)
+ *   POST   /api/v1/publishing/releases/:id/requests          record a request (disable, enable, restore, supersede,
+ *                                                             make current) for the people who approve and publish
+ *   GET    /api/v1/publishing/me · /changes · /products/:id  permissions, change feed, product detail (PATCH: drafts)
+ *   Full contract: docs/ADMINISTRATION.md §5.
  *   POST   /api/v1/publishing/artifacts/:id/download-url     short-lived scoped download URL (authorised)
  *   GET    /publishing-download/v1/:token                    the file (re-authorised at use)
  *   GET    /publishing/releases/:id                          review page (web session)
@@ -120,6 +126,17 @@ const ReleaseInput = z.strictObject({
    * are then current nowhere become superseded. Until publication succeeds, the previous release stays current.
    */
   supersedePreviousOnPublish: z.boolean().default(false),
+  /**
+   * Distribution Studio (HCG Executable Maker): what the submitter asks the publisher to do at publication. Recorded
+   * with the draft; nothing happens before publication. supersedePrevious "compatible" = supersedePreviousOnPublish
+   * (replace the current release of the same product, edition, platform, architecture and channel only). makeCurrent
+   * pre-selects "make this the catalogue's current release" for the approver and publisher.
+   */
+  publicationRequest: z.strictObject({
+    makeCurrent: z.boolean().default(false),
+    supersedePrevious: z.enum(["none", "compatible"]).default("none"),
+    note: z.string().trim().max(500).optional(),
+  }).optional(),
 });
 
 const ArtifactInput = z.strictObject({
@@ -187,6 +204,7 @@ type ReleaseRow = {
   published_at: number | null; published_by: string | null; superseded_by: string | null;
   known_limitations: string; imported_from: string | null;
   availability: string; availability_reason: string | null; revision: number; supersede_on_publish: number; upload_source: string | null;
+  publication_request: string | null;
 };
 type ArtifactRow = {
   id: string; release_id: string; file_name: string; platform: string; format: string; architectures: string; minimum_os: string | null;
@@ -383,6 +401,12 @@ export function createPublishing(deps: PublishingDeps) {
   const artifact = (id: string) => db.prepare("SELECT * FROM pub_artifacts WHERE id = ?").get(id) as ArtifactRow | undefined;
   const artifactsOf = (releaseId: string) => db.prepare("SELECT * FROM pub_artifacts WHERE release_id = ? ORDER BY created_at, rowid").all(releaseId) as ArtifactRow[];
 
+  /** Requests recorded for a release (Distribution Studio: disable, enable, restore, supersede, make current). They change nothing. */
+  function requestsOf(releaseId: string) {
+    return (db.prepare("SELECT seq, at, actor, detail FROM pub_audit WHERE release_id = ? AND action = 'release.request' ORDER BY seq").all(releaseId) as { seq: number; at: number; actor: string; detail: string }[])
+      .map((x) => ({ seq: x.seq, at: x.at, by: x.actor, ...(JSON.parse(x.detail) as { action: string; reason: string; via?: string; status?: string }) }));
+  }
+
   function releaseView(r: ReleaseRow, withAudit = true) {
     const pinfo = productInfo(r.product_id);
     return {
@@ -394,6 +418,8 @@ export function createPublishing(deps: PublishingDeps) {
       publishedAt: r.published_at, publishedBy: r.published_by, supersededBy: r.superseded_by, stage: stageOf(r),
       availability: r.availability, availabilityReason: r.availability_reason, revision: r.revision,
       supersedePreviousOnPublish: r.supersede_on_publish === 1, uploadSource: r.upload_source ? JSON.parse(r.upload_source) : null,
+      publicationRequest: r.publication_request ? JSON.parse(r.publication_request) : null,
+      requests: requestsOf(r.id),
       lifecycle: lifecycleOf(r, artifactsOf(r.id), currentTargetsOfRelease(db, r.id).length),
       targets: targetsOf(db, r).map((t) => {
         const cur = currentRowsForProduct(db, r.product_id).find((c) => c.edition_key === t.editionKey && c.platform === t.platform && c.arch === t.arch && c.channel === t.channel);
@@ -509,6 +535,12 @@ export function createPublishing(deps: PublishingDeps) {
       products: true, drafts: true, uploads: true, resumableUploads: true, passports: true, submission: true,
       approval: P.publicationEnabled && !!P.approverCentralId, publication: P.publicationEnabled && !!P.publicationCentralId,
       publicDelivery: P.publicationEnabled && cfg.freeDownloads, offers: !!P.offersCentralId,
+      // Distribution Studio (HCG Executable Maker), additive: official product metadata in the product list, the
+      // submitter's publication request, recorded availability requests, and compatible (per-target) supersede.
+      productMetadata: true, publicationRequests: true, availabilityRequests: true, supersedeCompatible: true, withdraw: true,
+      // Release lifecycle (Control Center): disable/enable/archive (any mode); supersede, restore and revoke in the
+      // browser by the people HCG lets publish (only when publication is enabled); explicit current release per target.
+      availability: true, restore: P.publicationEnabled && !!P.publicationCentralId, perTargetCurrent: true, revisions: true, changes: true,
     };
   }
 
@@ -964,9 +996,23 @@ export function createPublishing(deps: PublishingDeps) {
       }
     }
     if (p === "/api/v1/publishing/products" && m === "GET") {
+      // With what HCG Store shows publicly about each product (official name, summary, category, development status,
+      // platforms, and the OFFICIAL icon and cover from the reviewed catalogue as the Store's own public media URLs;
+      // concept artwork is never returned as official), so a publishing app needs no copy of the catalogue.
+      const media = (img: { src: string; kind?: string } | null | undefined) => (img && img.kind !== "concept" ? `${cfg.publicOrigin}/${img.src.replace(/^\/+/, "")}` : null);
       const all = [
-        ...registry.catalogue.products.map((x) => ({ id: x.id, title: x.name, source: "catalogue" as const, editions: x.editions.map((e) => ({ id: e.id, name: e.name, platforms: e.platforms })), centralId: x.registry.centralId, hcgRepo: x.hcgRepo.map((l) => l.key) })),
-        ...(db.prepare("SELECT id FROM pub_products ORDER BY id").all() as { id: string }[]).map((d) => draftProduct(d.id)!).map((d) => ({ id: d.id, title: d.metadata.title, source: "draft" as const, editions: d.metadata.editions.map((e) => ({ id: e.id, name: e.name, platforms: d.metadata.platforms })), centralId: null, hcgRepo: [], revision: d.revision })),
+        ...registry.catalogue.products.map((x) => ({
+          id: x.id, title: x.name, source: "catalogue" as const, editions: x.editions.map((e) => ({ id: e.id, name: e.name, platforms: e.platforms })), centralId: x.registry.centralId, hcgRepo: x.hcgRepo.map((l) => l.key),
+          slug: x.slug, summary: x.summary, category: x.category, developmentStatus: x.developmentStatus, visibility: x.visibility,
+          platforms: x.platforms.map((pl) => ({ platform: pl.platform, support: pl.support, architectures: [] as string[] })),
+          icon: media(x.artwork.icon), cover: media(x.artwork.cover), currentReleaseId: x.currentReleaseId ?? null, productUrl: `${cfg.publicOrigin}/apps/${x.slug}`,
+        })),
+        ...(db.prepare("SELECT id FROM pub_products ORDER BY id").all() as { id: string }[]).map((d) => draftProduct(d.id)!).map((d) => ({
+          id: d.id, title: d.metadata.title, source: "draft" as const, editions: d.metadata.editions.map((e) => ({ id: e.id, name: e.name, platforms: d.metadata.platforms })), centralId: null, hcgRepo: [], revision: d.revision,
+          slug: null, summary: d.metadata.summary || d.metadata.description[0] || null, category: d.metadata.categories[0] ?? null, developmentStatus: "draft", visibility: d.metadata.visibility,
+          platforms: d.metadata.platforms.map((pl) => ({ platform: pl, support: "planned", architectures: [] as string[] })),
+          icon: null, cover: null, currentReleaseId: null, productUrl: null,
+        })),
       ];
       // Default: products the caller may publish to (Executable Maker, uploads). scope=review: products the caller may
       // publish, approve or publish releases of (Product Manager and Release Manager for reviewers).
@@ -976,15 +1022,28 @@ export function createPublishing(deps: PublishingDeps) {
       return send(json(res, 200, { products: allowed }));
     }
     if (p === "/api/v1/publishing/products" && m === "POST") {
-      const body = z.strictObject({ id: z.string().regex(kebab).max(60), title: text.max(120), metadata: DraftProductMetadata.partial().optional() }).parse(await readJson(req));
+      const body = z.strictObject({
+        id: z.string().regex(kebab).max(60), title: text.max(120), metadata: DraftProductMetadata.partial().optional(),
+        // Distribution Studio's descriptive fields, stored in the same revisioned metadata as the website's.
+        description: z.string().trim().max(2000).optional(), category: z.string().regex(kebab).max(40).optional(), platforms: z.array(z.enum(PLATFORMS)).max(PLATFORMS.length).optional(),
+      }).parse(await readJson(req));
       await requirePermission(actor, "publish", "*");
       if (findProduct(registry, body.id) || productInfo(body.id)) throw new HttpError(409, "exists", "A product with this ID already exists.");
-      const metadata = DraftProductMetadata.parse({ ...(body.metadata ?? {}), title: body.title });
+      const fromStudio: Partial<DraftProductMetadata> = {
+        ...(body.description ? (body.description.length <= 300 ? { summary: body.description } : { summary: body.description.slice(0, 297) + "…", description: [body.description] }) : {}),
+        ...(body.category ? { categories: [body.category] } : {}),
+        ...(body.platforms ? { platforms: [...new Set(body.platforms)] } : {}),
+      };
+      const metadata = DraftProductMetadata.parse({ ...fromStudio, ...(body.metadata ?? {}), title: body.title });
       transaction(db, () => {
         db.prepare("INSERT INTO pub_products (id, title, created_by, created_at, metadata, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?)").run(body.id, body.title, actor.sub, now(), JSON.stringify(metadata), now(), actor.sub);
         audit(actor.sub, "product.draft-created", null, null, { productId: body.id, title: body.title, via: actor.via, note: "Store draft only: no central HCG product, entitlement or price is created." });
       });
-      return send(json(res, 201, { id: body.id, title: body.title, source: "draft", metadata, revision: 1, note: "A draft product exists only in HCG Store. Public release needs HCG to add it to the catalogue with a confirmed central product ID." }));
+      return send(json(res, 201, {
+        id: body.id, title: body.title, source: "draft", metadata, revision: 1,
+        description: body.description ?? (metadata.summary || null), category: metadata.categories[0] ?? null, platforms: metadata.platforms,
+        note: "A draft product exists only in HCG Store. Listing it publicly needs HCG to add it to the reviewed catalogue with a confirmed central product ID, official artwork and editions.",
+      }));
     }
     if (p === "/api/v1/publishing/releases" && m === "GET") {
       const productId = url.searchParams.get("productId") ?? "";
@@ -1031,11 +1090,12 @@ export function createPublishing(deps: PublishingDeps) {
       try {
         transaction(db, () => {
           db.prepare(`INSERT INTO pub_releases (id, product_id, product_source, edition_id, version, build, channel, release_notes, compatibility, distribution,
-                      requested_eligibility, destinations, status, created_by, created_at, updated_at, known_limitations, supersede_on_publish, upload_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?, ?, ?, ?, ?)`)
+                      requested_eligibility, destinations, status, created_by, created_at, updated_at, known_limitations, supersede_on_publish, upload_source, publication_request) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?, ?, ?, ?, ?, ?)`)
             .run(id, input.productId, pinfo.source, input.editionId, input.version, input.build, input.channel, JSON.stringify(input.releaseNotes),
                  JSON.stringify(input.compatibility), input.distribution, input.eligibility, JSON.stringify(input.destinations), actor.sub, now(), now(),
-                 JSON.stringify(input.knownLimitations), input.supersedePreviousOnPublish ? 1 : 0, JSON.stringify(uploadSourceOf(actor)));
-          audit(actor.sub, "release.draft-created", id, null, { productId: input.productId, editionId: input.editionId, version: input.version, build: input.build, eligibility: input.eligibility, distribution: input.distribution, channel: input.channel, supersedePreviousOnPublish: input.supersedePreviousOnPublish, via: actor.via, source: uploadSourceOf(actor) });
+                 JSON.stringify(input.knownLimitations), input.supersedePreviousOnPublish || input.publicationRequest?.supersedePrevious === "compatible" ? 1 : 0, JSON.stringify(uploadSourceOf(actor)),
+                 input.publicationRequest ? JSON.stringify(input.publicationRequest) : null);
+          audit(actor.sub, "release.draft-created", id, null, { productId: input.productId, editionId: input.editionId, version: input.version, build: input.build, eligibility: input.eligibility, distribution: input.distribution, channel: input.channel, supersedePreviousOnPublish: input.supersedePreviousOnPublish, ...(input.publicationRequest ? { publicationRequest: input.publicationRequest } : {}), via: actor.via, source: uploadSourceOf(actor) });
         });
       } catch (e) {
         if (!String((e as Error).message).includes("UNIQUE")) throw e;
@@ -1149,7 +1209,10 @@ export function createPublishing(deps: PublishingDeps) {
         expectRevision(req, r);
         // `current`: the approver also makes this the product's current release in the public catalogue (generated
         // from these records by `npm run releases:sync`; never inferred from the newest version).
-        const body = z.strictObject({ eligibility: z.enum(["private", "internal-testing", "public"]), confirm: z.string(), current: z.boolean().default(false) }).parse(await readJson(req));
+        const parsed = z.strictObject({ eligibility: z.enum(["private", "internal-testing", "public"]), confirm: z.string(), current: z.boolean().optional() }).parse(await readJson(req));
+        // Not given: what the submitter asked for (Distribution Studio "make current"), for a public approval only.
+        const asked = r.publication_request ? (JSON.parse(r.publication_request) as { makeCurrent?: boolean }) : null;
+        const body = { ...parsed, current: parsed.current ?? (parsed.eligibility === "public" && asked?.makeCurrent === true) };
         if (body.current && body.eligibility !== "public") throw new HttpError(400, "current_needs_public", "Only a release approved for public delivery can be the catalogue's current release.");
         if (!["submitted", "approved"].includes(r.status)) throw new HttpError(409, "not_submitted", "Only a submitted release can be approved.");
         if (body.confirm !== r.version) throw new HttpError(400, "confirmation_required", `Type the version (${r.version}) to confirm.`);
@@ -1182,7 +1245,11 @@ export function createPublishing(deps: PublishingDeps) {
         expectRevision(req, r);
         // supersedePrevious (or the older "supersede"): replace the current release of each target this release
         // serves. Omitted: the choice prepared with the draft. Targets with no current release always become this one.
-        const body = z.strictObject({ confirm: z.string(), current: z.boolean().optional(), supersede: z.boolean().optional(), supersedePrevious: z.boolean().optional() }).parse(await readJson(req));
+        // scope (Distribution Studio): "compatible" is how supersede always works now (per product, edition, platform,
+        // architecture and channel). "edition" (retire every published release of the edition, whatever its platform
+        // or channel) was removed: it retired unrelated platforms and channels.
+        const body = z.strictObject({ confirm: z.string(), current: z.boolean().optional(), supersede: z.boolean().optional(), supersedePrevious: z.boolean().optional(), scope: z.enum(["edition", "compatible"]).optional() }).parse(await readJson(req));
+        if (body.scope === "edition") throw new HttpError(400, "edition_scope_removed", "Superseding a whole edition is no longer supported: it retired other platforms, architectures and channels. Supersede replaces only the same platform, architecture and channel (scope \"compatible\").");
         if (r.status !== "approved") throw new HttpError(409, "not_approved", "Only an approved release can be published.");
         if (r.approved_eligibility !== "public") throw new HttpError(409, "not_public", "Only a release approved for public delivery is published. Internal-testing releases are delivered to testers once approved.");
         if (r.availability !== "available") throw new HttpError(409, "not_available", `This release is ${r.availability}; it cannot be published.`);
@@ -1296,6 +1363,28 @@ export function createPublishing(deps: PublishingDeps) {
         const ok = results.every((x) => x.ok);
         transaction(db, () => audit(actor.sub, "release.checksums-verified", r.id, null, { ok, files: results.map((x) => ({ id: x.id, ok: x.ok })) }));
         return send(json(res, ok ? 200 : 409, { ok, checkedAt: now(), files: results }));
+      }
+      if (action === "/requests" && m === "POST") {
+        // Distribution Studio: a request for the people who approve and publish (desktop apps cannot supersede, restore
+        // or re-enable; those are browser decisions). Recorded in the audit chain and shown in Release Manager and on the
+        // review page. It changes nothing itself.
+        if (!(await mayReview(actor, r.product_id))) throw new HttpError(403, "not_publisher", "HCG has not granted your account access to this release.");
+        expectRevision(req, r);
+        const body = z.strictObject({ action: z.enum(["disable", "enable", "restore", "supersede", "make-current"]), reason: text.max(500), confirm: z.string() }).parse(await readJson(req));
+        if (body.confirm !== r.version) throw new HttpError(400, "confirmation_required", `Type the version (${r.version}) to confirm.`);
+        const targets = targetsOf(db, r);
+        const currentOn = currentTargetsOfRelease(db, r.id).length;
+        const why = (() => {
+          if (r.availability === "revoked") return "This release was revoked; it can never be delivered again.";
+          if (body.action === "disable") return r.availability !== "available" ? `This release is already ${r.availability}.` : !r.published_at ? "Only a published release is delivered; a draft is private already." : null;
+          if (body.action === "enable") return !["disabled", "archived"].includes(r.availability) ? "This release is available." : null;
+          if (!r.published_at || r.approved_eligibility !== "public" || !["published", "superseded"].includes(r.status)) return `Only a release that was published for the public (and not withdrawn) can be made current; this one is ${r.status}.`;
+          if (currentOn >= targets.length && r.availability === "available") return "This release is already current on every platform it serves.";
+          return null;
+        })();
+        if (why) throw new HttpError(409, body.action === "restore" ? "not_restorable" : "not_applicable", why);
+        transaction(db, () => audit(actor.sub, "release.request", r.id, null, { action: body.action, reason: body.reason, via: actor.via, status: r.status, availability: r.availability }));
+        return send(json(res, 202, { recorded: true, note: "Recorded for the people who approve and publish in HCG Store. Nothing changed.", requests: requestsOf(r.id) }));
       }
       if (action === "/withdraw" && m === "POST") {
         if (!(await permitted(actor, "publish", r.product_id)) && !(await permitted(actor, "approve", r.product_id))) throw new HttpError(403, "not_publisher", "HCG has not granted your account access to this release.");
@@ -1458,6 +1547,8 @@ export function createPublishing(deps: PublishingDeps) {
       ${r.releaseNotes.length ? `<h2>Release notes</h2><ul>${r.releaseNotes.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
       ${r.knownLimitations.length ? `<h2>Known limitations</h2><ul>${r.knownLimitations.map((n: string) => `<li>${e(n)}</li>`).join("")}</ul>` : ""}
       ${r.withdrawnReason ? `<p>Withdrawn: ${e(r.withdrawnReason)}</p>` : ""}
+      ${r.requests.length ? `<h2>Requests</h2><ul>${r.requests.map((q) => `<li>${e(String(q.action))}: ${e(String(q.reason))} (account …${e(String(q.by).slice(-6))}, ${new Date(q.at).toISOString()}${q.via ? `, ${e(String(q.via))}` : ""})</li>`).join("")}</ul><p>Requests change nothing; the people who approve and publish decide.</p>` : ""}
+      ${r.publicationRequest ? `<p>At publication, the submitter asks: ${r.publicationRequest.makeCurrent ? "make this the catalogue's current release" : "do not make it the catalogue's current release"}; ${r.publicationRequest.supersedePrevious === "compatible" ? "supersede the previous compatible release (same platform, architecture and channel)" : "supersede nothing"}.${r.publicationRequest.note ? ` Note: ${e(String(r.publicationRequest.note))}` : ""}</p>` : ""}
       <h2>Compatibility</h2><pre>${e(JSON.stringify(r.compatibility, null, 2))}</pre>
       <h2>Files</h2><table><tr><th>File</th><th>Platform</th><th>Kind</th><th>Bytes</th><th>SHA-256</th><th>Status</th><th>Signature (structure / reported)</th><th>Installation</th><th>Provenance (reported)</th><th></th></tr>${rows}</table>
       <p>Signature and notarisation results are reported by the uploading tool; HCG Store checks hashes, formats and archive safety only. A draft is visible only to the people HCG allows to publish or approve this product; uploading never makes a file public.</p>${download}
@@ -1465,7 +1556,7 @@ export function createPublishing(deps: PublishingDeps) {
       ${approve}
       ${canPublishRelease && r.status === "approved" && r.approvedEligibility === "public"
         ? `<form id="publish"><p><b>Publish.</b> Approved for public delivery but not delivered yet. Publishing is a separate, explicit step; nothing is published automatically.</p>
-           <label><input type="checkbox" name="supersede"> Supersede this edition's currently published releases</label>
+           <label><input type="checkbox" name="supersede"${r.supersedePreviousOnPublish ? " checked" : ""}> Supersede the previous compatible release (only the same platform, architecture and channel; other platforms, architectures and channels are kept)</label>
            <label>Type the version to confirm <input name="confirm" autocomplete="off"></label><button>Publish</button></form>
            <script nonce="${nonce}">document.getElementById('publish').onsubmit=async(ev)=>{ev.preventDefault();const f=new FormData(ev.target);const r=await fetch(location.pathname.replace('/publishing/','/api/v1/publishing/')+'/publish',{method:'POST',headers:${H},body:JSON.stringify({confirm:f.get('confirm'),supersede:f.get('supersede')==='on'})});const j=await r.json();alert(r.ok?'Published':j.message);location.reload();};</script>`
         : ""}

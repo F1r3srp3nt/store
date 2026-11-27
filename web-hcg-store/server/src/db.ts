@@ -344,6 +344,10 @@ const MIGRATIONS: string[] = [
    CREATE TRIGGER pub_release_revoked_final BEFORE UPDATE OF availability ON pub_releases
      WHEN OLD.availability = 'revoked' AND NEW.availability <> 'revoked'
      BEGIN SELECT RAISE(ABORT, 'a revoked release stays revoked'); END;`,
+  // 11: Distribution Studio (HCG Executable Maker). What the submitter asks for at publication: make current (the
+  // catalogue's current release) and whether to supersede the previous compatible release; recorded with the draft,
+  // applied only by the person who publishes. Draft products' descriptive fields live in pub_products.metadata (10).
+  `ALTER TABLE pub_releases ADD COLUMN publication_request TEXT;`,
 ];
 
 /**

@@ -110,6 +110,7 @@ function ReleaseCard({ me, release: summary, onChanged }: { me: Me; release: Adm
         <span className="cc-chips">
           <span className={`badge badge--${LABEL_TONE[r.lifecycle.label] ?? "muted"}`} data-testid="lifecycle">{r.lifecycle.label}</span>
           <span className="badge badge--muted">{r.channel}</span>
+          {(r.requests?.length ?? 0) > 0 && <span className="badge badge--warn" data-testid="requests-badge">{r.requests!.length} request{r.requests!.length === 1 ? "" : "s"}</span>}
         </span>
       </div>
       <dl className="kv kv--compact">
@@ -135,6 +136,16 @@ function ReleaseCard({ me, release: summary, onChanged }: { me: Me; release: Adm
         ))}
         <a className="button button--ghost button--small" href={r.reviewUrl}>Review page</a>
       </div>
+      {(r.requests?.length ?? 0) > 0 && (
+        <ul className="cc-requests" aria-label="Requests for the people who approve and publish">
+          {r.requests!.map((q) => (
+            <li key={q.seq}><b>{q.action}</b> requested{q.via ? ` from ${q.via === "desktop" ? "a desktop app" : "the website"}` : ""}: {q.reason} <span className="muted">({date(q.at)})</span></li>
+          ))}
+        </ul>
+      )}
+      {r.publicationRequest && r.status !== "published" && (
+        <p className="fine">At publication the submitter asks: {r.publicationRequest.makeCurrent ? "make it the catalogue's current release" : "do not make it the catalogue's current release"}; {r.publicationRequest.supersedePrevious === "compatible" ? "supersede the previous compatible release" : "supersede nothing"}.</p>
+      )}
       {message && <p className="notice" role="status">{message}</p>}
       {op && <OperationForm release={r} op={op} onDone={(m) => { setOp(null); setMessage(m); onChanged(); }} onCancel={() => setOp(null)} />}
       {open && <ReleaseDetails release={r} onMessage={setMessage} />}

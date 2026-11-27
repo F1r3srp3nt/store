@@ -298,12 +298,15 @@ Deploys the Control Center ([ADMINISTRATION.md](ADMINISTRATION.md)) into the run
 
 What the deploy changes:
 
-- **Migration 10.** It adds release availability, revisions and the upload source, the per-target current-release
-  table, and draft-product metadata. Existing rows get `available`, revision 1. Current releases are backfilled only
+- **Migrations 10 and 11.** Migration 10 adds release availability, revisions and the upload source, the
+  per-target current-release table, and draft-product metadata. Migration 11 (Distribution Studio) adds the release's
+  `publication_request`. Existing rows get `available`, revision 1. Current releases are backfilled only
   from published releases, and production has none, so the table starts empty. The release before this one runs
   unchanged on the migrated database (checked), so an image rollback needs no database restore.
 - New routes: `/control-center`, `GET /api/v1/publishing/me`, `/changes`, `/products/:id` (GET, PATCH),
-  `/releases/:id/{disable,enable,archive,revoke,supersede,restore}`.
+  `/releases/:id/{disable,enable,archive,revoke,supersede,restore,requests}`. The product list carries official
+  metadata and artwork, and new capability flags let HCG Executable Maker's Distribution Studio find them.
+  HCG Executable Maker 0.4.0 keeps working unchanged.
 - **Every browser change to the publishing API now needs the session's CSRF token** (`X-HCG-CSRF`). The website and
   the review page send it. Desktop apps use bearer tokens and are unaffected.
 

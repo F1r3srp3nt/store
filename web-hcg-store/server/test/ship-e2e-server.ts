@@ -15,12 +15,13 @@
  *   POST /review     {releaseId, reviewer}     a person signs in to the Store in a browser, opens the draft's review page
  *                                              and presses "Download to review" for each verified file (SHA-256 of the bytes)
  *   POST /manager    {sub}                     what a person sees in Release Manager (browser session)
+ *   POST /web-release {sub, release}           a person creates a private draft on the HCG Store website (browser session)
  *   POST /window     {command: open|terminate, productId, editionId, releaseId?, days?, id?, reason?}   operator path
  *   POST /download   {sub, productId, editionId}   a signed-in customer downloads every file the Store offers them
  *                                                  (SHA-256 of each), as on the product page
  *
  * Options (environment): SHIP_E2E_CATALOGUE=real uses the Store's real catalogue (e.g. HCG Mail) instead of the
- * fixture one; SHIP_E2E_DOWNLOADS=free-testing-only|enabled; SHIP_E2E_OFFERS_ID=<TEST key> enables Pricing and Offers; /token accepts {client: "store-manager"} for HCG Store
+ * fixture one; SHIP_E2E_PUBLISHING=uploads|disabled (default enabled); SHIP_E2E_DOWNLOADS=free-testing-only|enabled; SHIP_E2E_OFFERS_ID=<TEST key> enables Pricing and Offers; /token accepts {client: "store-manager"} for HCG Store
  * Manager's TEST client.
  */
 import { createHash } from "node:crypto";
@@ -77,7 +78,8 @@ const cfg = parseStoreConfig({
   HCG_CATALOGUE_DIR: realCatalogue ? join(import.meta.dirname, "..", "..", "catalogue") : FIXTURE_CATALOGUE,
   HCG_STORE_OFFERS_FILE: join(reg, "offers.json"),
   HCG_STORE_ARTIFACTS_FILE: join(reg, "artifacts.json"),
-  HCG_STORE_PUBLISHING: "enabled",
+  // SHIP_E2E_PUBLISHING=uploads: private drafts and uploads only (production today); disabled: off.
+  HCG_STORE_PUBLISHING: ["uploads", "disabled"].includes(process.env.SHIP_E2E_PUBLISHING ?? "") ? process.env.SHIP_E2E_PUBLISHING : "enabled",
   HCG_STORE_PUBLISHING_CLIENT_IDS: `${MAKER_CLIENT},${STORE_MANAGER_CLIENT}`,
   HCG_STORE_PUBLISHER_CENTRAL_ID: "store.publish",
   HCG_STORE_RELEASE_APPROVER_CENTRAL_ID: "store.release.approve",
@@ -125,6 +127,12 @@ const control = createServer(async (req, res) => {
     }
     if (req.url === "/revoke-all") { authority.revokeAll(b.sub!); return out(200, { ok: true }); }
     if (req.url === "/token") return out(200, { token: await idp.accessToken({ sub: b.sub!, email: `${b.sub}@example.test` }, b.client === "store-manager" ? STORE_MANAGER_CLIENT : MAKER_CLIENT) });
+    if (req.url === "/web-release") {
+      // A person creates a private draft release on the HCG Store website (browser session), not in an app.
+      const c = await browserSignIn(b.sub!);
+      const r = await c.post("/api/v1/publishing/releases", b.release);
+      return out(r.status, await r.json());
+    }
     if (req.url === "/manager") {
       const c = await browserSignIn(b.sub!);
       const r = await c.get("/api/v1/publishing/manager");
