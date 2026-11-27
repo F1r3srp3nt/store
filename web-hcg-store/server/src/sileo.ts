@@ -14,8 +14,17 @@
  * It is bound to a Store session, so HCG session expiry, Store sign-out and sign-out from Sileo all
  * end it, and every authorised download re-checks the session and the entitlement.
  *
- * Status: implemented and tested against a simulated client only. Not advertised by HCG Repo until
- * protected package-index entries exist and launch is approved (see docs/HCG-REPO.md).
+ * Purchases (Sileo and Zebra, both verified from their sources): `package/<id>/purchase` answers status 1 with an
+ * HTTPS URL that the client opens in a web-authentication session with callback scheme `sileo`. That URL is a signed,
+ * 30-minute purchase context bound to the account that asked (`checkout/<ctx>`): the person signs in to the Store if
+ * needed, buys through the normal Store checkout, and `checkout/<ctx>/return` redirects to `sileo://payment_completed`
+ * once the Store sees the purchase (the provider's verified event grants it; the return URL grants nothing).
+ * Restoring purchases is `user_info` (items the account owns or may use free right now).
+ *
+ * Package managers send `udid`, `model` and `device`: they are ignored and never stored.
+ *
+ * Status: implemented and tested against simulated clients only. Not advertised by HCG Repo until launch is
+ * approved (see docs/HCG-REPO.md and docs/REPO-ENTITLEMENTS.md).
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { decideAccess, deliverableArtifacts, DOWNLOADS_NOT_AVAILABLE, mayDownload, type AccessDeps } from "./access";
@@ -24,8 +33,9 @@ import { randomToken, sha256Hex, signPayload, verifyPayload } from "./crypto";
 import type { Db } from "./db";
 import type { EntitlementAuthority } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
-import { errorJson, json, readJson, redirect } from "./http";
+import { errorJson, escapeHtml, html, json, readJson, redirect } from "./http";
 import { findArtifact, findByPackageId, type Registry } from "./registry";
+import type { Product } from "../../src/domain/schema";
 import type { Session, SessionStore } from "./sessions";
 
 export interface SileoCtx {
@@ -39,7 +49,29 @@ export interface SileoCtx {
   now: () => number;
   startLogin: (res: ServerResponse, returnTo: string, purpose: "web" | "sileo", purposeData: string | null) => void;
   streamArtifact: (res: ServerResponse, storageKey: string, fileName: string, contentType: string) => void;
+  freshSession: (req: IncomingMessage) => Promise<{ session: Session | null; unavailable: boolean }>;
 }
+
+/**
+ * The files of a product edition this access may receive, for a Debian version and architecture: approved catalogue
+ * files and the CURRENT published HCG Store release of each target (superseded, disabled, revoked and withdrawn
+ * releases are never eligible). `version` matches the release version or `<version>-<revision>`.
+ */
+export function eligibleFiles(ctx: Pick<SileoCtx, "registry">, product: Product, editionId: string | null, a: Awaited<ReturnType<typeof decideAccess>> | null, opts: { version?: string; architecture?: string }) {
+  // a = null: what is approved and current for anyone entitled (HCG Repo's package listing), no per-person check.
+  return deliverableArtifacts(ctx.registry, product, editionId).filter((f) => a === null || mayDownload(a, f.id)).map((f) => {
+    const rel = ctx.registry.catalogue.releases.find((r) => r.id === f.releaseId);
+    const cat = rel?.artifacts.find((x) => x.id === f.catalogueArtifactId);
+    const meta = rel ? { version: rel.version, architectures: cat?.architectures ?? [] } : ctx.registry.published?.publishedMeta(f.id);
+    return meta ? { file: f, version: meta.version, architectures: meta.architectures } : null;
+  }).filter((x): x is NonNullable<typeof x> => !!x && x.file.fileName.endsWith(".deb")).filter((x) =>
+    (!opts.architecture || x.architectures.includes(opts.architecture)) &&
+    (!opts.version || opts.version === x.version || opts.version.startsWith(`${x.version}-`)));
+}
+
+/** A signed purchase context: one package, one HCG account, 30 minutes. */
+type PurchaseCtx = { p: string; s: string; exp: number };
+const PURCHASE_TTL_MS = 30 * 60 * 1000;
 
 /** Sileo treats `success: false` / `error` as failure and clears its token when `invalidate` is true. */
 function fail(res: ServerResponse, status: number, error: string, invalidate = false) {
@@ -48,7 +80,7 @@ function fail(res: ServerResponse, status: number, error: string, invalidate = f
 
 type TokenRow = { session_id_hash: string; sub: string; secret_hash: string; revoked_at: number | null };
 
-async function sessionForToken(ctx: SileoCtx, token: unknown): Promise<{ status: "ok"; session: Session } | { status: "invalid" } | { status: "unavailable" }> {
+export async function sessionForToken(ctx: Pick<SileoCtx, "db" | "sessions">, token: unknown): Promise<{ status: "ok"; session: Session } | { status: "invalid" } | { status: "unavailable" }> {
   if (typeof token !== "string" || token.length < 20 || token.length > 200) return { status: "invalid" };
   const row = ctx.db.prepare(`SELECT session_id_hash, sub, secret_hash, revoked_at FROM repo_tokens WHERE token_hash = ?`).get(sha256Hex(token)) as
     | TokenRow
@@ -88,6 +120,16 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
     if (!ctx.connect) return fail(res, 503, "HCG Connect sign-in is not configured.");
     return ctx.startLogin(res, "/", "sileo", null);
   }
+  // Zebra asks for package info with GET while signed out (to let the provider cache it): price and availability only.
+  if ((match = /^package\/([a-z0-9][a-z0-9.+-]{1,127})\/info$/.exec(p)) && m === "GET") {
+    const mapped = findByPackageId(ctx.registry, match[1]!);
+    if (!mapped) return fail(res, 404, "This package is not sold through HCG Store.");
+    const a = await decideAccess(ctx.accessDeps, mapped.product, mapped.edition.id, null);
+    const offer = a.offers[0];
+    return json(res, 200, { price: offer ? priceText(offer.unitAmount, offer.currency) : mapped.edition.pricingModel === "free" ? "Free" : "Not for sale", purchased: 0, available: a.checkoutReady ? 1 : 0 });
+  }
+  // Purchase from a package manager (opened in its web-authentication session; see the header).
+  if ((match = /^checkout\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)(\/return)?$/.exec(p)) && m === "GET") return purchaseFlow(ctx, req, res, match[1]!, !!match[2]);
   if (m !== "POST") return fail(res, 405, "Method not allowed.");
 
   const body = await readJson<Record<string, unknown>>(req);
@@ -137,26 +179,56 @@ async function route(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, u
       // after the payment provider's verified event.
       if (a.owned || a.state === "free") return json(res, 200, { status: 0 });
       if (!a.checkoutReady) return json(res, 200, { status: -1, error: a.checkoutUnavailableReason ?? "Not for sale." });
-      return json(res, 200, { status: 1, url: `${ctx.cfg.publicOrigin}/apps/${product.slug}?edition=${encodeURIComponent(edition.id)}&buy=1` });
+      // Status 1: the client opens this URL (HTTPS, this Store) in its web-authentication session and waits for
+      // sileo://payment_completed. The context binds the package and this account; it grants nothing by itself.
+      const pctx = signPayload(ctx.cfg.secretKey, "repo-purchase", { p: match[1]!, s: session.sub, exp: ctx.now() + PURCHASE_TTL_MS } satisfies PurchaseCtx);
+      return json(res, 200, { status: 1, url: `${ctx.cfg.publicOrigin}/repo-api/v1/sileo/checkout/${pctx}` });
     }
     // authorize_download
     if (!a.owned && a.state !== "free") return fail(res, 403, "Your HCG account does not include this package.");
     if (!a.downloadsAvailable) return fail(res, 403, DOWNLOADS_NOT_AVAILABLE);
     const version = typeof body.version === "string" ? body.version : "";
     const arch = typeof body.architecture === "string" ? body.architecture : "iphoneos-arm";
-    const files = deliverableArtifacts(ctx.registry, product, edition.id).filter((f) => mayDownload(a, f.id)).filter((f) => {
-      const rel = ctx.registry.catalogue.releases.find((r) => r.id === f.releaseId);
-      const cat = rel?.artifacts.find((x) => x.id === f.catalogueArtifactId);
-      const meta = rel ? { version: rel.version, architectures: cat?.architectures ?? [] } : ctx.registry.published?.publishedMeta(f.id);
-      return !!meta && meta.architectures.includes(arch) && (!version || version === meta.version || version.startsWith(`${meta.version}-`));
-    });
-    const file = files[0];
+    const file = eligibleFiles(ctx, product, edition.id, a, { version, architecture: arch })[0]?.file;
     if (!file) return fail(res, 404, "No approved file matches this version and layout.");
     const exp = ctx.now() + ctx.cfg.downloadUrlTtlSeconds * 1000;
     const signed = signPayload(ctx.cfg.secretKey, "repo-file", { a: file.id, s: session.sub, h: session.idHash, exp });
     return json(res, 200, { url: `${ctx.cfg.publicOrigin}/repo-api/v1/files/${signed}` });
   }
   return fail(res, 404, "Not found.");
+}
+
+/**
+ * `checkout/<ctx>`: inside the package manager's web-authentication session. Sign in (the same HCG account that asked
+ * in the app), then the Store's own product page and checkout. `checkout/<ctx>/return`: back to the app with
+ * sileo://payment_completed once the purchase shows in HCG (after the provider's verified event), never before.
+ */
+async function purchaseFlow(ctx: SileoCtx, req: IncomingMessage, res: ServerResponse, token: string, isReturn: boolean) {
+  const c = verifyPayload<PurchaseCtx>(ctx.cfg.secretKey, "repo-purchase", token);
+  if (!c || c.exp < ctx.now()) return page(res, 410, "This purchase link has expired", "Start the purchase again from the package manager.");
+  const mapped = findByPackageId(ctx.registry, c.p);
+  if (!mapped) return page(res, 404, "Unknown package", "This package is not sold through HCG Store.");
+  const fresh = await ctx.freshSession(req);
+  if (fresh.unavailable) return page(res, 503, "HCG could not be reached", "Nothing was charged. Try again shortly.");
+  if (!fresh.session) return ctx.startLogin(res, `/repo-api/v1/sileo/checkout/${token}${isReturn ? "/return" : ""}`, "web", null);
+  if (fresh.session.sub !== c.s) {
+    return page(res, 403, "Different HCG account", "This purchase was started in the package manager with another HCG account. Sign out of HCG Store in this window and sign in with the account the package manager uses.");
+  }
+  const { product, edition } = mapped;
+  const a = await decideAccess(ctx.accessDeps, product, edition.id, fresh.session);
+  if (a.state === "unavailable") return page(res, 503, "Access could not be checked", "Nothing was charged. Try again shortly.");
+  if (a.owned || a.state === "free") return redirect(res, "sileo://payment_completed");
+  if (isReturn) {
+    return page(res, 200, "Payment not completed yet", "HCG Store has not received a completed payment for this package. If you paid, it can take a moment: reload this page. Your package manager is updated when it is complete.", `/repo-api/v1/sileo/checkout/${token}/return`);
+  }
+  if (!a.checkoutReady) return page(res, 403, "Not for sale", a.checkoutUnavailableReason ?? "This package is not for sale yet.");
+  return redirect(res, `/apps/${product.slug}?edition=${encodeURIComponent(edition.id)}&buy=1&pm=${encodeURIComponent(token)}`);
+}
+
+function page(res: ServerResponse, status: number, title: string, text: string, reload?: string) {
+  html(res, status, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)} · HCG Store</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;background:#05070c;color:#e6ebf2;margin:0;display:grid;place-items:center;min-height:100vh}main{max-width:32rem;padding:2rem}a{color:#45e1f5}</style></head>
+<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p>${reload ? `<p><a href="${escapeHtml(reload)}">Check again</a></p>` : ""}</main></body></html>`);
 }
 
 /**

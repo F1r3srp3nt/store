@@ -21,6 +21,21 @@ export function CheckoutReturnPage() {
   const [params] = useSearchParams();
   const id = params.get("checkout") ?? "";
   const [view, setView] = useState<View>({ status: "checking" });
+  // Started in Sileo or Zebra: their web-authentication session closes when the Store answers sileo://payment_completed
+  // (the Store checks the purchase itself first).
+  const [packageManager] = useState(() => {
+    try {
+      const v = sessionStorage.getItem("hcg-store.package-manager-purchase");
+      return v && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v) ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    if (view.status !== "confirmed" || !packageManager) return;
+    try { sessionStorage.removeItem("hcg-store.package-manager-purchase"); } catch { /* ignore */ }
+    window.location.assign(`/repo-api/v1/sileo/checkout/${packageManager}/return`);
+  }, [view.status, packageManager]);
 
   useEffect(() => {
     if (!/^chk_[A-Za-z0-9_-]+$/.test(id)) {
@@ -72,11 +87,19 @@ export function CheckoutReturnPage() {
               <p>
                 The payment provider confirmed your payment{view.title ? ` for ${view.title}` : ""}, and it has been added to your HCG account.
               </p>
-              <p>
-                <Link to="/library" className="button button--primary">
-                  Go to your library
-                </Link>
-              </p>
+              {packageManager ? (
+                <p>
+                  <a href={`/repo-api/v1/sileo/checkout/${packageManager}/return`} className="button button--primary" data-testid="return-to-package-manager">
+                    Return to the package manager
+                  </a>
+                </p>
+              ) : (
+                <p>
+                  <Link to="/library" className="button button--primary">
+                    Go to your library
+                  </Link>
+                </p>
+              )}
             </>
           )}
           {view.status === "failed" && <p>The payment provider reported that the payment did not go through. Nothing was added to your account.</p>}

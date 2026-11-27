@@ -331,6 +331,14 @@ Verification by the founder (production, after deploy):
 
 Rollback: `fly deploy --image <previous>` (see Rollback). Uploaded drafts stay in the database and storage either way.
 
+## Phase 3b: HCG Repo commercial packages (prepared, not active)
+
+The package-manager purchase flow (Sileo, Zebra) and the server-to-server contract for HCG Repo are in the code
+([REPO-ENTITLEMENTS.md](REPO-ENTITLEMENTS.md)) and tested in TEST only. Deploying them changes nothing in production:
+without `HCG_STORE_REPO_S2S_KEY_ID`/`HCG_STORE_REPO_S2S_SECRET` the server-to-server API answers 404, payments are
+`none` (purchases answer "not for sale"), protected downloads are `disabled`, and HCG Repo's `payment_endpoint` is empty.
+Activation is part of phase 4, after its approval.
+
 ## Phase 4: customer payments and downloads
 
 Separate from publishing, and only when every launch condition in [ACCESS.md](ACCESS.md) holds and the founder

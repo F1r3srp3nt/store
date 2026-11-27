@@ -17,6 +17,7 @@
  *   GET  /api/public/v1/release-resolution/:product   current approved release and how to get it (public, CORS; no URLs to files)
  *   /repo-api/v1/sileo/*                       Sileo payment-provider API (see sileo.ts)
  *   GET  /repo-api/v1/files/:signed            short-lived file URL issued to Sileo
+ *   /api/s2s/v1/repo/*                         HCG Repo server-to-server contract (repo-s2s.ts; HMAC; off by default)
  */
 import { resolveRelease, ResolutionError } from "./release-resolution";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
@@ -36,6 +37,7 @@ import { getProfile } from "./profiles";
 import { createPublishing } from "./publishing";
 import { SessionStore, type Session } from "./sessions";
 import { handleSileo } from "./sileo";
+import { createRepoS2s } from "./repo-s2s";
 
 /** HCG's account portal, where an account's HCG licences are managed (main-site handoff, /features links.account). */
 const HCG_ACCOUNT_URL = "https://beta.hakmicapitalgroup.com/client-portal";
@@ -525,6 +527,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
   // ---------------------------------------------------------------- router
 
   const sileoCtx = { cfg, db, registry, sessions, connect, authority, accessDeps, now, startLogin, streamArtifact, freshSession };
+  const repoS2s = createRepoS2s({ cfg, db, registry, sessions, accessDeps, authority, now });
   const publishing = createPublishing({ cfg, db, registry, connect, authority, now, freshSession, streamArtifact });
   // Customer delivery of published releases only when publication is on (never in "uploads" mode).
   if (cfg.publishing.publicationEnabled) registry.published = publishing;
@@ -643,6 +646,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       }
     }
     if (await publishing.route(req, res, url)) return;
+    if (await repoS2s.route(req, res, url)) return;
     if (p.startsWith("/repo-api/v1/sileo/")) return handleSileo.route(sileoCtx, req, res, url);
     if ((match = /^\/repo-api\/v1\/files\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(p)) && m === "GET") return handleSileo.serveFile(sileoCtx, res, match[1]!);
     if (p.startsWith("/api/") || p.startsWith("/auth/") || p.startsWith("/repo-api/")) return errorJson(res, 404, "not_found", "Not found.");

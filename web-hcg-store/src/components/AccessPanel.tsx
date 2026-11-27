@@ -23,6 +23,13 @@ export function AccessPanel({ catalogue, product }: { catalogue: Catalogue; prod
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const selected = params.get("edition");
   const released = !!currentRelease(catalogue, product);
+  // A purchase started in a package manager (Sileo, Zebra): remember its signed context for this tab so the checkout
+  // return page can send the person back to the app. It grants nothing; the Store checks the purchase itself.
+  const pm = params.get("pm");
+  useEffect(() => {
+    if (!pm || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(pm)) return;
+    try { sessionStorage.setItem("hcg-store.package-manager-purchase", pm); } catch { /* private window: the app re-checks on its own */ }
+  }, [pm]);
 
   useEffect(() => {
     if (account.status === "loading") return;

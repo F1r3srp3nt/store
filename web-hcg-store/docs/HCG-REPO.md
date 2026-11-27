@@ -55,13 +55,17 @@ site was unreachable from the build environment.
 - **Endpoints served by the Store** at `/repo-api/v1/sileo/`:
   - `info`, `user_info`;
   - `package/<id>/info`: price, `purchased`, `available`;
-  - `package/<id>/purchase`: never grants; returns the Store's buy page;
+  - `package/<id>/purchase`: never grants; returns a signed purchase URL on this Store that ends with
+    `sileo://payment_completed` after the verified payment (the flow both apps expect);
   - `package/<id>/authorize_download`: re-checks session, entitlement, release approval and the
     launch switch, then returns a 120-second signed HTTPS URL;
   - `sign_out`.
-- **Zebra:** its source has models for the same JSON fields, but no client calling this API was found.
-  Treat Zebra and plain APT as **unsupported for paid packages**. APT with HTTP authentication would
-  need per-user credentials in `auth.conf` and is not offered.
+- **Zebra:** supported. Its current source (`ZBPaymentVendor.m`, 15 Nov 2026) implements the same
+  payment-provider API, including the signed-out `GET package/<id>/info` probe the Store answers. Plain APT
+  stays **unsupported for paid packages**: APT with HTTP authentication would need per-user credentials in
+  `auth.conf`, which is not offered.
+- **Server-to-server contract** for HCG Repo's servers (package mapping, current versions, entitlement
+  verification): [REPO-ENTITLEMENTS.md](REPO-ENTITLEMENTS.md).
 
 ### Remaining work before installation can be offered
 
