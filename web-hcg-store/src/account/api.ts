@@ -116,13 +116,32 @@ export interface Library {
     currentPeriodEnd: number | null;
     createdAt: number;
     testOnly: boolean;
+    /** Where it was bought: the Store website or a package manager (Sileo, Zebra). One history for both. */
+    channel?: "web" | "package-manager";
+    receiptNumber?: string;
+    refund?: "none" | "refunded" | "disputed";
+    versionAtPurchase?: string | null;
   }[];
   subscriptions?: Library["purchases"];
+  packageManagers?: PackageManager[];
+  /** Repository packages the account may download, and the newest approved version it is eligible for. Not installs. */
+  packageUpdates?: { packageId: string; productId: string; editionId: string | null; name: string; latestVersion: string; eligible: boolean; policy: string }[];
   invoices?: { available: boolean; items: unknown[]; message: string };
   devices?: { kind: string; label: string; connectedAt: number }[];
   devicesNote?: string;
   ownershipUnavailable: boolean;
   downloadsMessage: string | null;
+}
+
+/** A Sileo or Zebra connection (HCG Store's own package-manager credential). Never a token or device identifier. */
+export interface PackageManager {
+  ref: string; client: string; deviceModel: string | null; deviceBound: boolean; connectedAt: number; lastUsedAt: number | null; expiresAt: number | null;
+  status: "active" | "revoked" | "expired"; endedAt: number | null; endedReason: string | null;
+}
+export interface Receipt {
+  receiptNumber: string; issuedBy: string; testMode: boolean; note: string; account: { name: string | null; email: string | null };
+  item: { title: string; product: string | null; editionId: string | null; kind: string }; amount: number; currency: string; status: string;
+  refund: "none" | "refunded" | "disputed"; channel: "web" | "package-manager"; paymentReference: string; purchasedAt: number; updatedAt: number; currentPeriodEnd: number | null;
 }
 
 export interface Health {
@@ -196,6 +215,10 @@ export const storeApi = {
   health: () => request<Health>("/api/v1/health"),
   access: (slug: string) => request<{ productId: string; signedIn: boolean; editions: EditionAccess[] }>(`/api/v1/products/${encodeURIComponent(slug)}/access`),
   library: () => request<Library>("/api/v1/library"),
+  packageManagers: () => request<{ packageManagers: PackageManager[] }>("/api/v1/account/package-managers"),
+  revokePackageManager: (ref: string) => request<{ packageManagers: PackageManager[] }>(`/api/v1/account/package-managers/${encodeURIComponent(ref)}/revoke`, { method: "POST", body: "{}" }),
+  revokeAllPackageManagers: () => request<{ revoked: number; packageManagers: PackageManager[] }>("/api/v1/account/package-managers/revoke-all", { method: "POST", body: "{}" }),
+  receipt: (id: string) => request<Receipt>(`/api/v1/account/receipts/${encodeURIComponent(id)}`),
   myApps: () => request<MyApps>("/api/v1/my-apps"),
   releaseManager: () => request<{ releases: ManagedRelease[]; auditIntact: boolean }>("/api/v1/publishing/manager"),
   /** A mismatch answers 409 with the same report, so both are read here. */

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAccount } from "../account/account-context";
-import { DOWNLOADS_NOT_AVAILABLE, formatPrice, signInUrl, StoreApiError, storeApi, type Library } from "../account/api";
+import { DOWNLOADS_NOT_AVAILABLE, formatPrice, signInUrl, StoreApiError, storeApi, type Library, type PackageManager, type Receipt } from "../account/api";
 import { IconCheck, IconExternal, IconInfo, IconLock } from "../components/Icons";
 import { hcgRepoProductUrl } from "../config/runtime";
 import { EDITION_TIERS, type EditionTier } from "../domain/taxonomy";
@@ -170,7 +170,9 @@ function LibraryContent({ data }: { data: Library }) {
                   <th scope="col">Product</th>
                   <th scope="col">Price</th>
                   <th scope="col">Status</th>
+                  <th scope="col">Bought in</th>
                   <th scope="col">Date</th>
+                  <th scope="col">Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,9 +183,11 @@ function LibraryContent({ data }: { data: Library }) {
                     </th>
                     <td data-label="Price">{formatPrice({ unitAmount: p.amount, currency: p.currency, kind: p.kind as "one-time", interval: null })}</td>
                     <td data-label="Status">{PURCHASE_STATUS[p.status] ?? p.status}</td>
+                    <td data-label="Bought in">{p.channel === "package-manager" ? "Sileo or Zebra (HCG Repo)" : "HCG Store website"}</td>
                     <td data-label="Date">
                       <time dateTime={new Date(p.createdAt).toISOString()}>{new Date(p.createdAt).toLocaleDateString("en-GB", { dateStyle: "medium" })}</time>
                     </td>
+                    <td data-label="Receipt"><ReceiptButton id={p.id} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -201,23 +205,101 @@ function LibraryContent({ data }: { data: Library }) {
         </section>
       )}
 
-      {data.devices && (
-        <section className="panel panel--quiet" aria-labelledby="devices-title">
-          <h2 id="devices-title">Connected devices</h2>
-          {data.devices.length ? (
-            <ul className="plain-list">
-              {data.devices.map((d, i) => (
-                <li key={i}>
-                  {d.label}, connected {new Date(d.connectedAt).toLocaleDateString("en-GB", { dateStyle: "medium" })}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No package manager is connected to your HCG account.</p>
-          )}
-          {data.devicesNote && <p className="fine">{data.devicesNote}</p>}
+      {data.packageUpdates && data.packageUpdates.length > 0 && (
+        <section className="panel" aria-labelledby="updates-title">
+          <h2 id="updates-title">Package versions available to your account</h2>
+          <ul className="plain-list" data-testid="package-updates">
+            {data.packageUpdates.map((u) => (
+              <li key={u.packageId}>
+                <b>{u.name}</b> <code>{u.packageId}</code>: version {u.latestVersion}{" "}
+                {u.eligible ? <span className="badge badge--released">Included</span> : <span className="badge badge--planned">Needs an upgrade purchase</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="fine">Install or update from HCG Repo in Sileo or Zebra. HCG Store does not know which version is installed on your device.</p>
         </section>
       )}
+
+      <PackageManagers initial={data.packageManagers ?? []} note={data.devicesNote} />
     </>
+  );
+}
+
+const day = (t: number) => new Date(t).toLocaleDateString("en-GB", { dateStyle: "medium" });
+
+function ReceiptButton({ id }: { id: string }) {
+  const [r, setR] = useState<Receipt | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const toggle = () => {
+    setOpen((x) => !x);
+    if (!r) storeApi.receipt(id).then(setR).catch((e) => setError(e instanceof Error ? e.message : "The receipt could not be loaded."));
+  };
+  return (
+    <div className="receipt">
+      <button type="button" className="button button--ghost button--small" aria-expanded={open} onClick={toggle}>{open ? "Hide" : "View"}</button>
+      {open && (
+        <div className="receipt__body" role="region" aria-label={`Receipt ${id}`} data-testid="receipt">
+          {error ? <p className="notice" role="alert">{error}</p> : !r ? <p className="muted">Loading…</p> : (
+            <dl className="kv kv--compact">
+              <div><dt>Receipt</dt><dd><code>{r.receiptNumber}</code></dd></div>
+              <div><dt>Issued by</dt><dd>{r.issuedBy}</dd></div>
+              <div><dt>Item</dt><dd>{r.item.title}</dd></div>
+              <div><dt>Amount</dt><dd>{formatPrice({ unitAmount: r.amount, currency: r.currency, kind: "one-time", interval: null })}</dd></div>
+              <div><dt>Purchased</dt><dd>{day(r.purchasedAt)}</dd></div>
+              <div><dt>Bought in</dt><dd>{r.channel === "package-manager" ? "Sileo or Zebra (HCG Repo)" : "HCG Store website"}</dd></div>
+              <div><dt>Refund</dt><dd>{r.refund === "none" ? "None" : r.refund === "refunded" ? `Refunded (${day(r.updatedAt)})` : "Disputed: access suspended"}</dd></div>
+              <div><dt>Payment reference</dt><dd><code>{r.paymentReference}</code></dd></div>
+              <div><dt>Note</dt><dd>{r.note}</dd></div>
+            </dl>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Sileo and Zebra connections to this HCG account. Each is HCG Store's own credential (never your HCG Connect sign-in);
+ * revoking one signs that package manager out at once and stops any download it had started.
+ */
+function PackageManagers({ initial, note }: { initial: PackageManager[]; note?: string }) {
+  const [list, setList] = useState(initial);
+  const [msg, setMsg] = useState<string | null>(null);
+  const active = list.filter((d) => d.status === "active");
+  const run = (p: Promise<{ packageManagers: PackageManager[] }>, ok: string) =>
+    p.then((r) => { setList(r.packageManagers); setMsg(ok); }).catch((e) => setMsg(e instanceof Error ? e.message : "That did not work. Try again."));
+  return (
+    <section className="panel panel--quiet" aria-labelledby="devices-title" data-testid="package-managers">
+      <h2 id="devices-title">Package managers and devices</h2>
+      {active.length ? (
+        <div className="table-wrap">
+          <table className="table table--stack">
+            <thead><tr><th scope="col">App</th><th scope="col">Device</th><th scope="col">Connected</th><th scope="col">Last used</th><th scope="col" /></tr></thead>
+            <tbody>
+              {active.map((d) => (
+                <tr key={d.ref}>
+                  <th scope="row">{d.client}</th>
+                  <td data-label="Device">{d.deviceModel ?? "Not reported"}</td>
+                  <td data-label="Connected">{day(d.connectedAt)}</td>
+                  <td data-label="Last used">{d.lastUsedAt ? day(d.lastUsedAt) : "—"}</td>
+                  <td><button type="button" className="button button--ghost button--small" onClick={() => void run(storeApi.revokePackageManager(d.ref), `${d.client} on ${d.deviceModel ?? "that device"} is signed out.`)}>Sign out</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">No package manager is connected to your HCG account.</p>
+      )}
+      {active.length > 1 && <button type="button" className="button button--ghost button--small" onClick={() => void run(storeApi.revokeAllPackageManagers(), "Every package manager is signed out.")}>Sign out every package manager</button>}
+      {msg && <p className="notice" role="status">{msg}</p>}
+      {list.some((d) => d.status !== "active") && (
+        <details><summary>Ended connections</summary>
+          <ul className="plain-list">{list.filter((d) => d.status !== "active").map((d) => <li key={d.ref}>{d.client}{d.deviceModel ? ` on ${d.deviceModel}` : ""}: {d.status}{d.endedAt ? ` ${day(d.endedAt)}` : ""}</li>)}</ul>
+        </details>
+      )}
+      <p className="fine">Sign-in from Sileo or Zebra uses your HCG account, but the package manager only receives an HCG Store credential for this device. {note}</p>
+    </section>
   );
 }

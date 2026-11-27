@@ -142,3 +142,24 @@ html[data-theme="frost"] .cc-no { color: #b42318; }
 .cc-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
 .cc-hash { font-size: 11.5px; word-break: break-all; }
 .cc-readiness textarea { width: 100%; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-strong); background: rgb(var(--deep-rgb) / 0.5); color: var(--text); }
+
+/* Payment Provider Studio */
+.studio-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: start; }
+.studio-split h3 { margin: 0 0 10px; font-size: 1rem; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.studio-checks { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.studio-checks li { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+.studio-checks li.is-ok > span:first-child { color: var(--cyan); }
+.studio-checks li.is-bad { border-color: rgb(var(--amber-rgb) / 0.45); }
+.studio-checks li.is-bad > span:first-child { color: var(--amber); }
+.cc-pre { max-width: 100%; overflow: auto; font-size: 12.5px; line-height: 1.45; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: rgb(var(--deep-rgb) / 0.55); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cc-warn { color: var(--amber); margin: 4px 0 0; }
+.notice--ok { border-color: rgb(var(--accent-rgb) / 0.45); }
+/* A neutral rendering of how Sileo lists a payment provider (system font, light card), not Sileo's own artwork. */
+.sileo-card { max-width: 380px; margin: 0 0 14px; border-radius: 16px; background: #f2f2f7; color: #111; padding: 14px; font-family: -apple-system, system-ui, sans-serif; }
+.sileo-card__row { display: flex; gap: 12px; align-items: center; }
+.sileo-card__row img { width: 48px; height: 48px; border-radius: 11px; flex: none; }
+.sileo-card__name { margin: 0; font-weight: 700; }
+.sileo-card__desc { margin: 2px 0 0; font-size: 13px; color: #555; }
+.sileo-card__banner { margin-top: 12px; padding: 12px; border-radius: 12px; background: #fff; display: grid; gap: 10px; }
+.sileo-card__banner p { margin: 0; font-size: 14px; }
+.sileo-card__button { justify-self: start; padding: 6px 14px; border-radius: 999px; background: #007aff; color: #fff; font-weight: 600; font-size: 14px; }

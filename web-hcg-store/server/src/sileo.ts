@@ -137,8 +137,8 @@ async function resolveToken(ctx: SileoCtx, req: IncomingMessage, body: Record<st
   if (typeof token !== "string" || token.length < 20 || token.length > 200) return { status: "invalid" };
   const row = ctx.db.prepare("SELECT token_hash, secret_hash, session_id_hash, sub, ref, device_hash, expires_at, revoked_at, last_used_at, client FROM repo_tokens WHERE token_hash = ?").get(sha256Hex(token)) as TokenRow | undefined;
   if (!row || row.revoked_at !== null || (row.expires_at !== null && row.expires_at <= ctx.now())) return { status: "invalid" };
-  // Bound to the device it was issued to (when the client said which device that was).
-  if (row.device_hash && body.udid !== undefined && deviceHash(ctx.cfg, body.udid) !== row.device_hash) return { status: "invalid" };
+  // Bound to the device it was issued to (Sileo and Zebra send the device identifier with every request).
+  if (row.device_hash && deviceHash(ctx.cfg, body.udid) !== row.device_hash) return { status: "invalid" };
   const s = ctx.sessions.byHash(row.session_id_hash);
   if (!s || s.sub !== row.sub) return { status: "invalid" };
   const f = await ctx.sessions.ensureFresh(s);
@@ -324,6 +324,10 @@ export async function sileoRoute(ctx: SileoCtx, req: IncomingMessage, res: Serve
   if (r.status === "unavailable") return fail(res, 503, "HCG could not be reached. Nothing has changed; try again shortly.");
   if (r.status === "invalid") return fail(res, 401, "Your HCG sign-in has ended. Sign in again.", { invalidate: true });
   const { session, row } = r;
+  // Internal testing applies to every request, so moving back from public to internal stops other accounts at once.
+  if (eff.availability === "internal" && !(await internalTester(ctx, session))) {
+    return fail(res, 403, "HCG Store's package-manager service is in internal testing.", { invalidate: true });
+  }
 
   if (p === "user_info") {
     const items: string[] = [];

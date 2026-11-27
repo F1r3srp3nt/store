@@ -408,3 +408,39 @@ test("a reviewer requests changes and rejects with recorded reasons; an ordinary
   const r = await customer.evaluate(async () => (await fetch("/api/v1/publishing/manager")).json());
   expect(r.releases).toEqual([]);
 });
+
+// Payment Provider Studio (Sileo / Zebra). Same serial chain: the Founder (HCG's Founder policy) manages it; an
+// administrator without Pricing and Offers or the Founder policy can only view it; customers cannot reach it.
+test("the Founder configures the Sileo payment provider in the Payment Provider Studio; health and the Sileo preview follow", async ({ browser }) => {
+  const page = await signInAs(browser, FOUNDER, "/control-center?tab=payments");
+  const studio = page.getByTestId("payment-provider-studio");
+  await expect(studio).toBeVisible();
+  await expect(studio.getByTestId("studio-availability")).toHaveText("Disabled");
+  await expect(studio.getByTestId("studio-name")).toHaveValue("HCG Store");
+  const preview = studio.getByTestId("sileo-preview");
+  await expect(preview).toContainText("Official payment and distribution services for Hakmi Capital Group.");
+  await expect(preview).toContainText("Sign in with HCG Connect");
+  await expect(studio.getByTestId("studio-health-checks")).toContainText("Provider available");
+  await studio.getByTestId("studio-availability-select").selectOption("internal");
+  await studio.getByTestId("studio-save").click();
+  await expect(studio.getByTestId("studio-message")).toContainText("Saved");
+  await expect(studio.getByTestId("studio-availability")).toHaveText("Internal testing");
+  // The repository package of the fixture's Unleashed edition (the catalogue declares the Debian identifier).
+  await studio.getByRole("button", { name: "Add a repository package" }).click();
+  const form = studio.getByTestId("channel-form");
+  await form.getByLabel("Status").selectOption("active");
+  await form.getByRole("button", { name: "Save channel" }).click();
+  await expect(studio.getByTestId("studio-channel-table")).toContainText("com.example.fixture.quasar.unleashed");
+  await expect(studio.getByTestId("studio-channel-table")).toContainText("No offer is approved for sale");
+  await shotOf(page, "20-payment-provider-studio", studio);
+  // What a package manager receives now (internal testing): the official profile.
+  const info = await (await fetch(`${STORE}/api/sileo/v1/info`)).json();
+  expect(info).toMatchObject({ name: "HCG Store", authentication_banner: { button: "Sign in with HCG Connect" } });
+  await page.getByRole("tab", { name: "Developers & sales" }).click();
+  await expect(page.getByTestId("developers-panel")).toContainText("payouts off");
+  await shotOf(page, "21-developers-and-sales", page.getByTestId("developers-panel"));
+
+  const customer = await signInAs(browser, `pp-customer-${Date.now()}`);
+  const denied = await customer.evaluate(async () => (await fetch("/api/v1/commerce/overview")).status);
+  expect(denied).toBe(403);
+});

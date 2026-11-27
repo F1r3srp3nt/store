@@ -45,7 +45,7 @@ const httpsOrPath = z
   .string()
   .trim()
   .max(500)
-  .refine((v) => v.startsWith("/brand/") || /^https:\/\/[^\s/]+\/\S*$/.test(v), "Use the official artwork under /brand/ or an https URL.");
+  .refine((v) => /^\/brand\/[A-Za-z0-9_-][A-Za-z0-9._-]*\.(?:png|webp|jpg)$/.test(v) || /^https:\/\/[^\s/]+\/\S*$/.test(v), "Use the official artwork under /brand/ or an https URL.");
 
 export const ProviderProfileSchema = z.strictObject({
   name: z.string().trim().min(2).max(60),

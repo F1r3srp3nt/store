@@ -1,5 +1,7 @@
 import { useLocation, useSearchParams } from "react-router-dom";
 import { signInUrl } from "../account/api";
+import { DevelopersPanel } from "../admin/DevelopersPanel";
+import { PaymentProviderStudio } from "../admin/PaymentProviderStudio";
 import { ProductsPanel } from "../admin/ProductsPanel";
 import { ReleasesPanel } from "../admin/ReleasesPanel";
 import { UploadPanel } from "../admin/UploadPanel";
@@ -11,6 +13,8 @@ const TABS = [
   { id: "upload", label: "Upload application" },
   { id: "releases", label: "Releases" },
   { id: "products", label: "Products" },
+  { id: "payments", label: "Payment provider" },
+  { id: "developers", label: "Developers & sales" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -87,6 +91,10 @@ export function ControlCenterPage() {
                 <UploadPanel me={admin.me} productId={productId} onOpenReleases={(p) => go("releases", p ? { product: p } : {})} />
               ) : tab === "releases" ? (
                 <ReleasesPanel me={admin.me} productId={productId} onProduct={(p) => go("releases", p ? { product: p } : {})} />
+              ) : tab === "payments" ? (
+                <PaymentProviderStudio />
+              ) : tab === "developers" ? (
+                <DevelopersPanel />
               ) : (
                 <ProductsPanel me={admin.me} productId={productId} onSelect={(p) => go("products", p ? { product: p } : {})} onUpload={(p) => go("upload", { product: p })} onReleases={(p) => go("releases", { product: p })} />
               )}

@@ -420,6 +420,9 @@ describe("account and ownership (stubbed HCG Store server)", () => {
         subscriptions: [],
         invoices: { available: false, items: [], message: "HCG Store has not issued any invoices. Live payments are not switched on." },
         devices: [{ kind: "sileo", label: "Sileo (HCG Repo)", connectedAt: Date.UTC(2026, 10, 20) }],
+        packageManagers: [
+          { ref: "pms_fixture", client: "Sileo", deviceModel: "iPhone14,2", deviceBound: true, connectedAt: Date.UTC(2026, 10, 20), lastUsedAt: null, expiresAt: null, status: "active", endedAt: null, endedReason: null },
+        ],
         devicesNote: "A connected package manager is not an installation.",
         ownershipUnavailable: false,
         downloadsMessage: "Downloads are not available yet.",
@@ -432,7 +435,10 @@ describe("account and ownership (stubbed HCG Store server)", () => {
     expect(screen.getByRole("link", { name: /Install with Sileo via HCG Repo/ })).toBeInTheDocument();
     expect(screen.getByText("No active subscriptions.")).toBeInTheDocument();
     expect(screen.getByText(/has not issued any invoices/)).toBeInTheDocument();
-    expect(screen.getByText(/Sileo \(HCG Repo\), connected/)).toBeInTheDocument();
+    const pms = screen.getByTestId("package-managers");
+    expect(within(pms).getByText("Sileo")).toBeInTheDocument();
+    expect(within(pms).getByText("iPhone14,2")).toBeInTheDocument();
+    expect(within(pms).getByRole("button", { name: "Sign out" })).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/installed on|update available|up to date/i);
   });
 

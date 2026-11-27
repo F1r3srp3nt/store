@@ -40,40 +40,25 @@ are on `hakmicapitalgroup.com`, so the cookie is same-site. The Store allows onl
 `HCG_STORE_REPO_ORIGINS` (credentialed CORS). The GitHub Pages test domain is cross-site, so there
 the pages fall back to the plain links.
 
-## Package-manager delivery (Sileo): implemented in the Store, not enabled
+## Package-manager delivery (Sileo and Zebra): implemented in the Store, not enabled
 
-Inspected from Sileo's source (`Sileo/Backend/Payment Manager/*.swift`). The official documentation
-site was unreachable from the build environment.
+HCG Store is HCG Repo's payment provider at `https://store.hakmicapitalgroup.com/api/sileo/v1/`
+(`/repo-api/v1/sileo/` is an alias). The protocol, security model, gates, Payment Provider Studio, account page,
+qualification and iPhone test instructions are in [SILEO-PAYMENT-PROVIDER.md](SILEO-PAYMENT-PROVIDER.md).
 
-- **Discovery:** Sileo reads `<repo>/payment_endpoint`. It must be HTTPS. HCG Repo emits it from
-  `[access] payment_endpoint`, which is **empty**, so it is disabled.
-- **Sign-in:** Sileo opens `<endpoint>authenticate` in the system web-authentication sheet. The Store
-  runs the normal HCG Connect sign-in, then redirects to
-  `sileo://authentication_success?token=…&payment_secret=…`. The token is a **Store-issued, revocable
-  HCG Repo token** bound to that Store session. It is never an HCG Connect token, never goes in the
-  APT source URL, and later requests send it in the JSON body.
-- **Endpoints served by the Store** at `/repo-api/v1/sileo/`:
-  - `info`, `user_info`;
-  - `package/<id>/info`: price, `purchased`, `available`;
-  - `package/<id>/purchase`: never grants; returns the Store's buy page;
-  - `package/<id>/authorize_download`: re-checks session, entitlement, release approval and the
-    launch switch, then returns a 120-second signed HTTPS URL;
-  - `sign_out`.
-- **Zebra:** its source has models for the same JSON fields, but no client calling this API was found.
-  Treat Zebra and plain APT as **unsupported for paid packages**. APT with HTTP authentication would
-  need per-user credentials in `auth.conf` and is not offered.
-
-### Remaining work before installation can be offered
-
-1. ~~Protected index entries.~~ **Done in HCG Repo** (16 Nov): a Store-held package is pinned by the Store artifact's
-   SHA-256 (`import-store-release`) and indexed as `cydia::commercial` with a `Filename` that is never deployed. The
-   Store-held package contract is in [PUBLISHING.md §5](PUBLISHING.md#5-hcg-repo-destination); HCG Repo's staging test
-   against this Store passes 38/38 for a paid package (HCG Repo `docs/STORE_RELEASES.md`).
-2. Deploy the Store on https ([PRODUCTION-DEPLOY.md](PRODUCTION-DEPLOY.md)), enable launch (see
-   [ACCESS.md](ACCESS.md#launch-conditions-all-must-hold-before-downloads-are-enabled)), then set HCG Repo's
-   `[access] payment_endpoint` to `https://store.hakmicapitalgroup.com/repo-api/v1/sileo/`.
-3. ~~Custom domain.~~ Done: `repo.hakmicapitalgroup.com` serves HCG Repo.
-4. Test on a device with Sileo: sign in, buy, install and sign out.
+- **Discovery:** HCG Repo publishes `repo/payment_endpoint` from `[access] payment_endpoint`, which stays **empty** until
+  the founder approves public availability (`HCG_STORE_SILEO_PUBLIC_APPROVED`) and launch.
+- **Commercial authority:** prices, purchases, refunds and entitlements live in HCG Store; HCG Repo keeps none. Each
+  package is connected to a Store product by its distribution channel (Control Center → Payment provider).
+- **Contract for HCG Repo (staff-authenticated):**
+  - `GET /api/v1/repo/packages`: channels and approved versions with SHA-256;
+  - `POST /api/v1/repo/packages/verify`: refuses orphaned listings and mismatched versions, architectures, repositories
+    or hashes;
+  - `GET /api/v1/repo/releases?destination=hcg-repo`: unchanged.
+- **Zebra:** current Zebra uses the same provider contract, and its signed-out `GET` package info is supported. Plain
+  APT with HTTP authentication is not offered.
+- **Protected index entries:** done in HCG Repo (16 Nov). A Store-held package is pinned by the Store artifact's SHA-256
+  and indexed as `cydia::commercial` with a `Filename` that is never deployed.
 
 ## Native apps
 

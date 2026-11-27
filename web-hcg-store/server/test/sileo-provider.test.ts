@@ -475,6 +475,20 @@ describe("payments, gates and internal testing", () => {
     expect(health.packageManagerProvider).toBe("internal");
   });
 
+  it("moving from public back to internal testing stops customers' existing credentials; a bound credential without its device identifier is refused", async () => {
+    enableSileoProvider(h, { availability: "public" });
+    const s = new SileoClient();
+    await s.signIn(BOB);
+    const token = s.token!;
+    const bare = await fetch(`${h.origin}/api/sileo/v1/user_info`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+    expect(await bare.json()).toMatchObject({ success: false, invalidate: true });
+    s.token = token;
+    expect((await s.post("user_info")).json.items).toEqual([]);
+    enableSileoProvider(h, { availability: "internal" });
+    expect((await s.post("user_info")).json).toMatchObject({ success: false, invalidate: true });
+    expect(() => h.app.commerce.updateProfile("t", { ...h.app.commerce.profile().value, icon: "/brand/../api/v1/health" }, h.app.commerce.profile().revision)).toThrow();
+  });
+
   it("is disabled by default: nothing answers until the Studio switches it on", async () => {
     expect(h.app.commerce.effective().availability).toBe("disabled");
     expect((await fetch(`${h.origin}/api/sileo/v1/info`)).status).toBe(503);

@@ -428,3 +428,6 @@
     --brand-h: 30px;
   }
 }
+
+/* Library: receipts */
+.receipt__body { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; min-width: min(320px, 80vw); }
