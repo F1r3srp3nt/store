@@ -419,7 +419,12 @@
   .hero__stats > div {
     padding: 12px;
   }
-  .brand__mark {
-    width: 72px;
+  .brand {
+    --brand-h: 33px;
+  }
+}
+@media (max-width: 360px) {
+  .brand {
+    --brand-h: 30px;
   }
 }
