@@ -255,21 +255,23 @@ test.describe("reduced motion", () => {
     const banner = page.locator(".hero-banner img");
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute("loading", "eager");
-    await expect(banner).toHaveAttribute("alt", /HCG Store wordmark/);
-    await expect(banner).toHaveAttribute("srcset", /hcg-store-hero-2000\.webp 2000w/);
+    await expect(banner).toHaveAttribute("alt", /HCG STORE wordmark/);
+    await expect(banner).toHaveAttribute("srcset", /hcg-store-hero-2172\.webp 2172w/);
     // The whole 3:1 artwork is shown: the rendered box keeps the image's aspect ratio (no crop).
     const box = await banner.evaluate((img: HTMLImageElement) => ({ w: img.clientWidth, h: img.clientHeight, fit: getComputedStyle(img).objectFit }));
-    expect(Math.abs(box.w / box.h - 2000 / 667)).toBeLessThan(0.03);
+    expect(Math.abs(box.w / box.h - 2172 / 724)).toBeLessThan(0.03);
     expect(["contain", "fill"]).toContain(box.fit);
     await expect(page.locator(".hero-banner").getByText("Illustration")).toBeVisible();
     expect(await banner.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   });
 
   test("home hero text remains when the banner cannot load", async ({ page }) => {
-    await page.route(/hcg-store-hero-\d+\.webp$/, (r) => r.abort());
+    await page.route(/hcg-store-(hero|wordmark)-[\w-]+\.(avif|webp)$/, (r) => r.abort());
     await page.goto(REAL + "/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/HCG\s*Store/);
     await expect(page.locator(".hero-banner")).toHaveCount(0);
+    await expect(page.locator(".hero3__wordmark")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 }).getByText("HCG Store")).toBeVisible();
     await expect(page.getByRole("link", { name: /Browse Products/ }).first()).toBeVisible();
   });
 

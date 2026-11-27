@@ -45,6 +45,11 @@ export function useTheme(): ThemeApi {
   return v;
 }
 
+/** The current theme, or null outside a ThemeProvider (for components that only adapt to it). */
+export function useThemeId(): ThemeId | null {
+  return useContext(Ctx)?.theme ?? null;
+}
+
 /** True when decorative motion should run: effects on and no reduced-motion request. */
 export function useMotionAllowed(): boolean {
   const t = useContext(Ctx);

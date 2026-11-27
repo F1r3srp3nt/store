@@ -8,8 +8,9 @@ import { CATEGORIES } from "../../domain/taxonomy";
 import { useMotionAllowed } from "../../theme/ThemeContext";
 import { StatusPill } from "../Badges";
 import { HeroBanner } from "../HeroBanner";
-import { IconArrowRight, IconExternal, IconOrbit } from "../Icons";
+import { IconArrowRight, IconExternal } from "../Icons";
 import { ACCENT_RGB, ProductMark } from "../ProductArt";
+import { HeroWordmark } from "./HeroWordmark";
 
 /**
  * Pointer and scroll parallax for the hero: writes --px/--py (−1…1) and --sy (pixels scrolled) on the section, at
@@ -59,27 +60,6 @@ export function CinematicHero({ catalogue, spotlight, rotateSeconds }: { catalog
     <section ref={ref} className="hero3" aria-labelledby="hero-title">
       <div className="hero3__glow" aria-hidden="true" />
       <div className="page-width hero3__stage">
-        <div className="hero3__copy">
-          <p className="hero3__kicker">
-            <IconOrbit /> Hakmi Capital Group
-          </p>
-          <h1 id="hero-title" className="hero3__title">
-            <span className="hero3__brandline">HCG Store</span>
-            <span className="hero3__tagline">The marketplace of an interconnected future</span>
-          </h1>
-          <p className="hero3__lead">Apps, infrastructure, security instruments and developer tools from HCG, each shown with its real status.</p>
-          <div className="hero3__actions">
-            <Link to="/apps" className="button button--primary">
-              Browse Products <IconArrowRight />
-            </Link>
-            <a href="#ecosystem" className="button button--ghost">
-              Explore the ecosystem
-            </a>
-            <a href={runtimeConfig.repoBaseUrl} className="button button--ghost hero3__repo">
-              HCG Repo <IconExternal />
-            </a>
-          </div>
-        </div>
         <div className="hero3__visual">
           <div className="hero3__frame holo-border">
             <HeroBanner />
@@ -94,6 +74,23 @@ export function CinematicHero({ catalogue, spotlight, rotateSeconds }: { catalog
               ))}
             </ul>
           )}
+        </div>
+        <div className="hero3__copy">
+          <HeroWordmark />
+          <p className="hero3__attribution">A Hakmi Capital Group Platform</p>
+          <p className="hero3__tagline">The marketplace of an interconnected future</p>
+          <p className="hero3__lead">Apps, infrastructure, security instruments and developer tools from HCG, each shown with its real status.</p>
+          <div className="hero3__actions">
+            <Link to="/apps" className="button button--primary">
+              Browse Products <IconArrowRight />
+            </Link>
+            <a href="#ecosystem" className="button button--ghost">
+              Explore the ecosystem
+            </a>
+            <a href={runtimeConfig.repoBaseUrl} className="button button--ghost hero3__repo">
+              HCG Repo <IconExternal />
+            </a>
+          </div>
         </div>
       </div>
       {spotlight.length > 0 && <Spotlight catalogue={catalogue} products={spotlight} rotateSeconds={rotateSeconds} motion={motion} />}
