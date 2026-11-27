@@ -57,6 +57,10 @@ if os.path.exists(sums_path):
         if m:
             sums[m.group(2)] = m.group(1).lower()
 
+# Files HCG Store verified and refused earlier: never imported, whatever their name.
+rej_path = os.path.join(os.path.dirname(os.path.abspath(a.request)), "rejected-artifacts.json")
+rejected = {r["sha256"] for r in json.load(open(rej_path, encoding="utf-8"))["rejected"]} if os.path.exists(rej_path) else set()
+
 import jsonschema
 schema = json.load(open(a.schema, encoding="utf-8"))
 pass_dir = os.path.join(a.draft, "passports")
@@ -78,7 +82,8 @@ for x in arts:
     if sums:
         check(sums.get(name) == sha256, f"{name}: SHA256SUMS.txt says {sums.get(name)}")
     check(x.get("sourceCommit") == src["commit"], f"{name}: source commit {x.get('sourceCommit')}, request says {src['commit']}")
-    check(x.get("platform") == "windows", f"{name}: platform {x.get('platform')}")
+    check(x.get("platform") == exp.get("platform", "windows"), f"{name}: platform {x.get('platform')}, the request expects {exp.get('platform', 'windows')}")
+    check(sha256 not in rejected, f"{name}: HCG Store refused this exact file earlier (rejected-artifacts.json)")
     pp = os.path.join(pass_dir, name + ".passport.json")
     if check(os.path.exists(pp), f"{name}: no Release Passport"):
         p = json.load(open(pp, encoding="utf-8"))

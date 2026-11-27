@@ -302,6 +302,28 @@
           "access": "none"
         },
         {
+          "id": "macos-desktop",
+          "name": "macOS desktop",
+          "summary": "Native Mac app for Apple silicon (.NET 10, Avalonia), offered as the app in a ZIP or as a PKG installer.",
+          "platforms": [
+            "macos"
+          ],
+          "channel": "direct-download",
+          "status": "Apple silicon build in qualification: offered only once its files are Developer ID signed, notarized and verified by HCG Store.",
+          "identifiers": [
+            {
+              "kind": "bundle-id",
+              "value": "com.hakmicapitalgroup.hcgmail"
+            }
+          ],
+          "layouts": [],
+          "note": null,
+          "centralEditionKey": "macos-desktop",
+          "tier": null,
+          "pricingModel": "free",
+          "access": "none"
+        },
+        {
           "id": "ios",
           "name": "iPhone and iPad",
           "summary": "Native iOS app.",

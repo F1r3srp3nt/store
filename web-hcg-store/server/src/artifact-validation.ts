@@ -62,13 +62,16 @@ export const CONTENT_TYPES: Record<PublishFormat, string> = {
   aab: "application/octet-stream",
 };
 
-const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+()~-]{0,199}$/;
+// Single spaces between words are allowed ("HCG Mail.app.zip"). Each word starts with a letter, digit or "(", so never
+// "x .zip". Files are addressed by ID, never by name, so a name never reaches a URL or a storage path. No leading,
+// trailing or repeated spaces, no folders, no "..".
+const FILE_NAME = /^(?=.{1,200}$)[A-Za-z0-9][A-Za-z0-9._+()~-]*(?: [A-Za-z0-9(][A-Za-z0-9._+()~-]*)*$/;
 
 /** Checks of the declared metadata (before any byte is uploaded). Returns problems; empty = acceptable. */
 export function checkDeclaration(d: { fileName: string; platform: string; format: string; sizeBytes: number; maxBytes: number }): string[] {
   const problems: string[] = [];
   if (!FILE_NAME.test(d.fileName) || d.fileName.includes("..")) {
-    problems.push("The file name must be a plain name (letters, digits, . _ + ( ) ~ -), without folders, spaces or \"..\".");
+    problems.push("The file name must be a plain name (letters, digits, . _ + ( ) ~ - and single spaces between words), without folders or \"..\".");
   }
   if (!(PLATFORMS as readonly string[]).includes(d.platform)) problems.push(`Unsupported platform "${d.platform}".`);
   else {

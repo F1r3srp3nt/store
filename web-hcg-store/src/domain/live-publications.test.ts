@@ -41,4 +41,24 @@ describe("live publications overlay", () => {
     expect(applyLivePublications(base, null)).toBe(base);
     expect(applyLivePublications(base, { format: "other" as never, products: {} })).toBe(base);
   });
+
+  it("shows a newly published platform as available, alongside the current one, without changing the explicit current release", () => {
+    const mac = pub({
+      releaseId: "rel-1111111111111111", editionId: "macos-desktop", version: "1.0.0-beta.1", build: "4",
+      files: [
+        { id: "art-1111111111111111", fileName: "HCG Mail.app.zip", platform: "macos", format: "zip", architectures: ["arm64"], minimumOs: "macOS 12", sizeBytes: 10, sha256: "b".repeat(64), signing: "notarized" },
+        { id: "art-2222222222222222", fileName: "HCG Mail-1.0.0-beta.1-osx-arm64.pkg", platform: "macos", format: "pkg", architectures: ["arm64"], minimumOs: "macOS 12", sizeBytes: 11, sha256: "c".repeat(64), signing: "notarized" },
+      ],
+    });
+    const c = applyLivePublications(shipped(), { format: "hcg.store.published/1", products: { "hcg-mail": [pub({ releaseId: "rel-bc6c2096b73a977f", version: "1.0.0-beta.1" }), mac] } });
+    const mail = c.products.find((p) => p.id === "hcg-mail")!;
+    expect(mail.currentReleaseId).toBe("rel-bc6c2096b73a977f");
+    expect(mail.platforms.find((p) => p.platform === "macos")).toMatchObject({ support: "confirmed", architectures: ["arm64"], minimumOs: "macOS 12" });
+    // The catalogue's curated Windows entry is kept as written.
+    expect(mail.platforms.find((p) => p.platform === "windows")).toEqual(shipped().products.find((p) => p.id === "hcg-mail")!.platforms.find((p) => p.platform === "windows"));
+    expect(c.releases.find((r) => r.id === "rel-1111111111111111")?.artifacts.map((a) => a.fileName)).toEqual(["HCG Mail.app.zip", "HCG Mail-1.0.0-beta.1-osx-arm64.pkg"]);
+    // Without a live macOS file, macOS stays in development.
+    const only = applyLivePublications(shipped(), { format: "hcg.store.published/1", products: { "hcg-mail": [pub({ releaseId: "rel-bc6c2096b73a977f", version: "1.0.0-beta.1" })] } });
+    expect(only.products.find((p) => p.id === "hcg-mail")!.platforms.find((p) => p.platform === "macos")?.support).toBe("in-development");
+  });
 });

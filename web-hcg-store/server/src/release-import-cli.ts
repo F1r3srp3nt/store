@@ -18,7 +18,7 @@ import { NoAuthority } from "./entitlements";
 import { HttpError } from "./http";
 import { createPublishing } from "./publishing";
 import { loadRegistry } from "./registry";
-import { draftFromRequest, ImportRequestSchema, type ImportDraft } from "./release-import-request";
+import { draftFromRequest, ImportRequestSchema, refuseRejected, withReviewedChanges, type ImportDraft } from "./release-import-request";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name);
@@ -37,7 +37,8 @@ async function main() {
     const dir = arg("--dir") ?? "";
     const request = ImportRequestSchema.parse(JSON.parse(readFileSync(arg("--request") ?? "", "utf8")));
     const fromGithub = request.source.kind === "github-release";
-    const draft = fromGithub ? draftFromRequest(request) : (JSON.parse(readFileSync(join(dir, "draft", "store-release-draft.json"), "utf8")) as ImportDraft);
+    const draft = withReviewedChanges(request, fromGithub ? draftFromRequest(request) : (JSON.parse(readFileSync(join(dir, "draft", "store-release-draft.json"), "utf8")) as ImportDraft));
+    refuseRejected(draft);
     for (const [k, v] of Object.entries(request.expect)) {
       if (k === "files" || k === "sha256") continue;
       if (String(draft.release[k] ?? null) !== String(v)) throw new HttpError(400, "request_mismatch", `The draft's ${k} is ${String(draft.release[k])}, the request says ${String(v)}.`);

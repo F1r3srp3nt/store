@@ -138,6 +138,19 @@ html[data-theme="frost"] .launch-hero__name {
 .launch-hero__upcoming {
   margin: 14px 0 0;
 }
+.launch-hero__also {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.launch-detail__sub {
+  margin: 14px 0 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.launch-detail__sub:first-child {
+  margin-top: 0;
+}
 .launch-chip {
   display: inline-block;
   padding: 4px 10px;
