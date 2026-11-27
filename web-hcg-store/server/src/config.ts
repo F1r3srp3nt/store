@@ -124,6 +124,12 @@ export interface PublishingSettings {
    * approved; the operations it would cover are listed in docs/ADMINISTRATION.md.
    */
   devicePolicy: "off";
+  /**
+   * HCG_STORE_FOUNDER_WEB_EXCEPTIONS: "central-founder" (default) lets the Founder record the founder-operated exception
+   * for their own release on the website, only while HCG's /me and /access confirm the Founder policy for HCG Store;
+   * "off" keeps it to the operator path.
+   */
+  founderWebExceptions: "central-founder" | "off";
 }
 
 /**
@@ -401,6 +407,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
       storageQuotaBytes: env.HCG_STORE_STORAGE_QUOTA_MB ? int("HCG_STORE_STORAGE_QUOTA_MB", 0, 1, 10_000_000) * 1024 * 1024 : null,
       adminRatePerMinute: int("HCG_STORE_ADMIN_RATE_PER_MINUTE", 300, 10, 10_000),
       devicePolicy: "off",
+      founderWebExceptions: env.HCG_STORE_FOUNDER_WEB_EXCEPTIONS === "off" ? "off" : "central-founder",
     },
   };
 }

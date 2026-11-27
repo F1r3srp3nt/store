@@ -90,6 +90,8 @@ function zip(files: { name: string; data: Buffer }[]): Buffer {
 const macApp = () => zip([
   { name: "Quasar.app/Contents/Info.plist", data: Buffer.from("<plist><dict><key>CFBundleIdentifier</key><string>com.hcg.quasar</string></dict></plist>") },
   { name: "Quasar.app/Contents/MacOS/Quasar", data: randomBytes(4096) },
+  // Signed apps carry their seal; public macOS files must be Developer ID signed and notarized.
+  { name: "Quasar.app/Contents/_CodeSignature/CodeResources", data: Buffer.from("<plist/>") },
 ]);
 
 type J = Record<string, any>;
@@ -176,7 +178,7 @@ async function customerDownload(customer: Client, artifactId: string) {
 }
 
 const WIN_X64 = { fileName: "QuasarSetup-x64.exe", platform: "windows", format: "exe", architectures: ["x64"] };
-const MAC_UNIVERSAL = { fileName: "Quasar-macOS.zip", platform: "macos", format: "zip", architectures: ["arm64", "x64"] };
+const MAC_UNIVERSAL = { fileName: "Quasar-macOS.zip", platform: "macos", format: "zip", architectures: ["arm64", "x64"], signing: { status: "notarized", evidence: "TEST: notarytool Accepted; stapled" } };
 
 describe("HCG Store web administration and release lifecycle", () => {
   it("1–2. ordinary customers and administrators without HCG's Store permission cannot upload or administer; the server decides, not the page", async () => {

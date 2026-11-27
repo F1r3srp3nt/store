@@ -7,7 +7,9 @@
  *
  * An exception lets ONE named person (an HCG account, identified by a sign-in HCG Store verified and matched with
  * HCG's /me) submit, approve and publish ONE specific release with ONE exact set of files. It is:
- *   - granted only by the operator path (release-exception CLI via the deploy workflow), with who authorised and who
+ *   - granted by the operator path (release-exception CLI via the deploy workflow), or by the Founder personally on the
+ *     HCG Store website for the Founder's own release, only when HCG's central /me and /access confirm the Founder
+ *     policy for HCG Store (publishing.ts, POST /releases/:id/founder-exception); always with who authorised and who
  *     performed it and a reason, also written to the hash-chained publishing audit;
  *   - bound to the release's verified files (SHA-256 of the sorted "sha256  name" lines): if any file changes, the
  *     exception no longer applies;
@@ -74,7 +76,13 @@ const clean = (v: string, max: number, what: string) => {
 
 export function grantFounderException(
   db: Db,
-  input: { releaseId: string; subject: string; reason: string; authorisedBy: string; performedBy: string; expectDigest?: string | null },
+  input: {
+    releaseId: string; subject: string; reason: string; authorisedBy: string; performedBy: string; expectDigest?: string | null;
+    /** Who is accountable in the audit (default "operator:<performedBy>"); the Founder's account when self-recorded. */
+    auditActor?: string;
+    /** Extra audit detail (e.g. each file's SHA-256 and the central basis). */
+    auditDetail?: Record<string, unknown>;
+  },
   now: number,
 ): ReleaseException {
   const rel = db.prepare("SELECT id, status FROM pub_releases WHERE id = ?").get(input.releaseId) as { id: string; status: string } | undefined;
@@ -93,9 +101,10 @@ export function grantFounderException(
   transaction(db, () => {
     db.prepare(`INSERT INTO release_exceptions (id, release_id, kind, subject, artifact_digest, reason, authorised_by, performed_by, created_at)
                 VALUES (?, ?, 'founder-operated', ?, ?, ?, ?, ?, ?)`).run(id, rel.id, input.subject, digest, reason, authorisedBy, performedBy, now);
-    appendPubAudit(db, now, `operator:${performedBy}`.slice(0, 200), "release.exception-granted", rel.id, null, {
+    appendPubAudit(db, now, input.auditActor ?? `operator:${performedBy}`.slice(0, 200), "release.exception-granted", rel.id, null, {
       exceptionId: id, kind: "founder-operated", artifactDigest: digest, reason, authorisedBy, performedBy,
       note: "One person may submit, approve and publish this release with these exact files. Not an independent review.",
+      ...(input.auditDetail ?? {}),
     });
   });
   return view(db.prepare("SELECT * FROM release_exceptions WHERE id = ?").get(id) as Row);

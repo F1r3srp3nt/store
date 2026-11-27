@@ -65,7 +65,8 @@ function xar(): Buffer {
 function macRun() {
   const files: Record<string, Buffer> = {
     [ZIP]: zip([{ name: "HCG Mail.app/Contents/Info.plist", data: Buffer.from("<plist><dict><key>CFBundleShortVersionString</key><string>1.0.0-beta.1</string></dict></plist>") },
-      { name: "HCG Mail.app/Contents/MacOS/HCGMail", data: Buffer.from("\xcf\xfa\xed\xfe arm64 stand-in", "latin1") }]),
+      { name: "HCG Mail.app/Contents/MacOS/HCGMail", data: Buffer.from("\xcf\xfa\xed\xfe arm64 stand-in", "latin1") },
+      { name: "HCG Mail.app/Contents/_CodeSignature/CodeResources", data: Buffer.from("<plist/>") }]),
     [PKG]: xar(),
   };
   const dir = mkdtempSync(join(tmpdir(), "hcg-mail-macos-"));

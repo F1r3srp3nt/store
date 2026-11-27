@@ -56,7 +56,7 @@ import { transaction, type Db } from "./db";
 import { appendPubAudit, auditChainIntact } from "./release-records";
 import { artifactIsCurrent, clearCurrent, currentRowsForProduct, currentTargetsOfRelease, lifecycleOf, switchCurrent, targetsOf, type SwitchResult } from "./release-lifecycle";
 import { extendWindow, FreeWindowError, listWindows, openWindow, openWindowFor, terminateWindow, type FreeWindow, type WindowPeriod } from "./free-windows";
-import { activeException, exceptionsFor } from "./release-exceptions";
+import { activeException, artifactSetDigest, exceptionsFor, grantFounderException, ReleaseExceptionError } from "./release-exceptions";
 import type { EntitlementAuthority, Subject } from "./entitlements";
 import type { HcgConnectClient } from "./hcg-connect";
 import { assertSameOrigin, errorJson, escapeHtml, html, HttpError, json, readJson } from "./http";
@@ -254,6 +254,138 @@ export function createPublishing(deps: PublishingDeps) {
     throw new HttpError(403, "separation_of_duties", step === "approve"
       ? "Public release needs an approver other than the person who created or submitted it (or a founder-operated exception recorded for this exact release)."
       : "Publication needs a person other than the one who created or submitted the release (or a founder-operated exception recorded for this exact release).");
+  }
+
+  /**
+   * Mandatory signing for public delivery, which no exception changes: every macOS file customers would receive must be
+   * Developer ID signed and notarized (Gatekeeper blocks anything else on other Macs), and every iOS/Android device
+   * build must be installable. Returns the problems (empty: none).
+   */
+  function publicSigningProblems(releaseId: string): string[] {
+    const out: string[] = [];
+    for (const a of artifactsOf(releaseId).filter((x) => x.status === "verified" && !STAFF_ONLY_FORMATS.has(x.format)).map(artifactView)) {
+      if (a.platform === "macos" && a.readiness.status !== "ready") out.push(`${a.fileName}: ${a.readiness.label} Public macOS files must be Developer ID signed and notarized.`);
+      if ((a.kind === "device-build" || a.kind === "android-app") && ["unsigned", "not-installable"].includes(a.readiness.status)) out.push(`${a.fileName}: ${a.readiness.label}`);
+    }
+    return out;
+  }
+
+  /**
+   * Whether HCG itself confirms this account as the Founder for HCG Store: /me reports the Founder policy
+   * (founder_owner_all_products) and /access reports HCG Store as founder-owned under it. Never inferred from an e-mail
+   * address, a Store profile or anything the client sends.
+   */
+  async function centralFounder(actor: Actor): Promise<{ confirmed: boolean; displayName: string | null; unavailable?: string }> {
+    const a = await authority.accountAccess({ sub: actor.sub, accessToken: actor.accessToken }, [STORE_CENTRAL_PRODUCT_ID]);
+    if (a.status !== "ok") return { confirmed: false, displayName: null, unavailable: a.reason };
+    const store = a.products.find((x) => x.centralProductId === STORE_CENTRAL_PRODUCT_ID);
+    return { confirmed: a.founderPolicy && store?.kind === "founder_owner", displayName: a.displayName };
+  }
+
+  type Gate = { allowed: boolean; reasons: string[]; resolution: { action: string; label: string } | null };
+  const gate = (reasons: string[], resolution: Gate["resolution"] = null): Gate => ({ allowed: reasons.length === 0, reasons, resolution: reasons.length ? resolution : null });
+
+  /**
+   * Release Readiness Inspector: for this person and this release, what is ready, what is missing, and for each step
+   * (submit, founder exception, approve, publish, reject, request changes, edit) whether it is allowed now and, if not,
+   * exactly why and what resolves it. Computed from the same rules the actions enforce; the actions check again.
+   */
+  async function readiness(r: ReleaseRow, actor: Actor) {
+    const may = { submit: await permitted(actor, "publish", r.product_id), approve: await permitted(actor, "approve", r.product_id), publication: await permitted(actor, "publication", r.product_id) };
+    const arts = artifactsOf(r.id).filter((a) => a.status !== "removed");
+    const views = arts.map(artifactView);
+    const verified = views.filter((a) => a.status === "verified");
+    const pending = views.filter((a) => ["awaiting-upload", "uploading"].includes(a.status));
+    const rejected = views.filter((a) => a.status === "rejected");
+    const notes = JSON.parse(r.release_notes) as string[];
+    const provenanceMissing = verified.filter((a) => a.provenance?.buildProvider !== "manual-upload" && (!a.provenance?.sourceCommit || !a.provenance?.buildProvider || !a.provenance?.toolchain));
+    const signing = publicSigningProblems(r.id);
+    const sameParty = isSameParty(r, actor.sub);
+    const exception = activeException(db, r.id, actor.sub);
+    const open = ["draft", "submitted", "approved"].includes(r.status);
+    const founder = sameParty && !exception && open && verified.length ? await centralFounder(actor) : null;
+    const publicRequested = r.requested_eligibility === "public";
+    const separation = (step: string) => (sameParty && !exception && publicRequested ? [`You created or submitted this release, so ${step} for public delivery needs another person with the permission, or a founder-operated exception recorded for this exact release and these files.`] : []);
+    const centralOk = productInfo(r.product_id)?.source === "catalogue" && !!productInfo(r.product_id)?.centralId;
+    const pubOn = P.publicationEnabled && publicationOn(r.product_id);
+
+    const submit = gate([
+      ...(!may.submit ? [`HCG has not granted your account ${P.publisherCentralId} for HCG Store.`] : []),
+      ...(r.status !== "draft" ? [`The release is ${r.status}; only a draft is submitted.`] : []),
+      ...(r.status === "draft" && !verified.length ? ["No verified file yet: upload at least one file and let HCG Store verify it."] : []),
+      ...(r.status === "draft" && pending.length ? [`Uploads in progress: ${pending.map((a) => a.fileName).join(", ")}. Finish or remove them.`] : []),
+      ...(r.status === "draft" && !notes.length ? ["Release notes are empty."] : []),
+      ...(r.status === "draft" && provenanceMissing.length ? [`Build provenance (source commit, build provider, toolchain) is missing for ${provenanceMissing.map((a) => a.fileName).join(", ")}; upload them again with it, or as a manual upload.`] : []),
+      ...(r.imported_from && actor.via !== "web" ? ["An imported release is submitted in the browser."] : []),
+    ], r.status === "draft" && !notes.length ? { action: "edit", label: "Add release notes" } : r.status === "draft" && !verified.length ? { action: "upload", label: "Upload files" } : null);
+
+    const founderGate = gate([
+      ...(P.founderWebExceptions === "off" ? ["Founder exceptions on the website are switched off on this Store (HCG_STORE_FOUNDER_WEB_EXCEPTIONS=off)."] : []),
+      ...(!sameParty ? ["Not needed: you neither created nor submitted this release, so you may approve or publish it normally."] : []),
+      ...(exception ? [`Already recorded (${exception.id}) for these exact files.`] : []),
+      ...(!open ? [`The release is ${r.status}; an exception is only for a release not yet published.`] : []),
+      ...(open && !verified.length ? ["The release has no verified files to bind the exception to."] : []),
+      ...(pending.length ? ["Uploads are still in progress."] : []),
+      ...(!(may.submit && may.approve && may.publication) ? ["HCG must grant you store.publish, store.release.approve and store.release.publish for HCG Store."] : []),
+      ...(founder?.unavailable ? [`HCG could not confirm the Founder policy right now (${founder.unavailable}). Try again shortly.`] : []),
+      ...(founder && !founder.unavailable && !founder.confirmed ? ["HCG does not confirm the Founder policy (founder_owner_all_products) for your account and HCG Store, so you cannot record a founder exception. Ask another person to approve."] : []),
+      ...(publicRequested && signing.length ? ["The files do not meet the mandatory signing requirements for public delivery; an exception never changes them.", ...signing] : []),
+      ...(actor.via !== "web" ? ["A founder exception is recorded in the browser."] : []),
+    ]);
+
+    const approve = gate([
+      ...(!pubOn ? ["Approval and publication are switched off for this product on this Store."] : []),
+      ...(!may.approve ? [`HCG has not granted your account ${P.approverCentralId} for HCG Store.`] : []),
+      ...(r.status !== "submitted" && r.status !== "approved" ? [r.status === "draft" ? "The release is a draft: submit it for review first." : `The release is ${r.status}.`] : []),
+      ...(actor.via !== "web" ? ["Releases are approved in the browser."] : []),
+      ...separation("approval"),
+      ...(publicRequested && signing.length ? signing : []),
+      ...(publicRequested && !centralOk ? ["Public release needs the product in HCG's catalogue with a confirmed central product ID."] : []),
+    ], r.status === "draft" && submit.allowed ? { action: "submit", label: "Submit for review" } : sameParty && !exception && publicRequested && founderGate.allowed ? { action: "founder-exception", label: "Record founder exception" } : null);
+
+    const publish = gate([
+      ...(!pubOn ? ["Approval and publication are switched off for this product on this Store."] : []),
+      ...(!may.publication ? [`HCG has not granted your account ${P.publicationCentralId} for HCG Store.`] : []),
+      ...(r.status !== "approved" ? [r.status === "published" ? "Already published." : "Only an approved release is published: approve it first."] : []),
+      ...(r.status === "approved" && r.approved_eligibility !== "public" ? [`Approved for ${r.approved_eligibility} only; publication is for public releases.`] : []),
+      ...(r.availability !== "available" ? [`The release is ${r.availability}.`] : []),
+      ...(actor.via !== "web" ? ["Releases are published in the browser."] : []),
+      ...(r.status === "approved" ? separation("publication") : []),
+      ...(r.status === "approved" && r.approved_eligibility === "public" ? signing : []),
+    ]);
+    const review = (what: string) => gate([
+      ...(!may.approve ? [`HCG has not granted your account ${P.approverCentralId} for HCG Store.`] : []),
+      ...(!["submitted", "approved"].includes(r.status) ? [`Only a submitted or approved (unpublished) release can be ${what}.`] : []),
+    ]);
+    const edit = gate([
+      ...(!may.submit ? [`HCG has not granted your account ${P.publisherCentralId} for HCG Store.`] : []),
+      ...(!open ? [`The release is ${r.status}; its record is final. Create a new build instead.`] : []),
+    ]);
+    const steps = { submit, founderException: founderGate, approve, publish, reject: review("rejected"), requestChanges: review("returned for changes"), edit };
+    const next = r.status === "draft" ? submit : r.status === "submitted" ? approve : r.status === "approved" ? publish : null;
+    const reviewNotes = (db.prepare("SELECT at, action, detail FROM pub_audit WHERE release_id = ? AND action IN ('release.changes-requested', 'release.rejected') ORDER BY seq DESC LIMIT 5").all(r.id) as { at: number; action: string; detail: string }[])
+      .map((x) => ({ at: x.at, action: x.action, reason: (JSON.parse(x.detail) as { reason?: string }).reason ?? null }));
+    return {
+      releaseId: r.id, version: r.version, status: r.status, stage: stageOf(r), availability: r.availability, revision: r.revision,
+      requestedEligibility: r.requested_eligibility, approvedEligibility: r.approved_eligibility,
+      files: {
+        verified: verified.length, pending: pending.length, rejected: rejected.length,
+        list: views.map((a) => ({ id: a.id, fileName: a.fileName, platform: a.platform, status: a.status, sha256: a.sha256, signingReported: a.signingReported.status,
+          readiness: a.readiness, problems: (a.validation as { problems?: string[] } | null)?.problems ?? [], passport: (() => { const pp = (a.provenance as (Provenance & { passport?: { provider: string | null; runId: string | null; commit: string | null } }) | null)?.passport; return pp ? { matched: true, provider: pp.provider ?? null, runId: pp.runId ?? null, commit: pp.commit ?? null } : null; })(),
+          buildProvider: a.provenance?.buildProvider ?? null })),
+      },
+      signing: { publicBlockers: signing, notarized: verified.filter((a) => a.platform === "macos").map((a) => ({ fileName: a.fileName, notarized: a.readiness.status === "ready" })) },
+      permissions: { ...may, required: { submit: P.publisherCentralId, approve: P.approverCentralId, publish: P.publicationCentralId } },
+      governance: {
+        sameParty, createdBy: r.created_by === actor.sub ? "you" : r.created_by.startsWith("import:") ? r.created_by : "another account",
+        submittedBy: (() => { const s = submitterOf(r.id); return !s ? null : s === actor.sub ? "you" : "another account"; })(),
+        exception: exception ? { id: exception.id, artifactDigest: exception.artifactDigest, createdAt: exception.createdAt } : null,
+        founderConfirmedByHcg: founder ? founder.confirmed : null,
+        filesDigest: artifactSetDigest(db, r.id),
+        independentReview: !sameParty,
+      },
+      steps, outstanding: next ? next.reasons : [], reviewNotes,
+    };
   }
 
   /** Free windows anchored to this release's publication start now and last their stated duration. */
@@ -1133,6 +1265,86 @@ export function createPublishing(deps: PublishingDeps) {
         if (!(await mayReview(actor, r.product_id))) throw new HttpError(403, "not_publisher", "HCG has not granted your account access to this release.");
         return send(json(res, 200, { ...releaseView(r), auditIntact: auditIntact() }));
       }
+      if (action === "/readiness" && m === "GET") {
+        if (!(await mayReview(actor, r.product_id))) throw new HttpError(403, "not_publisher", "HCG has not granted your account access to this release.");
+        return send(json(res, 200, await readiness(r, actor)));
+      }
+      if (action === "" && m === "PATCH") {
+        // Edit the release record (never its files). Changing a submitted or approved release returns it to draft: the
+        // approval was for the record as it was.
+        await requirePermission(actor, "publish", r.product_id);
+        expectRevision(req, r);
+        if (!["draft", "submitted", "approved"].includes(r.status)) throw new HttpError(409, "release_locked", `The release is ${r.status}; its record is final. Create a new build instead.`);
+        const body = z.strictObject({
+          releaseNotes: z.array(text).max(50).optional(),
+          knownLimitations: z.array(text).max(30).optional(),
+          compatibility: ReleaseInput.shape.compatibility.optional(),
+          requestedEligibility: z.enum(["private", "internal-testing", "public"]).optional(),
+          supersedePreviousOnPublish: z.boolean().optional(),
+        }).parse(await readJson(req));
+        const changed = Object.keys(body).filter((k) => (body as Record<string, unknown>)[k] !== undefined);
+        if (!changed.length) throw new HttpError(400, "nothing_to_change", "Nothing to change.");
+        transaction(db, () => {
+          invalidate(actor.sub, r, "The release record was edited.");
+          if (body.releaseNotes) db.prepare("UPDATE pub_releases SET release_notes = ? WHERE id = ?").run(JSON.stringify(body.releaseNotes), r.id);
+          if (body.knownLimitations) db.prepare("UPDATE pub_releases SET known_limitations = ? WHERE id = ?").run(JSON.stringify(body.knownLimitations), r.id);
+          if (body.compatibility) db.prepare("UPDATE pub_releases SET compatibility = ? WHERE id = ?").run(JSON.stringify(body.compatibility), r.id);
+          if (body.requestedEligibility) db.prepare("UPDATE pub_releases SET requested_eligibility = ? WHERE id = ?").run(body.requestedEligibility, r.id);
+          if (body.supersedePreviousOnPublish !== undefined) db.prepare("UPDATE pub_releases SET supersede_on_publish = ? WHERE id = ?").run(body.supersedePreviousOnPublish ? 1 : 0, r.id);
+          db.prepare("UPDATE pub_releases SET updated_at = ? WHERE id = ?").run(now(), r.id);
+          audit(actor.sub, "release.updated", r.id, null, { via: actor.via, fields: changed, previousStatus: r.status });
+        });
+        return send(json(res, 200, releaseView(release(r.id)!)));
+      }
+      if ((action === "/reject" || action === "/request-changes") && m === "POST") {
+        // Review decisions with a recorded reason. Reject ends the review track (the release is withdrawn, files and history
+        // kept); request changes returns it to draft for the submitter to correct and submit again.
+        await requirePermission(actor, "approve", r.product_id);
+        expectRevision(req, r);
+        const body = z.strictObject({ reason: text.max(1000) }).parse(await readJson(req));
+        if (!["submitted", "approved"].includes(r.status)) throw new HttpError(409, "not_in_review", `Only a submitted or approved (unpublished) release can be ${action === "/reject" ? "rejected" : "returned for changes"}; this one is ${r.status}.`);
+        transaction(db, () => {
+          if (action === "/reject") {
+            db.prepare("UPDATE pub_releases SET status = 'withdrawn', withdrawn_reason = ?, approved_eligibility = NULL, approved_by = NULL, approved_at = NULL, updated_at = ? WHERE id = ?").run(`Rejected: ${body.reason}`, now(), r.id);
+            audit(actor.sub, "release.rejected", r.id, null, { reason: body.reason, via: actor.via, previousStatus: r.status });
+          } else {
+            db.prepare("UPDATE pub_releases SET status = 'draft', submitted_at = NULL, approved_eligibility = NULL, approved_by = NULL, approved_at = NULL, updated_at = ? WHERE id = ?").run(now(), r.id);
+            audit(actor.sub, "release.changes-requested", r.id, null, { reason: body.reason, via: actor.via, previousStatus: r.status });
+          }
+        });
+        return send(json(res, 200, releaseView(release(r.id)!)));
+      }
+      if (action === "/founder-exception" && m === "POST") {
+        // The Founder records the founder-operated exception for their OWN release personally, on the website, when HCG
+        // confirms the Founder policy centrally. Bound to these exact files; recorded with the Founder's identity, the
+        // release, every file's SHA-256, the reason and the time; shown as "not an independent review". It is never a
+        // permission (each step still needs its HCG permission) and never changes the mandatory signing requirements.
+        if (actor.via !== "web") throw new HttpError(403, "browser_required", "A founder exception is recorded in the browser, signed in to HCG Store.");
+        if (P.founderWebExceptions === "off") throw new HttpError(403, "founder_web_exceptions_off", "Founder exceptions on the website are switched off on this Store.");
+        expectRevision(req, r);
+        const body = z.strictObject({ confirm: z.string(), reason: text.max(1000), filesDigest: z.string().regex(/^[a-f0-9]{64}$/) }).parse(await readJson(req));
+        const ready = await readiness(r, actor);
+        if (!ready.steps.founderException.allowed) throw new HttpError(409, "founder_exception_not_allowed", ready.steps.founderException.reasons.join(" "));
+        if (body.confirm !== r.version) throw new HttpError(400, "confirmation_required", `Type the version (${r.version}) to confirm.`);
+        if (body.filesDigest !== ready.governance.filesDigest) throw new HttpError(409, "files_changed", "The release's files changed since you reviewed them. Reload and review them again.");
+        const founder = await centralFounder(actor);
+        if (!founder.confirmed) throw new HttpError(403, "not_founder", "HCG does not confirm the Founder policy for your account and HCG Store.");
+        const files = artifactsOf(r.id).filter((a) => a.status === "verified").map((a) => ({ fileName: a.file_name, sha256: a.sha256 }));
+        const at = now();
+        try {
+          const ex = grantFounderException(db, {
+            releaseId: r.id, subject: actor.sub, reason: body.reason, expectDigest: body.filesDigest,
+            authorisedBy: `The Founder${founder.displayName ? ` (${founder.displayName})` : ""}, Founder policy confirmed by HCG at ${new Date(at).toISOString()}`,
+            performedBy: "the Founder, personally, on the HCG Store website",
+            auditActor: actor.sub,
+            auditDetail: { via: "web", selfRecorded: true, centralBasis: "founder_owner_all_products", files, independentReview: false },
+          }, at);
+          return send(json(res, 201, { exception: ex, release: releaseView(release(r.id)!) }));
+        } catch (e) {
+          if (e instanceof ReleaseExceptionError) throw new HttpError(409, "founder_exception_refused", e.message);
+          throw e;
+        }
+      }
       if (action === "/artifacts" && m === "POST") {
         await requirePermission(actor, "publish", r.product_id);
         expectRevision(req, r);
@@ -1237,10 +1449,9 @@ export function createPublishing(deps: PublishingDeps) {
           if (productInfo(r.product_id)?.source !== "catalogue" || !productInfo(r.product_id)?.centralId) {
             throw new HttpError(409, "not_in_catalogue", "Public release needs the product in HCG's catalogue with a confirmed central product ID.");
           }
-          const notInstallable = artifactsOf(r.id).filter((a) => a.status === "verified").map(artifactView)
-            .filter((a) => (a.kind === "device-build" || a.kind === "android-app") && ["unsigned", "not-installable"].includes(a.readiness.status));
-          if (notInstallable.length) {
-            throw new HttpError(409, "not_installable", `Public release refused: ${notInstallable.map((a) => a.fileName).join(", ")} cannot be installed on a device (${notInstallable[0]!.readiness.label}) Approve it for private or internal testing, or ship a signed build.`);
+          const signingProblems = publicSigningProblems(r.id);
+          if (signingProblems.length) {
+            throw new HttpError(409, "not_installable", `Public release refused: ${signingProblems.join(" ")} Approve it for private or internal testing, or ship correctly signed files. A founder exception never changes this.`);
           }
         }
         transaction(db, () => {
@@ -1269,6 +1480,8 @@ export function createPublishing(deps: PublishingDeps) {
         if (r.approved_eligibility !== "public") throw new HttpError(409, "not_public", "Only a release approved for public delivery is published. Internal-testing releases are delivered to testers once approved.");
         if (r.availability !== "available") throw new HttpError(409, "not_available", `This release is ${r.availability}; it cannot be published.`);
         const publishException = separationOrException(r, actor.sub, "publish");
+        const signingAtPublication = publicSigningProblems(r.id);
+        if (signingAtPublication.length) throw new HttpError(409, "not_installable", `Publication refused: ${signingAtPublication.join(" ")}`);
         if (body.confirm !== r.version) throw new HttpError(400, "confirmation_required", `Type the version (${r.version}) to confirm.`);
         // Every required check BEFORE anything changes: the stored bytes must still be exactly the reviewed bytes.
         // A failed check changes nothing, so the previous release stays current and downloadable.
