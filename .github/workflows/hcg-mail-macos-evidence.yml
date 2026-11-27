@@ -1,0 +1,174 @@
+# HCG Mail for macOS (Apple silicon) 1.0.0-beta.1: HCG Store's own verification of HCG Mail's CI run (read-only).
+#
+# 1. Reports the run's state, jobs and artifacts (it may still be running).
+# 2. When the signed files exist, verifies them on an Apple silicon runner, independently of the run's own evidence:
+#    SHA-256 and size against the run's HCG Store draft and Release Passports; Release Passports against HCG Repo's
+#    schema; embedded version, build and architecture; Developer ID signatures (app and installer); stapled
+#    notarization tickets; Gatekeeper acceptance of the quarantined download; the same app inside the ZIP and the PKG;
+#    a short launch. Files rejected earlier (unsigned / broken signature) are refused by SHA-256.
+# 3. Writes a CANDIDATE import request (release-imports/…) pinning the exact SHA-256s, for review and commit.
+# Nothing is sent to the production Store; no secret is used.
+name: HCG Mail macOS evidence
+
+on:
+  push:
+    branches: [claude/hcg-mail-macos]
+    paths: [".github/workflows/hcg-mail-macos-evidence.yml"]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "HCG Mail macos-release.yml run ID"
+        required: true
+        default: "45961684897"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_REPO: F1r3srp3nt/HCG-Mail
+  RUN_ID: ${{ inputs.run_id || '45961684897' }}
+  VERSION: 1.0.0-beta.1
+  HCG_REPO_SCHEMA_COMMIT: 0c25d955fe37accb9c83cde4632637b6dfcd623c
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.s.outputs.ready }}
+    steps:
+      - id: s
+        name: Run state, jobs and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=$(gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID")
+          jq '{name, path, event, status, conclusion, head_branch, head_sha, run_attempt, created_at, updated_at}' <<<"$run" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID/jobs?per_page=50" --jq '.jobs[] | "job: \(.name) | \(.status) | \(.conclusion)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          arts=$(gh api "repos/$SOURCE_REPO/actions/runs/$RUN_ID/artifacts?per_page=100")
+          jq -r '.artifacts[] | "artifact: \(.name) | \(.size_in_bytes) bytes | expired=\(.expired)"' <<<"$arts" | tee -a "$GITHUB_STEP_SUMMARY"
+          has() { jq -e --arg n "$1" '[.artifacts[] | select(.name == $n and .expired == false)] | length == 1' <<<"$arts" >/dev/null; }
+          if has "hcg-mail-macos-$VERSION" && has hcg-mail-macos-release-manifest && has hcg-mail-macos-signing-evidence; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"; echo "READY: signed files, manifest and signing evidence exist." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"; echo "NOT READY: the signed files, release manifest or signing evidence are not available yet." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  verify:
+    needs: status
+    if: needs.status.outputs.ready == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: web-hcg-store/release-imports }
+      - uses: actions/checkout@v4
+        with: { repository: F1r3srp3nt/hcg-repo, ref: '${{ env.HCG_REPO_SCHEMA_COMMIT }}', path: hcg-repo, sparse-checkout: docs/schemas }
+      - uses: actions/download-artifact@v4
+        with: { repository: '${{ env.SOURCE_REPO }}', run-id: '${{ env.RUN_ID }}', github-token: '${{ secrets.HCG_IMPORT_TOKEN || github.token }}', name: 'hcg-mail-macos-${{ env.VERSION }}', path: '${{ runner.temp }}/files' }
+      - uses: actions/download-artifact@v4
+        with: { repository: '${{ env.SOURCE_REPO }}', run-id: '${{ env.RUN_ID }}', github-token: '${{ secrets.HCG_IMPORT_TOKEN || github.token }}', name: hcg-mail-macos-release-manifest, path: '${{ runner.temp }}/draft' }
+      - uses: actions/download-artifact@v4
+        with: { repository: '${{ env.SOURCE_REPO }}', run-id: '${{ env.RUN_ID }}', github-token: '${{ secrets.HCG_IMPORT_TOKEN || github.token }}', name: hcg-mail-macos-signing-evidence, path: '${{ runner.temp }}/signing' }
+      - name: Files, draft, passports and the rejected list
+        shell: bash {0}
+        run: |
+          set -u; fail=0; note() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }; bad() { note "FAIL $1"; fail=1; }
+          cd "$RUNNER_TEMP"; sw_vers; uname -m
+          note "## Files"
+          ls -l files draft draft/passports || true
+          python3 -m pip install --quiet --break-system-packages jsonschema==4.23.0 || python3 -m pip install --quiet jsonschema==4.23.0
+          python3 - "$GITHUB_WORKSPACE/hcg-repo/docs/schemas/release-passport-v1.schema.json" "$GITHUB_WORKSPACE/web-hcg-store/release-imports/rejected-artifacts.json" <<'PY' || fail=1
+          import hashlib, json, os, sys, jsonschema
+          schema = json.load(open(sys.argv[1])); rejected = {r["sha256"]: r for r in json.load(open(sys.argv[2]))["rejected"]}
+          draft = json.load(open("draft/store-release-draft.json")); ok = True
+          def h(p, a): return hashlib.new(a, open(p, "rb").read()).hexdigest()
+          rel = draft["release"]
+          print(f"draft release: {rel['productId']}/{rel['editionId']} {rel['version']} build {rel['build']} channel {rel['channel']} distribution {rel['distribution']} eligibility {rel['eligibility']}")
+          if (rel["productId"], rel["editionId"], rel["channel"], rel["distribution"]) != ("hcg-mail", "macos-desktop", "beta", "free"): print("FAIL draft identity"); ok = False
+          names = sorted(os.listdir("files"))
+          if sorted(a["fileName"] for a in draft["artifacts"]) != names: print(f"FAIL files {names} vs draft"); ok = False
+          for a in draft["artifacts"]:
+              p = os.path.join("files", a["fileName"]); s256 = h(p, "sha256")
+              line = f"{a['fileName']}: {os.path.getsize(p)} bytes sha256 {s256} {a['platform']}/{','.join(a['architectures'])} {a['format']} kind {a['kind']} signing {a['signing']['status']}"
+              if s256 in rejected: print("FAIL REJECTED ARTIFACT " + line); ok = False; continue
+              if os.path.getsize(p) != a["sizeBytes"] or s256 != a["sha256"]: print("FAIL draft mismatch " + line); ok = False
+              pp = json.load(open(os.path.join("draft", "passports", a["fileName"] + ".passport.json")))
+              try: jsonschema.validate(pp, schema); valid = "valid"
+              except jsonschema.ValidationError as e: valid = f"INVALID: {e.message}"; ok = False
+              pa = pp["artifact"]
+              if (pa["size"], pa["sha256"], pa["sha512"]) != (os.path.getsize(p), s256, h(p, "sha512")): print("FAIL passport mismatch " + a["fileName"]); ok = False
+              if pp["source"]["commit"] != a["sourceCommit"] or str(pp["build"]["run_id"]) != os.environ["RUN_ID"]: print("FAIL passport commit/run " + a["fileName"]); ok = False
+              print(f"PASS {line}; passport {valid}, commit {pp['source']['commit'][:12]}, run {pp['build']['run_id']}")
+          sys.exit(0 if ok else 1)
+          PY
+          exit $fail
+      - name: Signatures, notarization, Gatekeeper, versions, architecture, launch (Apple silicon)
+        shell: bash {0}
+        run: |
+          set -u; fail=0; note() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }; bad() { note "FAIL $1"; fail=1; }
+          cd "$RUNNER_TEMP"
+          zip=$(ls files/*.zip | head -1); pkg=$(ls files/*.pkg | head -1)
+          note "## $(basename "$zip")"
+          # As a customer downloads it: quarantine the ZIP, extract with ditto (the quarantine propagates).
+          xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$zip"
+          mkdir -p zipx && ditto -x -k "$zip" zipx
+          app=$(find zipx -maxdepth 2 -name '*.app' -type d | head -1)
+          pl="$app/Contents/Info.plist"; v=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$pl"); b=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$pl")
+          id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$pl"); exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$pl")"
+          note "bundle: $id version $v build $b minimum $(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$pl" 2>/dev/null) arch $(lipo -archs "$exe")"
+          [ "$id" = com.hakmicapitalgroup.hcgmail ] || bad "bundle identifier $id"
+          [ "$(lipo -archs "$exe")" = arm64 ] || bad "architecture $(lipo -archs "$exe")"
+          codesign -dvvv "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|Identifier|Timestamp|Runtime Version|Sealed Resources|Info.plist|Signature|flags)' | tee -a "$GITHUB_STEP_SUMMARY"
+          codesign -dvvv "$app" 2>&1 | grep -q '^Authority=Developer ID Application:' || bad "app is not signed with a Developer ID Application certificate"
+          codesign -dvvv "$app" 2>&1 | grep -q 'flags=.*runtime' || bad "hardened runtime flag missing"
+          codesign --verify --deep --strict --verbose=2 "$app" >codesign.txt 2>&1 && note "PASS codesign --verify --deep --strict" || { cat codesign.txt; bad "codesign --verify --deep --strict"; }
+          out=$(spctl -a -vvv -t exec "$app" 2>&1); note "spctl (quarantined app): $out"
+          echo "$out" | grep -q 'accepted' && echo "$out" | grep -q 'Notarized Developer ID' || bad "Gatekeeper did not accept the app as Notarized Developer ID"
+          xcrun stapler validate "$app" >st.txt 2>&1 && note "PASS app notarization ticket stapled" || { cat st.txt; bad "no stapled ticket on the app"; }
+          note "## $(basename "$pkg")"
+          xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$pkg"
+          out=$(pkgutil --check-signature "$pkg" 2>&1); note "$out"
+          echo "$out" | grep -q 'Developer ID Installer:' && echo "$out" | grep -qi 'signed by a developer certificate issued by Apple for distribution\|Notarization: trusted' || bad "PKG is not signed with a trusted Developer ID Installer certificate"
+          out=$(spctl -a -vvv -t install "$pkg" 2>&1); note "spctl (installer): $out"
+          echo "$out" | grep -q 'accepted' && echo "$out" | grep -q 'Notarized Developer ID' || bad "Gatekeeper did not accept the installer as Notarized Developer ID"
+          xcrun stapler validate "$pkg" >st2.txt 2>&1 && note "PASS installer notarization ticket stapled" || { cat st2.txt; bad "no stapled ticket on the installer"; }
+          pkgutil --expand "$pkg" pkgx && for d in pkgx/Distribution pkgx/*/PackageInfo; do [ -f "$d" ] && grep -oE '(hostArchitectures|install-location|version|os-version min)="[^"]*"' "$d" | sort -u | sed 's/^/  /' | tee -a "$GITHUB_STEP_SUMMARY"; done
+          for s in pkgx/*/Scripts pkgx/Scripts; do [ -e "$s" ] && note "installer scripts present: $(ls "$s" | tr '\n' ' ')"; done
+          payload=$(find pkgx -name Payload | head -1); mkdir -p payload && (cd payload && cat "../$payload" | gunzip -dc | cpio -i --quiet 2>/dev/null || aa extract -i "../$payload" 2>/dev/null || true)
+          papp=$(find payload -maxdepth 3 -name '*.app' -type d | head -1)
+          if [ -n "$papp" ]; then
+            diff -rq "$app" "$papp" >diff.txt 2>&1 && note "PASS the PKG installs the same HCG Mail.app as the ZIP (every file identical)" || { head -20 diff.txt | tee -a "$GITHUB_STEP_SUMMARY"; bad "ZIP and PKG apps differ"; }
+          else bad "no app in the installer payload"; fi
+          note "## Launch (the notarized app, quarantine cleared as after the first Open)"
+          xattr -dr com.apple.quarantine "$app"; "$exe" >launch.log 2>&1 & pid=$!; sleep 20
+          if kill -0 $pid 2>/dev/null; then note "PASS running after 20 s"; kill $pid; else wait $pid; bad "exited early ($?)"; head -40 launch.log; fi
+          exit $fail
+      - name: Candidate import request (pins the verified bytes; review before committing)
+        run: |
+          python3 - <<'PY'
+          import json, os
+          d = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "draft", "store-release-draft.json")))
+          run = int(os.environ["RUN_ID"]); commit = d["artifacts"][0]["sourceCommit"]
+          req = {
+            "$comment": f"HCG Mail 1.0.0-beta.1 for macOS (Apple silicon): Developer ID signed, notarized and stapled by HCG Mail's CI run {run}; verified independently by HCG Store's hcg-mail-macos-evidence workflow. Imported unchanged; expect.sha256 pins the exact bytes. Free, permanently, no account (edition pricingModel free, HCG_STORE_ANONYMOUS_FREE_PRODUCTS=hcg-mail).",
+            "format": "hcg.store.release-import/1",
+            "source": {"repository": "F1r3srp3nt/HCG-Mail", "commit": commit, "runId": run, "filesArtifact": "hcg-mail-macos-1.0.0-beta.1", "draftArtifact": "hcg-mail-macos-release-manifest"},
+            "expect": {"productId": "hcg-mail", "editionId": "macos-desktop", "version": d["release"]["version"], "build": d["release"]["build"], "channel": "beta", "distribution": "free",
+                       "files": len(d["artifacts"]), "sha256": {a["fileName"]: a["sha256"] for a in d["artifacts"]}},
+            "requestedEligibility": "public",
+            "knownLimitations": ["<review: from the run's release manifest and HCG Store's verification>"],
+          }
+          os.makedirs("candidate", exist_ok=True)
+          json.dump(req, open("candidate/hcg-mail-macos-1.0.0-beta.1.json", "w"), indent=2)
+          print("CANDIDATE_REQUEST_BEGIN"); print(json.dumps(req, indent=2)); print("CANDIDATE_REQUEST_END")
+          print("RELEASE_MANIFEST_BEGIN"); print(open(os.path.join(os.environ["RUNNER_TEMP"], "draft", "release-manifest.json")).read()); print("RELEASE_MANIFEST_END")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hcg-mail-macos-store-verification
+          path: |
+            candidate
+            ${{ runner.temp }}/draft
+          retention-days: 90

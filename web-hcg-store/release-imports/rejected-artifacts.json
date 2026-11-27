@@ -1,0 +1,7 @@
+{
+  "$comment": "Files HCG Store verified and REFUSED for publication. The import workflow and the macOS evidence workflow refuse any file with one of these SHA-256 values, whatever its name.",
+  "rejected": [
+    { "sha256": "72029dbd965e4d9cda1f429b55552810eb15a71fc1b0e34cfc42d4fd79610a91", "fileName": "HCG.Mail.app.zip", "source": "F1r3srp3nt/HCG-Mail release v1.0.0-beta.1-macos-arm64", "reason": "Broken ad-hoc signature (codesign --verify: code has no resources but signature indicates they must be present); not notarized; Gatekeeper rejects it. HCG Store evidence runs 45940033340 and 45940124443, 27 Nov 2026." },
+    { "sha256": "84dc5b50f6ac59bc7f6e4b62f1c626ce548b0a7f4171a433f4c499a67013cc00", "fileName": "HCG.Mail-1.0.0-osx-arm64.pkg", "source": "F1r3srp3nt/HCG-Mail release v1.0.0-beta.1-macos-arm64", "reason": "Unsigned installer, not notarized; Gatekeeper rejects it (no usable signature). HCG Store evidence runs 45940033340 and 45940124443, 27 Nov 2026." }
+  ]
+}
