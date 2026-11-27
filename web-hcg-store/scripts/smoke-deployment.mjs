@@ -67,7 +67,7 @@ async function getFollow(path, hops = 3) {
 }
 
 function isAppShell(html) {
-  return /<div id="root"><\/div>/.test(html) && /<title>HCG Store<\/title>/.test(html) && /<script type="module"[^>]+src="\/assets\/index-[\w-]+\.js"/.test(html);
+  return /<div id="root"><\/div>/.test(html) && /<title>(?:[^<]{1,200} · )?HCG Store<\/title>/.test(html) && /<script type="module"[^>]+src="\/assets\/index-[\w-]+\.js"/.test(html);
 }
 
 async function checkOnce() {
@@ -83,7 +83,7 @@ async function checkOnce() {
     if (readme.length) fail("homepage is not the repository README", `found ${readme.map(String).join(", ")}`);
     else pass("homepage is not the repository README");
     if (isAppShell(home.body)) pass("homepage is the built HCG Store app shell");
-    else fail("homepage is the built HCG Store app shell", "missing #root, <title>HCG Store</title> or the /assets/index-*.js module script");
+    else fail("homepage is the built HCG Store app shell", "missing #root, an HCG Store <title> or the /assets/index-*.js module script");
     if (/src="\/src\/main\.tsx"/.test(home.body)) fail("homepage is built, not raw source", "references /src/main.tsx (unbuilt index.html)");
   }
 
