@@ -26,7 +26,11 @@ describe("migration from the deployed schema (v7)", () => {
     const r = checkMigration({ backup });
     expect(r.problems).toEqual([]);
     expect(r).toMatchObject({ ok: true, versionBefore: 7, versionAfter: MIGRATION_COUNT, integrity: "ok", foreignKeyProblems: 0, publishingAuditIntact: true });
-    expect(MIGRATION_COUNT).toBe(11);
+    expect(MIGRATION_COUNT).toBe(12);
+    // 12: package-manager provider and commerce tables start empty; existing package-manager credentials are kept.
+    expect(r.tables.repo_packages).toEqual({ before: null, after: 0 });
+    expect(r.tables.repo_download_grants).toEqual({ before: null, after: 0 });
+    expect(r.tables.repo_tokens?.after).toBe(r.tables.repo_tokens?.before);
     expect(r.tables.pub_current).toEqual({ before: null, after: 0 });
     expect(r.tables.sessions).toEqual({ before: 3, after: 3 });
     expect(r.tables.pub_audit).toEqual({ before: 3, after: 3 });

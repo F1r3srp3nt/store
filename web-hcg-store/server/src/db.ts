@@ -348,6 +348,110 @@ const MIGRATIONS: string[] = [
   // catalogue's current release) and whether to supersede the previous compatible release; recorded with the draft,
   // applied only by the person who publishes. Draft products' descriptive fields live in pub_products.metadata (10).
   `ALTER TABLE pub_releases ADD COLUMN publication_request TEXT;`,
+  // 12: Sileo / Zebra payment provider (sileo.ts) and the commerce administration around it (commerce.ts).
+  // - Package-manager credentials: a public reference (pms_…) for the account page, an expiry, last use, the device
+  //   model and a keyed hash of the device identifier (HMAC with the Store's secret key; the identifier itself is
+  //   never stored), and why a credential was revoked.
+  // - Download grants: single use, short-lived, bound to one artifact and its SHA-256, the package version and
+  //   architecture asked for, and the credential that asked. Only the grant's hash is stored.
+  // - Package-manager checkouts: the checkout, the credential and package it came from, and the hash of the one-time
+  //   page link handed to Sileo.
+  // - Commerce: provider profile and gates (commerce_settings), the repository-package distribution channel
+  //   (repo_packages), third-party developers, product ownership and commission agreements, and an audit trail.
+  `ALTER TABLE repo_tokens ADD COLUMN ref TEXT;
+   ALTER TABLE repo_tokens ADD COLUMN device_hash TEXT;
+   ALTER TABLE repo_tokens ADD COLUMN device_model TEXT;
+   ALTER TABLE repo_tokens ADD COLUMN client TEXT;
+   ALTER TABLE repo_tokens ADD COLUMN last_used_at INTEGER;
+   ALTER TABLE repo_tokens ADD COLUMN expires_at INTEGER;
+   ALTER TABLE repo_tokens ADD COLUMN revoked_reason TEXT;
+   UPDATE repo_tokens SET ref = 'pms_legacy_' || rowid WHERE ref IS NULL;
+   CREATE UNIQUE INDEX repo_tokens_ref ON repo_tokens(ref);
+   CREATE INDEX repo_tokens_sub ON repo_tokens(sub);
+   CREATE TABLE repo_download_grants (
+     id_hash TEXT PRIMARY KEY,
+     token_hash TEXT NOT NULL,
+     sub TEXT NOT NULL,
+     artifact_id TEXT NOT NULL,
+     sha256 TEXT NOT NULL,
+     package_id TEXT NOT NULL,
+     version TEXT NOT NULL,
+     architecture TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     expires_at INTEGER NOT NULL,
+     used_at INTEGER
+   );
+   CREATE INDEX repo_download_grants_expiry ON repo_download_grants(expires_at);
+   ALTER TABLE checkout_sessions ADD COLUMN channel TEXT NOT NULL DEFAULT 'web';
+   ALTER TABLE purchases ADD COLUMN channel TEXT NOT NULL DEFAULT 'web';
+   ALTER TABLE purchases ADD COLUMN version_at_purchase TEXT;
+   ALTER TABLE checkout_sessions ADD COLUMN version_at_purchase TEXT;
+   CREATE TABLE pm_checkouts (
+     checkout_id TEXT PRIMARY KEY,
+     token_hash TEXT NOT NULL,
+     package_id TEXT NOT NULL,
+     link_hash TEXT NOT NULL UNIQUE,
+     link_expires_at INTEGER NOT NULL,
+     completed_page_at INTEGER,
+     created_at INTEGER NOT NULL
+   );
+   CREATE TABLE commerce_settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL,
+     revision INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL,
+     updated_by TEXT
+   );
+   CREATE TABLE repo_packages (
+     package_id TEXT PRIMARY KEY,
+     product_id TEXT NOT NULL,
+     edition_id TEXT,
+     status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'suspended')),
+     access TEXT NOT NULL CHECK (access IN ('free', 'account', 'paid')),
+     architectures TEXT NOT NULL,
+     min_ios TEXT,
+     max_ios TEXT,
+     update_policy TEXT NOT NULL CHECK (update_policy IN ('all-updates', 'same-major')),
+     repository TEXT NOT NULL,
+     revision INTEGER NOT NULL DEFAULT 1,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL,
+     updated_by TEXT NOT NULL
+   );
+   CREATE TABLE developers (
+     id TEXT PRIMARY KEY,
+     display_name TEXT NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'suspended')),
+     onboarding TEXT NOT NULL DEFAULT '{}',
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL,
+     updated_by TEXT NOT NULL
+   );
+   CREATE TABLE product_developers (
+     product_id TEXT PRIMARY KEY,
+     developer_id TEXT NOT NULL REFERENCES developers(id),
+     since INTEGER NOT NULL,
+     updated_by TEXT NOT NULL
+   );
+   CREATE TABLE developer_agreements (
+     id TEXT PRIMARY KEY,
+     developer_id TEXT NOT NULL REFERENCES developers(id),
+     commission_bps INTEGER NOT NULL CHECK (commission_bps BETWEEN 0 AND 10000),
+     effective_from INTEGER NOT NULL,
+     effective_to INTEGER,
+     status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'ended')),
+     note TEXT,
+     created_at INTEGER NOT NULL,
+     created_by TEXT NOT NULL
+   );
+   CREATE TABLE commerce_audit (
+     seq INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     actor TEXT NOT NULL,
+     action TEXT NOT NULL,
+     target TEXT,
+     detail TEXT
+   );`,
 ];
 
 /**

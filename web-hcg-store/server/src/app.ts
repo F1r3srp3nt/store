@@ -16,8 +16,11 @@
  *   GET  /api/v1/repo/products/:key/access     access state for HCG Repo product pages (CORS)
  *   GET  /api/public/v1/release-resolution/:product   current approved release and how to get it (public, CORS; no URLs to files)
  *   GET  /api/public/v1/published                      every product's currently published releases (public, CORS; metadata only)
- *   /repo-api/v1/sileo/*                       Sileo payment-provider API (see sileo.ts)
- *   GET  /repo-api/v1/files/:signed            short-lived file URL issued to Sileo
+ *   /api/sileo/v1/*                            Sileo / Zebra payment provider (sileo.ts); /repo-api/v1/sileo/* is an alias
+ *   GET  /api/v1/account/package-managers      the account's Sileo / Zebra connections
+ *   POST /api/v1/account/package-managers/:ref/revoke · /revoke-all
+ *   GET  /api/v1/account/receipts/:purchaseId  a purchase receipt (the account's own)
+ *   /api/v1/commerce/*, /api/v1/repo/packages  commerce administration and the HCG Repo package contract (commerce-admin.ts)
  */
 import { resolveRelease, ResolutionError } from "./release-resolution";
 import { productHead, withProductHead } from "./product-head";
@@ -37,7 +40,10 @@ import { currentReleaseOf, findArtifact, findByRepoKey, findProduct, type Protec
 import { getProfile } from "./profiles";
 import { createPublishing } from "./publishing";
 import { SessionStore, type Session } from "./sessions";
-import { handleSileo } from "./sileo";
+import { completePackageManagerLogin, LEGACY_SILEO_BASE, packageManagersOf, revokePackageManager, SILEO_BASE, sileoRoute, type SileoCtx } from "./sileo";
+import { Commerce, majorOf } from "./commerce";
+import { commerceAdminRoute } from "./commerce-admin";
+import type { CheckoutSession } from "./payments";
 
 /** HCG's account portal, where an account's HCG licences are managed (main-site handoff, /features links.account). */
 const HCG_ACCOUNT_URL = "https://beta.hakmicapitalgroup.com/client-portal";
@@ -62,6 +68,7 @@ export interface StoreApp {
   publishing: ReturnType<typeof createPublishing>;
   sessions: SessionStore;
   ledger: PaymentLedger;
+  commerce: Commerce;
   deps: AppDeps;
 }
 
@@ -73,6 +80,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
   const ledger = new PaymentLedger(db, registry, authority, now, deps.outbox ?? null);
   const paymentsReady = cfg.paymentProvider !== "none" && ledger.canFulfil && !!connect;
   const accessDeps: AccessDeps = { cfg, registry, authority, sessions, paymentsReady };
+  const commerce = new Commerce(db, cfg, registry, now);
   const staticRoot = cfg.staticDir ? resolve(cfg.staticDir) : "";
 
   const currentSession = (req: IncomingMessage): Session | null => sessions.fromCookie(parseCookies(req)[sessions.cookieName]);
@@ -169,8 +177,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     });
     const setCookie = sessions.cookie(id, cfg.sessionAbsoluteSeconds);
     if (attempt.purpose === "sileo") {
-      // The Sileo flow finishes on its own page; the browser session is not kept for it.
-      return handleSileo.completeLogin(sileoCtx, res, session, attempt.purpose_data);
+      // The package-manager flow ends at its sileo:// callback; no browser cookie is set for it.
+      return completePackageManagerLogin(sileoCtx, res, session, attempt.purpose_data);
     }
     redirect(res, safeReturnTo(attempt.return_to), { "set-cookie": setCookie });
   }
@@ -353,21 +361,91 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         status: p.status,
         currentPeriodEnd: p.current_period_end,
         createdAt: p.created_at,
+        updatedAt: p.updated_at,
         testOnly: offer?.testOnly ?? false,
+        /** Where the purchase was made: the Store website or a package manager (Sileo, Zebra). One history for both. */
+        channel: p.channel === "package-manager" ? "package-manager" : "web",
+        receiptNumber: p.id,
+        refund: p.status === "refunded" ? "refunded" : p.status === "disputed" ? "disputed" : "none",
+        versionAtPurchase: p.version_at_purchase,
       };
     });
-    const devices = (db.prepare("SELECT created_at FROM repo_tokens WHERE sub = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 20").all(session.sub) as { created_at: number }[])
-      .map((d) => ({ kind: "sileo", label: "Sileo (HCG Repo)", connectedAt: d.created_at }));
+    const packageManagers = packageManagersOf(sileoCtx, session.sub);
+    const devices = packageManagers
+      .filter((d) => d.status === "active")
+      .map((d) => ({ kind: "sileo", label: `${d.client} (HCG Repo)${d.deviceModel ? ` on ${d.deviceModel}` : ""}`, connectedAt: d.connectedAt, ref: d.ref, deviceModel: d.deviceModel, lastUsedAt: d.lastUsedAt }));
+    // Repository packages the account may download, with the newest approved version it is eligible for. HCG Store does
+    // not know what is installed on a device, so this is "available to your account", never "installed".
+    const packageUpdates = [] as { packageId: string; productId: string; editionId: string | null; name: string; latestVersion: string; eligible: boolean; policy: string }[];
+    for (const c of commerce.channels().filter((x) => x.status === "active" && x.access !== "free")) {
+      const product = findProduct(registry, c.productId);
+      const entry = product && owned.find((o) => o.productId === product.id && o.editionId === c.editionId);
+      if (!product || !entry) continue;
+      const rel = currentReleaseOf(registry.catalogue, product);
+      const latest = rel?.version ?? registry.published?.publishedFor(product.id, c.editionId).map((f) => registry.published?.publishedMeta(f.id)?.version).find(Boolean) ?? null;
+      if (!latest) continue;
+      const bought = purchases.filter((x) => x.productId === product.id && x.editionId === c.editionId && x.refund === "none" && x.versionAtPurchase);
+      const eligible = c.updatePolicy === "all-updates" || !bought.length || bought.some((x) => majorOf(x.versionAtPurchase!) === majorOf(latest));
+      packageUpdates.push({ packageId: c.packageId, productId: product.id, editionId: c.editionId, name: `${product.name}${entry.editionName ? ` ${entry.editionName}` : ""}`, latestVersion: latest, eligible, policy: c.updatePolicy });
+    }
     return {
       owned,
       purchases,
       subscriptions: purchases.filter((p) => p.kind === "subscription"),
       invoices: { available: false, items: [] as unknown[], message: "HCG Store has not issued any invoices. Live payments are not switched on." },
       devices,
+      packageManagers,
+      packageUpdates,
       devicesNote: "A connected package manager is not an installation. HCG Store does not know which apps are installed on your devices, so it shows no install or update status.",
       ownershipUnavailable: unavailable,
       downloadsMessage: cfg.protectedDownloads || cfg.freeDownloads ? null : DOWNLOADS_NOT_AVAILABLE,
     };
+  }
+
+  // ---------------------------------------------------------------- account: package managers and receipts
+
+  async function account(req: IncomingMessage, res: ServerResponse, p: string, m: string) {
+    const fresh = await freshSession(req);
+    if (fresh.unavailable) return errorJson(res, 503, "hcg_unavailable", "Your account could not be loaded right now. Try again shortly.");
+    if (!fresh.session) return errorJson(res, 401, "sign_in_required", "Sign in with HCG Connect.", fresh.ended ? { "set-cookie": sessions.clearCookie() } : {});
+    const s = fresh.session;
+    let match: RegExpExecArray | null;
+    if (p === "/api/v1/account/package-managers" && m === "GET") return json(res, 200, { packageManagers: packageManagersOf(sileoCtx, s.sub) });
+    if ((match = /^\/api\/v1\/account\/package-managers\/(pms_[A-Za-z0-9_-]{6,40})\/revoke$/.exec(p)) && m === "POST") {
+      assertSameOrigin(req, cfg.publicOrigin);
+      const ok = revokePackageManager(sileoCtx, { ref: match[1]!, sub: s.sub }, "revoked-by-account-holder", s.sub);
+      if (!ok) return errorJson(res, 404, "not_found", "This connection is not active.");
+      return json(res, 200, { revoked: true, packageManagers: packageManagersOf(sileoCtx, s.sub) });
+    }
+    if (p === "/api/v1/account/package-managers/revoke-all" && m === "POST") {
+      assertSameOrigin(req, cfg.publicOrigin);
+      let n = 0;
+      for (const d of packageManagersOf(sileoCtx, s.sub).filter((x) => x.status === "active")) if (revokePackageManager(sileoCtx, { ref: d.ref, sub: s.sub }, "revoked-by-account-holder", s.sub)) n++;
+      return json(res, 200, { revoked: n, packageManagers: packageManagersOf(sileoCtx, s.sub) });
+    }
+    if ((match = /^\/api\/v1\/account\/receipts\/(pur_[A-Za-z0-9_-]{10,40})$/.exec(p)) && m === "GET") {
+      const pur = ledger.purchasesFor(s.sub).find((x) => x.id === match![1]);
+      if (!pur) return errorJson(res, 404, "not_found", "Not found.");
+      const offer = registry.offers.find((o) => o.id === pur.offer_id);
+      const product = offer ? findProduct(registry, offer.productId) : undefined;
+      return json(res, 200, {
+        receiptNumber: pur.id,
+        issuedBy: "HCG Store (Hakmi Capital Group)",
+        testMode: pur.provider === "test" || !!offer?.testOnly,
+        note: pur.provider === "test" ? "TEST purchase: no money moved. This is not a tax invoice." : "Purchase confirmation. HCG Store has not issued tax invoices yet.",
+        account: { name: s.name, email: s.email },
+        item: { title: offer?.title ?? pur.offer_id, product: product?.name ?? null, editionId: offer?.editionId ?? null, kind: pur.kind },
+        amount: pur.amount, currency: pur.currency,
+        status: pur.status,
+        refund: pur.status === "refunded" ? "refunded" : pur.status === "disputed" ? "disputed" : "none",
+        channel: pur.channel === "package-manager" ? "package-manager" : "web",
+        paymentReference: `${pur.provider}:${pur.provider_payment_id.slice(-8)}`,
+        purchasedAt: pur.created_at,
+        updatedAt: pur.updated_at,
+        currentPeriodEnd: pur.current_period_end,
+      });
+    }
+    return errorJson(res, 404, "not_found", "Not found.");
   }
 
   // ---------------------------------------------------------------- downloads
@@ -471,25 +549,10 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     if (req.method === "POST") {
       assertSameOrigin(req, cfg.publicOrigin);
       const body = await readJson<{ outcome?: string }>(req);
-      const map: Record<string, PaymentEventType> = { pay: "checkout.completed", fail: "checkout.failed", pending: "checkout.pending" };
-      const type = map[body.outcome ?? ""];
-      if (!type) return errorJson(res, 400, "bad_outcome", "Unknown outcome.");
-      {
-        const event = {
-          id: `evt_${randomToken(12)}`,
-          type,
-          checkoutId: chk.id,
-          paymentId: `pay_test_${chk.id}`,
-          amount: chk.amount,
-          currency: chk.currency,
-          ...(offer.kind === "subscription" ? { periodEnd: now() + (offer.interval === "year" ? 365 : 30) * 86400_000 } : {}),
-        };
-        const raw = JSON.stringify(event);
-        const sig = signTestEvent(cfg.testPaymentWebhookSecret!, raw, now());
-        // The provider's webhook is the only thing that can grant access. The redirect below cannot.
-        if (deps.deliverTestWebhook) await deps.deliverTestWebhook(raw, sig);
-        else applyTestWebhook(raw, sig);
-      }
+      const outcome = body.outcome;
+      if (outcome !== "pay" && outcome !== "fail" && outcome !== "pending") return errorJson(res, 400, "bad_outcome", "Unknown outcome.");
+      // The provider's webhook is the only thing that can grant access. The redirect below cannot.
+      await simulateTestPayment(chk, outcome);
       return redirect(res, `/checkout/return?checkout=${encodeURIComponent(chk.id)}`);
     }
     html(
@@ -506,6 +569,26 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       // which the CSRF check requires.
       { "referrer-policy": "same-origin" },
     );
+  }
+
+  /** The TEST provider reporting an outcome: a signed event delivered to the webhook (in process unless injected). */
+  async function simulateTestPayment(chk: CheckoutSession, outcome: "pay" | "fail" | "pending" | "cancel") {
+    if (cfg.paymentProvider !== "test") throw new HttpError(404, "not_found", "Not found.");
+    const offer = registry.offers.find((o) => o.id === chk.offerId)!;
+    const map: Record<typeof outcome, PaymentEventType> = { pay: "checkout.completed", fail: "checkout.failed", pending: "checkout.pending", cancel: "checkout.canceled" };
+    const event = {
+      id: `evt_${randomToken(12)}`,
+      type: map[outcome],
+      checkoutId: chk.id,
+      paymentId: `pay_test_${chk.id}`,
+      amount: chk.amount,
+      currency: chk.currency,
+      ...(offer.kind === "subscription" ? { periodEnd: now() + (offer.interval === "year" ? 365 : 30) * 86400_000 } : {}),
+    };
+    const raw = JSON.stringify(event);
+    const sig = signTestEvent(cfg.testPaymentWebhookSecret!, raw, now());
+    if (deps.deliverTestWebhook) await deps.deliverTestWebhook(raw, sig);
+    else applyTestWebhook(raw, sig);
   }
 
   function applyTestWebhook(raw: string, signature: string | undefined) {
@@ -574,8 +657,11 @@ export function createStoreApp(deps: AppDeps): StoreApp {
 
   // ---------------------------------------------------------------- router
 
-  const sileoCtx = { cfg, db, registry, sessions, connect, authority, accessDeps, now, startLogin, streamArtifact, freshSession };
   const publishing = createPublishing({ cfg, db, registry, connect, authority, now, freshSession, streamArtifact });
+  const sileoCtx: SileoCtx = {
+    cfg, db, registry, sessions, accessDeps, ledger, commerce, admin: publishing.admin, now, paymentsReady, startLogin, streamArtifact, simulateTestPayment, hasConnect: !!connect,
+  };
+  const commerceCtx = { commerce, sileo: sileoCtx, kit: publishing.admin };
   // Customer delivery of published releases only when publication is on (never in "uploads" mode).
   if (cfg.publishing.publicationEnabled) registry.published = publishing;
 
@@ -596,6 +682,8 @@ export function createStoreApp(deps: AppDeps): StoreApp {
         anonymousFreeProducts: cfg.anonymousFreeProducts,
         // Ship to Store clients (HCG Executable Maker, HCG Store Manager) read this before signing in.
         publishing: cfg.publishing.mode,
+        // Package-manager payment provider: what is in force (the Payment Provider Studio sets it, the server caps it).
+        packageManagerProvider: commerce.effective().availability,
       });
     }
     if (p === "/api/v1/session" && m === "GET") {
@@ -710,8 +798,11 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       return json(res, 200, { format: "hcg.store.published/1", generatedAt: new Date(now()).toISOString(), products }, { ...cors, "cache-control": "public, max-age=60" });
     }
     if (await publishing.route(req, res, url)) return;
-    if (p.startsWith("/repo-api/v1/sileo/")) return handleSileo.route(sileoCtx, req, res, url);
-    if ((match = /^\/repo-api\/v1\/files\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(p)) && m === "GET") return handleSileo.serveFile(sileoCtx, res, match[1]!);
+    if (await commerceAdminRoute(commerceCtx, req, res, url)) return;
+    if (p.startsWith(SILEO_BASE) || p.startsWith(LEGACY_SILEO_BASE)) return sileoRoute(sileoCtx, req, res, url);
+    // The first, signed-URL scheme put account references in the URL; it is retired (single-use grants replace it).
+    if (p.startsWith("/repo-api/v1/files/")) return errorJson(res, 410, "gone", "This download link is no longer valid. Start the download again in your package manager.");
+    if (p.startsWith("/api/v1/account/")) return account(req, res, p, m);
     if (p.startsWith("/api/") || p.startsWith("/auth/") || p.startsWith("/repo-api/")) return errorJson(res, 404, "not_found", "Not found.");
     if (m === "GET" || m === "HEAD") return serveStatic(req, res, p);
     return errorJson(res, 405, "method_not_allowed", "Method not allowed.");
@@ -732,7 +823,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
     }
   }
 
-  return { handle, sessions, ledger, deps, publishing };
+  return { handle, sessions, ledger, commerce, deps, publishing };
 }
 
 export function listen(app: StoreApp, port: number, host: string) {

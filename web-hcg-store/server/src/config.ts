@@ -81,6 +81,14 @@ export interface StoreConfig {
   /** HCG Repo product pages; used for links only. */
   repoBaseUrl: string;
   publishing: PublishingSettings;
+  /** Package-manager payment provider (sileo.ts). Its profile and availability are set in the Payment Provider Studio. */
+  sileo: {
+    /**
+     * HCG_STORE_SILEO_PUBLIC_APPROVED=founder-approved: the Studio may make the provider available to every HCG account.
+     * Without it "public" runs as internal testing (Founder and HCG Store staff only), in test mode too.
+     */
+    publicApproved: boolean;
+  };
 }
 
 /**
@@ -361,6 +369,9 @@ export function parseStoreConfig(env: Env): StoreConfig {
     if (!test && DEVELOPMENT_CLIENT_IDS.includes(id)) problems.push(`HCG_STORE_PUBLISHING_CLIENT_IDS: ${id} is a development client and is refused in production.`);
   }
 
+  const sileoPublic = env.HCG_STORE_SILEO_PUBLIC_APPROVED || undefined;
+  if (sileoPublic !== undefined && sileoPublic !== "founder-approved") problems.push(`HCG_STORE_SILEO_PUBLIC_APPROVED must be "founder-approved" or unset.`);
+
   if (problems.length) throw new ConfigError(problems);
 
   return {
@@ -409,5 +420,6 @@ export function parseStoreConfig(env: Env): StoreConfig {
       devicePolicy: "off",
       founderWebExceptions: env.HCG_STORE_FOUNDER_WEB_EXCEPTIONS === "off" ? "off" : "central-founder",
     },
+    sileo: { publicApproved: sileoPublic === "founder-approved" },
   };
 }

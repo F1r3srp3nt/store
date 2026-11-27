@@ -1936,7 +1936,9 @@ export function createPublishing(deps: PublishingDeps) {
     return { endsAt: b.window.endsAt, releaseId: b.window.releaseId };
   }
 
-  return { route, publishedFor, freePublicFor, freeWindowFor, currentPublishedFor, publishedById, publishedMeta, auditIntact, importRelease, allowedFormats: ALLOWED };
+  // The same identity, CSRF and HCG permission checks for HCG Store's other administration areas (commerce-admin.ts).
+  const admin = { actorOf, assertCsrf, permitted, centralFounder };
+  return { route, publishedFor, freePublicFor, freeWindowFor, currentPublishedFor, publishedById, publishedMeta, auditIntact, importRelease, allowedFormats: ALLOWED, admin };
 }
 
 type ReleaseViewLike = {
