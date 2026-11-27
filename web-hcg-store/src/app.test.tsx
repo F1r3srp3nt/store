@@ -128,11 +128,11 @@ describe("store pages with the shipped catalogue", () => {
     window.localStorage.clear();
   });
 
-  it("collapses homepage sections without eligible content (no releases, news or campaigns exist)", async () => {
+  it("collapses homepage sections without eligible content (no news or campaigns exist; one published release)", async () => {
     renderAt("/");
     await screen.findByRole("heading", { level: 1, name: /HCG Store/ });
-    expect(screen.queryByRole("heading", { name: "New releases" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Recently updated" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "New releases" })).toBeNull(); // no explicit current release in the static catalogue
+    expect(within(screen.getByRole("heading", { name: "Recently updated" }).closest("section")!).getByText("HCG Mail")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
     expect(screen.queryByText("Sponsored")).toBeNull();
     expect(screen.getByRole("heading", { name: "Upcoming technology" })).toBeInTheDocument();
@@ -442,7 +442,7 @@ describe("account and ownership (stubbed HCG Store server)", () => {
   it("on a static host (no account service) makes no account requests and says sign-in is unavailable", async () => {
     server = { session: { configured: true, signedIn: true, user: ALICE } };
     render(
-      <CatalogueStateProvider provider={staticProvider(realCatalogue())}>
+      <CatalogueStateProvider provider={staticProvider(realCatalogue())} live={false}>
         <AccountProvider accountService="none">
           <MemoryRouter initialEntries={["/apps/hcg-terminal"]}>
             <AppRoutes />
@@ -597,3 +597,49 @@ describe("Control Center (web administration)", () => {
   });
 });
 
+
+describe("Launch page (published product with landing content)", () => {
+  const MAIL_RELEASE = "rel-bc6c2096b73a977f";
+  const details = { version: "1.0.0-beta.1", channel: "beta", architectures: ["x64"], platform: "windows", format: "exe", sizeBytes: 119023581, sha256: "0424c7c6a264b66da841e320b2661fdcf9b2d8bf0bf17e3ab1ec92af32202fdf", minimumOs: "Windows 10", signing: "unsigned", publishedAt: 1795757739075 };
+  const mailAccess = (slug: string) => slug === "hcg-mail"
+    ? [access({ productId: "hcg-mail", editionId: "windows-desktop", state: "free", anonymous: true, downloadsAvailable: true, downloadsMessage: "Free download.", artifacts: [{ id: "art-cdf727e41e4fb77d", fileName: "HCGMail.exe", releaseId: MAIL_RELEASE, details }] }),
+       access({ productId: "hcg-mail", editionId: "ios" })]
+    : [];
+  const published = () => {
+    const c = realCatalogue();
+    return { ...c, products: c.products.map((p) => (p.id === "hcg-mail" ? { ...p, currentReleaseId: MAIL_RELEASE } : p)) };
+  };
+
+  it("leads with the brand, the headline, and one download from HCG Store's own endpoint, with its real facts", async () => {
+    server = { session: { configured: true, signedIn: false }, access: mailAccess };
+    const { container } = renderAt("/apps/hcg-mail", published());
+    expect(await screen.findByRole("heading", { level: 1, name: "HCG Mail" })).toBeInTheDocument();
+    expect(screen.getByText("Your inbox. Reimagined.", { selector: ".launch-hero__headline" })).toBeInTheDocument();
+    expect(screen.getByText("A dedicated desktop email experience built for an interconnected future.", { selector: ".launch-hero__tagline" })).toBeInTheDocument();
+    const downloads = await screen.findAllByTestId("launch-download");
+    expect(downloads.length).toBeGreaterThanOrEqual(3); // hero, platform card, bottom (and the sticky bar)
+    for (const d of downloads) expect(d.getAttribute("href")).toBe("/api/v1/downloads/art-cdf727e41e4fb77d");
+    expect(downloads[0]).toHaveTextContent("Download for Windows");
+    expect(downloads[0]).toHaveTextContent("Windows x64 · EXE · 114 MB");
+    expect(container.querySelector(".launch-hero__facts")).toHaveTextContent(/1\.0\.0-beta\.1.*Free.*Windows x64.*114 MB.*None required/);
+    // The unsigned warning is next to the download, not hidden.
+    expect(screen.getAllByText("Not code-signed.").length).toBeGreaterThan(0);
+    // macOS is announced, never offered; nothing links to GitHub or another file host.
+    expect(screen.getAllByText("Coming soon").length).toBeGreaterThan(0);
+    expect(screen.getByText("No download is offered yet.")).toBeInTheDocument();
+    expect([...container.querySelectorAll("a")].some((a) => /github\.com\/.*\/releases|\.exe$|\.pkg$|\.zip$/.test(a.getAttribute("href") ?? ""))).toBe(false);
+    expect(screen.getByTestId("launch-sha256")).toHaveTextContent(details.sha256);
+    // Genuine screenshots only, each with its caption.
+    expect(container.querySelectorAll(".launch-gallery li")).toHaveLength(6);
+    // No ratings, review counts, download statistics or invented prices (the downloads here are the server's).
+    for (const re of FORBIDDEN) expect(container.textContent ?? "").not.toMatch(re);
+  });
+
+  it("without a current release, the product keeps its detail page", async () => {
+    server = { session: { configured: true, signedIn: false }, access: mailAccess };
+    const c = realCatalogue();
+    const { container } = renderAt("/apps/hcg-mail", { ...c, products: c.products.map((p) => (p.id === "hcg-mail" ? { ...p, currentReleaseId: null } : p)) });
+    expect(await screen.findByRole("heading", { level: 1, name: "HCG Mail" })).toBeInTheDocument();
+    expect(container.querySelector(".launch")).toBeNull();
+  });
+});

@@ -159,6 +159,23 @@
       "media": [
         {
           "kind": "screenshot",
+          "src": "media/products/hcg-mail/future-reading-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/future-reading-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "HCG Mail in the dark HCG Future appearance: folders, an inbox of test messages and an HTML message whose remote image was blocked.",
+          "caption": "Reading an HTML message in HCG Future, the dark appearance. Remote images stay blocked until you allow them. Test account and messages from HCG Mail's automated UI tests.",
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/docs/images/future-real-server-html.png\" at 90726ae, rendered by HCG Mail's own automated UI tests (headless Avalonia) with test data only. Resized to WebP; nothing edited.",
+          "platform": null,
+          "appVersion": null
+        },
+        {
+          "kind": "screenshot",
           "src": "media/products/hcg-mail/classic-reading-1440.webp",
           "variants": [
             {
@@ -168,21 +185,79 @@
           ],
           "width": 1440,
           "height": 900,
-          "alt": "HCG Mail desktop window with folders, a message list of sample messages and an open sample message.",
-          "caption": "Desktop app rendered by its automated UI test with sample messages (headless render of the desktop app, not a capture of a particular operating system).",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/classic-reading.png at 13d93a8, rendered by the headless UI test (MainWindowTests). Resized to WebP.",
-          "platform": null
+          "alt": "HCG Mail in the light HCG Classic appearance with folders, a message list of sample messages and an open sample message.",
+          "caption": "HCG Classic, the light appearance, reading a sample message. Rendered by the app's UI tests in development-preview mode (sample messages, not connected to a server).",
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/docs/images/classic-reading.png\" at 90726ae, rendered by HCG Mail's own automated UI tests (headless Avalonia) with test data only. Resized to WebP; nothing edited.",
+          "platform": null,
+          "appVersion": null
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-mail/windows-build-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/windows-build-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "The HCG Mail Windows build in its window, showing the inbox of sample messages in the dark appearance.",
+          "caption": "The Windows build in its own window (run under Wine by the HCG Mail team's checks), development-preview mode with sample messages.",
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/docs/images/windows-build-wine-preview.png\" at 90726ae, rendered by HCG Mail's own automated UI tests (headless Avalonia) with test data only. Resized to WebP; nothing edited.",
+          "platform": "windows",
+          "appVersion": null
         },
         {
           "kind": "screenshot",
           "src": "media/products/hcg-mail/account-setup-1000.webp",
-          "variants": [],
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/account-setup-720.webp",
+              "width": 720
+            }
+          ],
           "width": 1000,
           "height": 760,
-          "alt": "HCG Mail account setup dialog.",
-          "caption": "Account setup dialog, rendered by the automated UI test (headless render of the desktop app, not a capture of a particular operating system).",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/docs/images/account-setup.png at 13d93a8, rendered by the headless UI test (DialogViewModelTests). Resized to WebP.",
-          "platform": null
+          "alt": "HCG Mail account setup dialog with IMAP and SMTP settings and a step-by-step connection test.",
+          "caption": "Adding an account: IMAP and SMTP settings with a step-by-step connection test.",
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/docs/images/account-setup.png\" at 90726ae, rendered by HCG Mail's own automated UI tests (headless Avalonia) with test data only. Resized to WebP; nothing edited.",
+          "platform": null,
+          "appVersion": null
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-mail/appearance-900.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/appearance-450.webp",
+              "width": 450
+            }
+          ],
+          "width": 900,
+          "height": 660,
+          "alt": "HCG Mail appearance settings offering the HCG Future dark skin and the HCG Classic light skin.",
+          "caption": "Appearance settings: HCG Future (dark) or HCG Classic (light), applied instantly.",
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/docs/images/settings-appearance.png\" at 90726ae, rendered by HCG Mail's own automated UI tests (headless Avalonia) with test data only. Resized to WebP; nothing edited.",
+          "platform": null,
+          "appVersion": null
+        },
+        {
+          "kind": "screenshot",
+          "src": "media/products/hcg-mail/first-run-1440.webp",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/first-run-720.webp",
+              "width": 720
+            }
+          ],
+          "width": 1440,
+          "height": 900,
+          "alt": "HCG Mail on first start, welcoming the user and offering to add an email account.",
+          "caption": "First start: connect an existing mailbox over IMAP and SMTP. No HCG account is needed.",
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/docs/images/first-run.png\" at 90726ae, rendered by HCG Mail's own automated UI tests (headless Avalonia) with test data only. Resized to WebP; nothing edited.",
+          "platform": null,
+          "appVersion": null
         }
       ],
       "currentReleaseId": null,
@@ -251,8 +326,19 @@
           "width": 256,
           "height": 256,
           "alt": "",
-          "provenance": "F1r3srp3nt/HCG-Mail Windows-executable-Application/assets/icons/hcg-mail-1024.png at 13d93a8 (the app's icon, also its iOS AppIcon). Resized to WebP.",
-          "kind": "official"
+          "provenance": "F1r3srp3nt/HCG-Mail \"HCG Mail Project/Desktop/assets/icons/hcg-mail-1024.png\" at 90726ae (the commit of the 1.0.0-beta.1 release tags; the app's own icon). Original kept losslessly at assets/products/hcg-mail/icon.webp; resized only.",
+          "kind": "official",
+          "variants": [
+            {
+              "src": "media/products/hcg-mail/icon-128.webp",
+              "width": 128
+            },
+            {
+              "src": "media/products/hcg-mail/icon-512.webp",
+              "width": 512
+            }
+          ],
+          "avif": true
         },
         "cover": {
           "src": "media/products/hcg-mail/banner-2000.webp",
@@ -301,7 +387,57 @@
           "url": "https://github.com/F1r3srp3nt/HCG-Mail/issues"
         }
       ],
-      "documentation": []
+      "documentation": [],
+      "landing": {
+        "headline": "Your inbox. Reimagined.",
+        "tagline": "A dedicated desktop email experience built for an interconnected future.",
+        "features": [
+          {
+            "icon": "sync",
+            "title": "Your mail, in sync",
+            "text": "Connect any standard mailbox over encrypted IMAP. Folders, unread counts and messages stay in step with your provider."
+          },
+          {
+            "icon": "send",
+            "title": "Send with confidence",
+            "text": "Write, reply, reply all and forward through your own provider's encrypted SMTP server."
+          },
+          {
+            "icon": "accounts",
+            "title": "Every account, one window",
+            "text": "Add several email accounts and move between them without signing out."
+          },
+          {
+            "icon": "read",
+            "title": "Read it your way",
+            "text": "HTML messages are shown safely with remote images blocked until you allow them, or switch to plain text."
+          },
+          {
+            "icon": "appearance",
+            "title": "Dark or light",
+            "text": "HCG Future, a graphite workstation look with cyan highlights, or HCG Classic, a clean light design for long reading sessions."
+          },
+          {
+            "icon": "health",
+            "title": "Mail Health",
+            "text": "Test your connection step by step and see how your domain's SPF, DKIM and DMARC records are set up."
+          },
+          {
+            "icon": "organise",
+            "title": "Stay organised",
+            "text": "Archive, flag, mark unread and keep Inbox, Drafts, Sent, Archive, Spam and Trash in order."
+          }
+        ],
+        "upcoming": [
+          {
+            "platform": "macos",
+            "label": "macOS · Apple Silicon (M-series)",
+            "note": "Coming soon. Distribution qualification in progress."
+          }
+        ],
+        "ogImage": "media/products/hcg-mail/og-1200x630.jpg",
+        "principle": "EVERYTHING IS INTERCHANGEABLE."
+      }
     },
     {
       "id": "hcg-one-unleashed",

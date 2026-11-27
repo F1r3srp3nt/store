@@ -25,6 +25,14 @@ in `catalogue/products.json` next to each image.
 | HCG CardX | `icon-256` | The app's own icon set (development project, commit `e6d5545`; the repository is private and is not named publicly) |
 | HCG Clarity | `distil`, `refine`, `presentation` at 720/1440 | Screenshots from the app's automated browser test with synthetic content and the mock AI provider (text marked `[MOCK]`), HCG-Clarity `3a97c07`. Captions say so. |
 
+### HCG Mail launch page (27 November 2026)
+
+| Files in `public/media/products/hcg-mail/` | Source | Notes |
+|---|---|---|
+| `icon-128/256/512` (`.webp` + `.avif`) | `F1r3srp3nt/HCG-Mail` → `HCG Mail Project/Desktop/assets/icons/hcg-mail-1024.png` at `90726ae` (the commit of the 1.0.0-beta.1 release tags) | The app's own icon (the same artwork the Store showed before, now from the release commit and at 512 px for the launch hero). Lossless original: `assets/products/hcg-mail/icon.webp`. Resized only. |
+| `future-reading`, `classic-reading`, `windows-build`, `first-run` (720/1440), `account-setup` (720/1000), `appearance` (450/900) `.webp` | Same repository, `HCG Mail Project/Desktop/docs/images/*.png` at `90726ae` | Genuine screens rendered by HCG Mail's own automated UI tests (headless Avalonia; the Windows build under Wine for `windows-build`) with **test data only** (`example.com`, `hcgmail.test`, "Sample" senders): no personal data, nothing redacted or edited. Captions say so. There are no genuine Mail Health or compose screens, so none are shown. |
+| `og-1200x630.jpg` | The approved HCG Mail banner (`assets/products/hcg-mail/banner.webp`) | Social sharing image: the banner, resized to 1200 px and centred unaltered on the app's deep background (padding only). |
+
 ### Founder-approved product banners and icons (15 November 2026)
 
 Twelve images supplied with the artwork request and identified by their branding (wordmark and emblem),

@@ -30,9 +30,10 @@ describe("storefront configuration", () => {
 });
 
 describe("homepage sections come only from catalogue data", () => {
-  it("shows no new releases or updates while nothing is approved, and lists upcoming products honestly", () => {
+  it("lists only what HCG Store published, and upcoming products honestly", () => {
+    // No explicit catalogue current release yet: the live overlay (HCG Store's own current release) supplies it on the site.
     expect(newReleases(c)).toEqual([]);
-    expect(recentlyUpdated(c)).toEqual([]);
+    expect(recentlyUpdated(c).map((x) => [x.product.id, x.release.version])).toEqual([["hcg-mail", "1.0.0-beta.1"]]);
     const upcoming = upcomingProducts(c).map((p) => p.id);
     expect(upcoming).toContain("hcg-server");
     expect(upcoming).not.toContain("hcg-reprompter"); // merged into Clarity

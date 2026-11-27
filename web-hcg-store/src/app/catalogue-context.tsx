@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Catalogue } from "../domain/catalogue";
 import type { CatalogueLoadResult, CatalogueProvider, CatalogueSource } from "../providers/types";
+import { runtimeConfig } from "../config/runtime";
+import { applyLivePublications, type LivePublications } from "../domain/live-publications";
 
 export type CatalogueState =
   | { status: "loading"; source: CatalogueSource }
@@ -9,16 +11,33 @@ export type CatalogueState =
 
 const Ctx = createContext<CatalogueState | null>(null);
 
-export function CatalogueStateProvider({ provider, children }: { provider: CatalogueProvider; children: ReactNode }) {
+export function CatalogueStateProvider({
+  provider,
+  children,
+  live = runtimeConfig.accountService === "same-origin-server",
+}: {
+  provider: CatalogueProvider;
+  children: ReactNode;
+  /** Overlay HCG Store's live publications (same-origin server). Off on static hosts. */
+  live?: boolean;
+}) {
   const [state, setState] = useState<CatalogueState>({ status: "loading", source: provider.source });
   useEffect(() => {
     const controller = new AbortController();
     provider.load(controller.signal).then((r) => {
       if (controller.signal.aborted) return;
       setState(r.ok ? { status: "ready", catalogue: r.catalogue, source: r.source, warnings: r.warnings } : { status: "error", result: r });
+      // Then HCG Store's live publications (same-origin server only): pages follow a publication without a catalogue
+      // edit. The catalogue shows at once; the overlay only ever adds what HCG Store has published.
+      if (r.ok && live) {
+        void fetchLivePublications(controller.signal).then((live) => {
+          if (!live || controller.signal.aborted) return;
+          setState((s) => (s.status === "ready" ? { ...s, catalogue: applyLivePublications(s.catalogue, live) } : s));
+        });
+      }
     });
     return () => controller.abort();
-  }, [provider]);
+  }, [provider, live]);
   return <Ctx.Provider value={state}>{children}</Ctx.Provider>;
 }
 
@@ -62,4 +81,16 @@ export function CatalogueGate({ children }: { children: (catalogue: Catalogue) =
     );
   }
   return <>{children(state.catalogue)}</>;
+}
+
+/** Fetches the live publications from the same-origin HCG Store server; null when there is none (static hosting). */
+export async function fetchLivePublications(signal?: AbortSignal): Promise<LivePublications | null> {
+  try {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    const res = await fetch(`${base}/api/public/v1/published`, { signal, headers: { accept: "application/json" }, credentials: "omit" });
+    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("application/json")) return null;
+    return (await res.json()) as LivePublications;
+  } catch {
+    return null;
+  }
 }

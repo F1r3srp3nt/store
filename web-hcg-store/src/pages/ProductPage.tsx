@@ -27,6 +27,7 @@ import {
 } from "../domain/taxonomy";
 import { assetUrl } from "../lib/format";
 import { NotFoundContent } from "./NotFoundPage";
+import { ProductLaunch } from "./ProductLaunch";
 
 export function ProductPage() {
   const { slug = "" } = useParams();
@@ -36,8 +37,10 @@ export function ProductPage() {
         const found = findProductBySlug(c, slug);
         // Draft entries (named by HCG, not yet described) have no page.
         const product = found && found.visibility !== "draft" ? found : undefined;
+        // A product with launch content and a current published release gets the launch page; release facts on it come
+        // from HCG Store. Every other product keeps the detail page.
         return product ? (
-          <ProductDetail catalogue={c} product={product} />
+          product.landing && currentRelease(c, product) ? <ProductLaunch catalogue={c} product={product} /> : <ProductDetail catalogue={c} product={product} />
         ) : (
           <NotFoundContent what="product" />
         );

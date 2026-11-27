@@ -160,6 +160,21 @@ export const ProductArtworkSchema = z.strictObject({
   iconStyle: z.enum(["app", "framed"]).default("app"),
 });
 
+export const LANDING_FEATURE_ICONS = ["sync", "send", "accounts", "read", "appearance", "health", "organise", "shield"] as const;
+
+export const LandingSchema = z.strictObject({
+  headline: text.max(80),
+  tagline: text.max(200),
+  /** Customer-facing feature cards. Only capabilities of the published build (checked in review). */
+  features: z.array(z.strictObject({ icon: z.enum(LANDING_FEATURE_ICONS), title: text.max(60), text: text.max(240) })).max(12).default([]),
+  /** Platforms announced as coming. Shown as "Coming soon" only: never a download, never availability. */
+  upcoming: z.array(z.strictObject({ platform: z.enum(PLATFORM_IDS), label: text.max(60), note: text.max(160) })).max(6).default([]),
+  /** Open Graph / social sharing image (1200×630), from approved artwork. */
+  ogImage: relativeAsset.nullable().default(null),
+  /** Brand line shown in the ecosystem section (an HCG principle, not a claim). */
+  principle: text.max(80).nullable().default(null),
+});
+
 /** Link from a Store product (or one of its editions) to its product page in HCG Repo. */
 export const HcgRepoLinkSchema = z.strictObject({
   /** Product key in HCG Repo's config/products.toml; the page is <repo>/products/<key>/. */
@@ -232,6 +247,12 @@ export const ProductSchema = z.strictObject({
   integrations: z
     .array(z.strictObject({ with: kebab, status: z.enum(["available", "planned"]), note: text }))
     .default([]),
+  /**
+   * Launch page content (marketing only), used once the product has a current published release. Version, files,
+   * sizes, platforms, price and availability are never written here: they come from HCG Store's release records, so a
+   * publication updates the page without touching this block.
+   */
+  landing: LandingSchema.nullable().default(null),
 });
 
 export const ArtifactSchema = z

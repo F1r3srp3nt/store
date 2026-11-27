@@ -225,3 +225,42 @@ describe("the limits are product-specific", () => {
     expect(problems({ HCG_STORE_PUBLICATION_PRODUCTS: "hcg mail" })).toMatch(/HCG_STORE_PUBLICATION_PRODUCTS must list/);
   });
 });
+
+describe("launch page data: live publications and the server-rendered product head", () => {
+  it("lists the published release publicly, and product pages carry real title, social image and SoftwareApplication data", async () => {
+    const site = mkdtempSync(join(tmpdir(), "hcg-mail-site-"));
+    writeFileSync(join(site, "index.html"), '<!doctype html><html><head>\n<meta name="description" content="HCG Store: default." />\n<title>HCG Store</title>\n</head><body><div id="root"></div></body></html>');
+    await start({ HCG_STORE_STATIC_DIR: site });
+    const visitor = h.anonymous();
+    // Before publication: nothing listed, and the page head describes the product without a version or price.
+    expect(((await (await visitor.get("/api/public/v1/published")).json()) as { products: Record<string, unknown> }).products).toEqual({});
+    const before = await (await visitor.get("/apps/hcg-mail")).text();
+    expect(before).not.toContain("SoftwareApplication");
+    expect(before).toContain('<meta property="og:title" content="HCG Mail" />');
+
+    const f = folder();
+    const r = await doImport(f);
+    await publish(r.id);
+    const res = await visitor.get("/api/public/v1/published");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    const body = (await res.json()) as { format: string; products: Record<string, { releaseId: string; version: string; files: { fileName: string; sha256: string }[] }[]> };
+    expect(body.format).toBe("hcg.store.published/1");
+    expect(Object.keys(body.products)).toEqual(["hcg-mail"]);
+    expect(body.products["hcg-mail"]).toMatchObject([{ releaseId: r.id, version: "1.0.0-beta.1", files: [{ fileName: "HCGMail.exe", sha256: sha(f.bytes) }] }]);
+    expect(JSON.stringify(body)).not.toMatch(/\/api\/v1\/downloads|https?:\/\//);
+
+    const html = await (await visitor.get("/apps/hcg-mail")).text();
+    expect(html).toContain("<title>HCG Mail: Your inbox. Reimagined · HCG Store</title>");
+    expect(html).not.toContain("HCG Store: default.");
+    expect(html).toMatch(/<meta name="description" content="A dedicated desktop email experience built for an interconnected future\. Public Beta 1\.0\.0-beta\.1 for Windows \(x64\)\. Free download, no account required\." \/>/);
+    expect(html).toContain(`<meta property="og:image" content="${h.origin}/media/products/hcg-mail/og-1200x630.jpg" />`);
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image" />');
+    const ld = JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)![1]!) as Record<string, unknown>;
+    expect(ld).toMatchObject({ "@type": "SoftwareApplication", name: "HCG Mail", softwareVersion: "1.0.0-beta.1", operatingSystem: "Windows (x64)", applicationCategory: "CommunicationApplication", offers: { price: "0", priceCurrency: "NOK" } });
+    expect(JSON.stringify(ld)).not.toMatch(/aggregateRating|review|download/i);
+    // Other pages keep the default head; the file itself is unchanged and still downloads without an account.
+    expect(await (await visitor.get("/apps")).text()).toContain("<title>HCG Store</title>");
+    const dl = await visitor.get(`/api/v1/downloads/${r.artifacts[0]!.id}`);
+    expect(sha(Buffer.from(await dl.arrayBuffer()))).toBe(sha(f.bytes));
+  });
+});
