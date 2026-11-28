@@ -30,6 +30,7 @@ export type PaymentEventType =
   | "checkout.completed"
   | "checkout.pending"
   | "checkout.failed"
+  | "checkout.canceled"
   | "payment.refunded"
   | "payment.disputed"
   | "subscription.renewed"
@@ -53,7 +54,9 @@ export interface CheckoutSession {
   offerId: string;
   amount: number;
   currency: string;
-  status: "open" | "pending" | "completed" | "failed";
+  status: "open" | "pending" | "completed" | "failed" | "canceled";
+  /** Where the purchase started: the Store website or a package manager (Sileo, Zebra). */
+  channel: "web" | "package-manager";
 }
 
 export type EventOutcome = "processed" | "duplicate" | "ignored" | "rejected";
@@ -72,31 +75,43 @@ export class PaymentLedger {
     return this.authority.canGrant || !!this.outbox?.enabled;
   }
 
-  createCheckout(sub: string, offer: Offer, provider: string): CheckoutSession {
+  /**
+   * Price and currency always come from the server's offer. `versionAtPurchase` records the release that was current
+   * when the purchase started (update eligibility for "same-major" repository packages).
+   */
+  createCheckout(sub: string, offer: Offer, provider: string, opts: { channel?: CheckoutSession["channel"]; versionAtPurchase?: string | null } = {}): CheckoutSession {
     const id = `chk_${randomToken(18)}`;
     const t = this.now();
     this.db
       .prepare(
-        `INSERT INTO checkout_sessions (id, sub, offer_id, amount, currency, status, provider, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+        `INSERT INTO checkout_sessions (id, sub, offer_id, amount, currency, status, provider, created_at, updated_at, channel, version_at_purchase)
+         VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
       )
-      .run(id, sub, offer.id, offer.unitAmount, offer.currency, provider, t, t);
+      .run(id, sub, offer.id, offer.unitAmount, offer.currency, provider, t, t, opts.channel ?? "web", opts.versionAtPurchase ?? null);
     return this.checkout(id)!;
   }
 
   checkout(id: string): CheckoutSession | null {
-    const r = this.db.prepare(`SELECT id, sub, offer_id, amount, currency, status FROM checkout_sessions WHERE id = ?`).get(id) as
-      | { id: string; sub: string; offer_id: string; amount: number; currency: string; status: CheckoutSession["status"] }
+    const r = this.db.prepare(`SELECT id, sub, offer_id, amount, currency, status, channel FROM checkout_sessions WHERE id = ?`).get(id) as
+      | { id: string; sub: string; offer_id: string; amount: number; currency: string; status: CheckoutSession["status"]; channel: string }
       | undefined;
-    return r ? { id: r.id, sub: r.sub, offerId: r.offer_id, amount: r.amount, currency: r.currency, status: r.status } : null;
+    return r
+      ? { id: r.id, sub: r.sub, offerId: r.offer_id, amount: r.amount, currency: r.currency, status: r.status, channel: r.channel === "package-manager" ? "package-manager" : "web" }
+      : null;
   }
 
   purchasesFor(sub: string) {
     return this.db
       .prepare(
-        `SELECT id, offer_id, amount, currency, kind, status, current_period_end, created_at, updated_at FROM purchases WHERE sub = ? ORDER BY created_at DESC`,
+        `SELECT id, offer_id, checkout_id, provider, provider_payment_id, amount, currency, kind, status, current_period_end, channel, version_at_purchase, created_at, updated_at
+         FROM purchases WHERE sub = ? ORDER BY created_at DESC`,
       )
       .all(sub) as {
+      checkout_id: string;
+      provider: string;
+      provider_payment_id: string;
+      channel: string;
+      version_at_purchase: string | null;
       id: string;
       offer_id: string;
       amount: number;
@@ -174,21 +189,27 @@ export class PaymentLedger {
         if (chk.status === "completed") return "ignored";
         setCheckout("failed");
         return "processed";
+      case "checkout.canceled":
+        // The customer left the provider's page (or it expired): nothing was paid and nothing is granted.
+        if (chk.status === "completed") return "ignored";
+        setCheckout("canceled");
+        return "processed";
       case "checkout.completed": {
         if (purchase) return "ignored";
-        if (chk.status === "failed") return "rejected";
+        if (chk.status === "failed" || chk.status === "canceled") return "rejected";
         const id = `pur_${randomToken(18)}`;
         const periodEnd = offer.kind === "subscription" ? (e.periodEnd ?? null) : null;
         if (offer.kind === "subscription" && !periodEnd) return "rejected";
         // A refund or dispute already arrived for this checkout: record the purchase, grant nothing.
         const reversal = this.db.prepare(`SELECT type FROM checkout_reversals WHERE checkout_id = ?`).get(chk.id) as { type: string } | undefined;
         const status = reversal ? (reversal.type === "payment.refunded" ? "refunded" : "disputed") : offer.kind === "subscription" ? "active" : "paid";
+        const origin = this.db.prepare(`SELECT channel, version_at_purchase FROM checkout_sessions WHERE id = ?`).get(chk.id) as { channel: string; version_at_purchase: string | null };
         this.db
           .prepare(
-            `INSERT INTO purchases (id, sub, offer_id, checkout_id, provider, provider_payment_id, amount, currency, kind, status, current_period_end, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO purchases (id, sub, offer_id, checkout_id, provider, provider_payment_id, amount, currency, kind, status, current_period_end, created_at, updated_at, channel, version_at_purchase)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(id, chk.sub, offer.id, chk.id, provider, e.paymentId, e.amount, e.currency, offer.kind, status, periodEnd, t, t);
+          .run(id, chk.sub, offer.id, chk.id, provider, e.paymentId, e.amount, e.currency, offer.kind, status, periodEnd, t, t, origin.channel, origin.version_at_purchase);
         setCheckout("completed");
         if (!reversal) this.grant(provider, chk.sub, offer, id, t, periodEnd);
         return "processed";
@@ -258,6 +279,7 @@ export function verifyTestEvent(secret: string, rawBody: string, header: string 
       "checkout.completed",
       "checkout.pending",
       "checkout.failed",
+      "checkout.canceled",
       "payment.refunded",
       "payment.disputed",
       "subscription.renewed",

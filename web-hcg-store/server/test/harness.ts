@@ -144,6 +144,7 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     HCG_STORE_OFFERS_FILE: join(fixtures, "offers.json"),
     HCG_STORE_ARTIFACTS_FILE: join(fixtures, "artifacts.json"),
     HCG_STORE_DATA_DIR: ":memory:",
+    HCG_STORE_SILEO_PUBLIC_APPROVED: "founder-approved",
     ...opts.env,
   });
   const registry = loadRegistry({ catalogueDir: cfg.catalogueDir, offersFile: cfg.offersFile, artifactsFile: cfg.artifactsFile, testMode: true });
@@ -255,6 +256,24 @@ export function testArtifacts() {
       },
     ],
   };
+}
+
+export const FIXTURE_PACKAGE = "com.example.fixture.quasar.unleashed";
+export const FIXTURE_REPO = "https://repo.hakmicapitalgroup.com/repo/";
+
+/**
+ * TEST set-up standing in for the Payment Provider Studio: the provider profile (availability, TEST payments, HCG
+ * Repo associated) and the fixture package's distribution channel, recorded as an operator would.
+ */
+export function enableSileoProvider(h: Harness, opts: { availability?: "disabled" | "internal" | "public"; paymentMode?: "off" | "test"; access?: "paid" | "account"; updatePolicy?: "all-updates" | "same-major" } = {}) {
+  const c = h.app.commerce;
+  const cur = c.profile();
+  c.updateProfile("test-operator", { ...cur.value, availability: opts.availability ?? "public", paymentMode: opts.paymentMode ?? "test", repositories: [FIXTURE_REPO] }, cur.revision);
+  const ch = c.channel(FIXTURE_PACKAGE);
+  c.upsertChannel("test-operator", FIXTURE_PACKAGE, {
+    productId: "fixture-quasar-shell", editionId: "unleashed", status: "active", access: opts.access ?? "paid", architectures: ["iphoneos-arm64"],
+    minIos: "15.0", maxIos: null, updatePolicy: opts.updatePolicy ?? "all-updates", repository: FIXTURE_REPO, ...(ch ? { revision: ch.revision } : {}),
+  });
 }
 
 /** Completes a TEST checkout through the simulated provider page. */

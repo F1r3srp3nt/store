@@ -65,6 +65,17 @@ through the outbox, with exactly those features. Refunds, disputes and expiry re
 Preorders: none. An offer can be `approved-for-sale` only for an edition with an approved current
 release. The server refuses to start otherwise.
 
+## Purchases from Sileo and Zebra
+
+Package managers start the same checkout through `POST /api/sileo/v1/package/<id>/purchase`
+([SILEO-PAYMENT-PROVIDER.md](SILEO-PAYMENT-PROVIDER.md)):
+- the checkout records `channel = package-manager` and the version current at purchase;
+- the person confirms on HCG Store's checkout page;
+- only the provider's verified webhook grants;
+- `checkout.canceled` marks a checkout cancelled and grants nothing.
+
+Purchases from both channels appear in one account history, with receipts and refund status.
+
 ## Where ownership is recorded
 
 Entitlements belong to HCG. In production the Store would ask HCG's ecosystem API, but HCG has not

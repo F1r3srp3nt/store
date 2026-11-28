@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { signTestEvent } from "../src/payments";
 import type { TestLedgerAuthority } from "../src/entitlements";
-import { buy, FILES, sha, startHarness, type Client, type Harness } from "./harness";
+import { buy, enableSileoProvider, FILES, FIXTURE_REPO, sha, startHarness, type Client, type Harness } from "./harness";
 
 const ALICE = { sub: "user-alice", email: "alice@example.test", name: "Alice" };
 const BOB = { sub: "user-bob", email: "bob@example.test", name: "Bob" };
@@ -295,13 +295,14 @@ describe("7. Store website and app report the same ownership", () => {
     const repo = (await (await alice.get("/api/v1/repo/products/fixture-quasar-unleashed/access")).json()) as { state: string };
     expect(repo.state).toBe("owned");
 
+    enableSileoProvider(h);
     const sileo = await sileoSignIn(ALICE);
     const info = await sileoPost("user_info", { token: sileo.token });
     expect(info.items).toEqual(["com.example.fixture.quasar.unleashed"]);
     // My Library v2: the Sileo connection is listed as a connection, never as an installation; no invoice is invented.
     const lib2 = (await (await alice.get("/api/v1/library")).json()) as Record<string, any>;
     expect(lib2.owned[0]).toMatchObject({ acquisition: "licensed", licence: "Active HCG licence", hcgRepoKey: expect.any(String) });
-    expect(lib2.devices).toEqual([expect.objectContaining({ kind: "sileo", label: "Sileo (HCG Repo)" })]);
+    expect(lib2.devices).toEqual([expect.objectContaining({ kind: "sileo", label: "Sileo (HCG Repo) on iPhone14,2" })]);
     expect(lib2.devicesNote).toMatch(/not an installation/);
     expect(lib2.invoices).toMatchObject({ available: false, items: [] });
     expect(JSON.stringify(lib2)).not.toMatch(/installed"|"installedVersion|updateAvailable/);
@@ -323,28 +324,32 @@ describe("8. no public artifact URL bypasses the gate", () => {
     }
   });
 
-  it("short-lived Sileo URLs expire, are bound to the session, and re-check ownership", async () => {
+  it("Sileo download grants are single-use, short-lived, opaque and re-check ownership", async () => {
     await owner();
+    enableSileoProvider(h);
     const s = await sileoSignIn(ALICE);
-    const auth = await sileoPost("package/com.example.fixture.quasar.unleashed/authorize_download", {
-      token: s.token,
-      version: "1.0.0",
-      architecture: "iphoneos-arm64",
-    });
-    const url = auth.url as string;
-    expect(url.startsWith(h.origin + "/repo-api/v1/files/")).toBe(true);
+    const grant = async () => (await sileoPost("package/com.example.fixture.quasar.unleashed/authorize_download", { token: s.token, version: "1.0.0", architecture: "iphoneos-arm64", repo: FIXTURE_REPO })).url as string;
+    const url = await grant();
+    expect(url.startsWith(h.origin + "/api/sileo/v1/download/")).toBe(true);
     expect(url).not.toContain(s.token);
+    expect(url).not.toContain("user-alice");
     expect((await fetch(url)).status).toBe(200);
-    // Tampering breaks the signature.
-    expect((await fetch(url.replace(/.$/, (c) => (c === "A" ? "B" : "A")))).status).toBe(403);
+    // Single use: replaying the same URL is refused.
+    expect((await fetch(url)).status).toBe(403);
+    // Tampering finds nothing.
+    const other = await grant();
+    expect((await fetch(other.replace(/.$/, (c) => (c === "A" ? "B" : "A")))).status).toBe(403);
     // After expiry it no longer works.
     h.clock.advance(h.cfg.downloadUrlTtlSeconds + 1);
-    expect((await fetch(url)).status).toBe(403);
+    expect((await fetch(other)).status).toBe(403);
+    // The retired signed-URL scheme answers "gone".
+    expect((await fetch(`${h.origin}/repo-api/v1/files/abc.def`)).status).toBe(410);
   });
 
   it("Sileo tokens stop working after sign-out and never authorise non-owners", async () => {
+    enableSileoProvider(h);
     const bob = await sileoSignIn(BOB);
-    const denied = await sileoPost("package/com.example.fixture.quasar.unleashed/authorize_download", { token: bob.token, architecture: "iphoneos-arm64" });
+    const denied = await sileoPost("package/com.example.fixture.quasar.unleashed/authorize_download", { token: bob.token, version: "1.0.0", architecture: "iphoneos-arm64", repo: FIXTURE_REPO });
     expect(denied.success).toBe(false);
     const purchase = await sileoPost("package/com.example.fixture.quasar.unleashed/purchase", { token: bob.token, payment_secret: bob.secret });
     expect(purchase.status).toBe(1); // checkout happens in HCG Store; nothing is granted here
@@ -362,8 +367,9 @@ describe("8. no public artifact URL bypasses the gate", () => {
     expect(r.status).toBe(403);
     expect(((await r.json()) as { error: { message: string } }).error.message).toBe("Downloads are not available yet.");
     expect(await access(alice)).toMatchObject({ owned: true, downloadsAvailable: false, artifacts: [] });
+    enableSileoProvider(h);
     const s = await sileoSignIn(ALICE);
-    const auth = await sileoPost("package/com.example.fixture.quasar.unleashed/authorize_download", { token: s.token, architecture: "iphoneos-arm64" });
+    const auth = await sileoPost("package/com.example.fixture.quasar.unleashed/authorize_download", { token: s.token, version: "1.0.0", architecture: "iphoneos-arm64", repo: FIXTURE_REPO });
     expect(auth).toMatchObject({ success: false, error: "Downloads are not available yet." });
   });
 
@@ -412,9 +418,9 @@ describe("HCG Repo access endpoint", () => {
 // ---------------------------------------------------------------- Sileo client simulation
 
 async function sileoPost(path: string, body: Record<string, unknown>) {
-  const r = await fetch(`${h.origin}/repo-api/v1/sileo/${path}`, {
+  const r = await fetch(`${h.origin}/api/sileo/v1/${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "user-agent": "Sileo/2.5.1 CFNetwork/1410.0.3 Darwin/22.6.0" },
     body: JSON.stringify({ udid: "fixture-udid", device: "iPhone14,2", ...body }),
   });
   return (await r.json()) as Record<string, unknown> & { items?: string[] };
@@ -423,7 +429,7 @@ async function sileoPost(path: string, body: Record<string, unknown>) {
 /** Simulates Sileo's ASWebAuthenticationSession sign-in: authenticate → HCG Connect → sileo:// callback. */
 async function sileoSignIn(user: { sub: string; email: string }) {
   h.idp.nextUser = user;
-  const start = await fetch(`${h.origin}/repo-api/v1/sileo/authenticate?udid=fixture&model=iPhone14,2`, { redirect: "manual" });
+  const start = await fetch(`${h.origin}/api/sileo/v1/authenticate?udid=fixture-udid&model=iPhone14,2`, { redirect: "manual" });
   const authz = await fetch(start.headers.get("location")!, { redirect: "manual" });
   const cb = await fetch(authz.headers.get("location")!, { redirect: "manual" });
   const loc = new URL(cb.headers.get("location")!);

@@ -228,6 +228,18 @@ and the recent audit from the production database, opened read-only; accounts ap
 - **Manage product**: product pages show this button only when `GET /me` reports an HCG Store permission. It opens
   the product in the Control Center.
 
+## 6a. Payment provider and developers
+
+Control Center has two more tabs:
+- **Payment provider:** HCG Store as HCG Repo's Sileo and Zebra payment provider. It covers the profile, availability,
+  payment mode and repositories, a health inspector, the exact Sileo responses, the repository-package distribution
+  channel and the commerce audit.
+- **Developers & sales:** third-party developers, product ownership, commission agreements, and a sales report built
+  from the purchase records. Payouts are off.
+
+Reading needs an HCG Store staff permission or HCG's Founder policy. Changes need the Pricing and Offers permission or
+the Founder policy. See [SILEO-PAYMENT-PROVIDER.md](SILEO-PAYMENT-PROVIDER.md).
+
 ## 7. Security
 
 | Control | Implementation |

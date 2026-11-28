@@ -36,7 +36,7 @@ Browser ── HttpOnly session cookie ──▶ HCG Store server ──▶ HCG 
    │                                      │  ├─▶ Payment provider (TEST only; webhooks are signed)
    │                                      │  └─▶ Private file storage (never public)
 HCG Repo page ── same-site fetch ─────────┘
-Sileo ── Store-issued repo token in POST bodies ──▶ /repo-api/v1/sileo/*
+Sileo ── Store-issued repo token in POST bodies ──▶ /api/sileo/v1/*
 ```
 
 - **Sign-in:** authorization code + PKCE S256, run by the server. It verifies the ID token (ES256 via

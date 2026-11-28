@@ -80,7 +80,20 @@ export interface StoreConfig {
   downloadUrlTtlSeconds: number;
   /** HCG Repo product pages; used for links only. */
   repoBaseUrl: string;
+  /**
+   * HCG Repo server-to-server contract (repo-s2s.ts): HMAC key shared with HCG Repo's servers. Off (null) unless both
+   * HCG_STORE_REPO_S2S_KEY_ID and HCG_STORE_REPO_S2S_SECRET (a Fly secret, 32+ bytes base64) are set.
+   */
+  repoS2s: { keyId: string; secret: Buffer } | null;
   publishing: PublishingSettings;
+  /** Package-manager payment provider (sileo.ts). Its profile and availability are set in the Payment Provider Studio. */
+  sileo: {
+    /**
+     * HCG_STORE_SILEO_PUBLIC_APPROVED=founder-approved: the Studio may make the provider available to every HCG account.
+     * Without it "public" runs as internal testing (Founder and HCG Store staff only), in test mode too.
+     */
+    publicApproved: boolean;
+  };
 }
 
 /**
@@ -189,6 +202,14 @@ export function parseStoreConfig(env: Env): StoreConfig {
     .map((o) => origin(o, "HCG_STORE_REPO_ORIGINS", problems, test))
     .filter((o): o is string => !!o);
 
+  let repoS2s: StoreConfig["repoS2s"] = null;
+  if (env.HCG_STORE_REPO_S2S_KEY_ID || env.HCG_STORE_REPO_S2S_SECRET) {
+    const keyId = (env.HCG_STORE_REPO_S2S_KEY_ID ?? "").trim();
+    const secret = Buffer.from(env.HCG_STORE_REPO_S2S_SECRET ?? "", "base64");
+    if (!/^[A-Za-z0-9._-]{3,64}$/.test(keyId)) problems.push("HCG_STORE_REPO_S2S_KEY_ID must be 3-64 letters, digits, . _ or -.");
+    if (secret.length < 32) problems.push("HCG_STORE_REPO_S2S_SECRET must be at least 32 bytes, base64-encoded (a Fly secret, never in fly.toml).");
+    repoS2s = { keyId, secret };
+  }
   let secretKey: Buffer;
   if (env.HCG_STORE_SECRET_KEY) {
     secretKey = Buffer.from(env.HCG_STORE_SECRET_KEY, "base64");
@@ -361,6 +382,9 @@ export function parseStoreConfig(env: Env): StoreConfig {
     if (!test && DEVELOPMENT_CLIENT_IDS.includes(id)) problems.push(`HCG_STORE_PUBLISHING_CLIENT_IDS: ${id} is a development client and is refused in production.`);
   }
 
+  const sileoPublic = env.HCG_STORE_SILEO_PUBLIC_APPROVED || undefined;
+  if (sileoPublic !== undefined && sileoPublic !== "founder-approved") problems.push(`HCG_STORE_SILEO_PUBLIC_APPROVED must be "founder-approved" or unset.`);
+
   if (problems.length) throw new ConfigError(problems);
 
   return {
@@ -391,6 +415,7 @@ export function parseStoreConfig(env: Env): StoreConfig {
     sessionAbsoluteSeconds: int("HCG_STORE_SESSION_ABSOLUTE_SECONDS", 30 * 24 * 3600, 3600, 90 * 24 * 3600),
     downloadUrlTtlSeconds: int("HCG_STORE_DOWNLOAD_URL_TTL_SECONDS", 120, 10, 900),
     repoBaseUrl,
+    repoS2s,
     publishing: {
       enabled: publishingEnabled,
       mode: publishingMode,
@@ -409,5 +434,6 @@ export function parseStoreConfig(env: Env): StoreConfig {
       devicePolicy: "off",
       founderWebExceptions: env.HCG_STORE_FOUNDER_WEB_EXCEPTIONS === "off" ? "off" : "central-founder",
     },
+    sileo: { publicApproved: sileoPublic === "founder-approved" },
   };
 }

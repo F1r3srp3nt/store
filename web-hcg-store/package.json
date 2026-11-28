@@ -25,6 +25,7 @@
     "server:start": "node server-dist/main.mjs",
     "server:dev": "tsx server/src/main.ts",
     "server:e2e": "tsx server/test/e2e-server.ts",
+    "sileo:device-test": "tsx server/test/sileo-device-server.ts",
     "check:repo-mapping": "tsx scripts/check-repo-mapping.ts",
     "hcg:dev": "tsx scripts/hcg-dev.ts",
     "hcg:dev:verify": "tsx scripts/hcg-dev-verify.ts",
