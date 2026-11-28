@@ -45,6 +45,7 @@ import type { Actor } from "./publishing";
 import { debianVersionMatches } from "./publishing";
 import { currentReleaseOf, findArtifact, findProduct, offersFor, type Offer, type ProtectedArtifact, type Registry } from "./registry";
 import type { Session, SessionStore } from "./sessions";
+import type { Product } from "../../src/domain/schema";
 
 export const SILEO_BASE = "/api/sileo/v1/";
 /** The first path the Store served the protocol on. Kept as an alias so no configured client breaks. */
@@ -226,10 +227,44 @@ function mapPackage(ctx: SileoCtx, packageId: string): Mapped | null {
   return { channel, product, editionId: channel.editionId };
 }
 
-/** Whether this access decision counts as "purchased" for this channel. */
-function entitled(channel: Channel, a: EditionAccess): boolean {
-  if (channel.access === "paid") return a.owned;
+/**
+ * Whether this access decision counts as "purchased": an HCG entitlement (licence, purchase, Founder/Owner), or a
+ * release HCG Store published as free for every HCG account (an open free testing window or a free edition).
+ */
+function entitled(_channel: Channel, a: EditionAccess): boolean {
   return a.owned || a.state === "free";
+}
+
+/**
+ * HCG Store-issued package-manager token → its live session (no device check: HCG Repo's servers present it on the
+ * person's behalf through the server-to-server contract). Revoked, expired and ended credentials are invalid.
+ */
+export async function sessionForToken(ctx: Pick<SileoCtx, "db" | "sessions" | "now">, token: unknown): Promise<{ status: "ok"; session: Session } | { status: "invalid" } | { status: "unavailable" }> {
+  if (typeof token !== "string" || token.length < 20 || token.length > 200) return { status: "invalid" };
+  const row = ctx.db.prepare("SELECT session_id_hash, sub, expires_at, revoked_at FROM repo_tokens WHERE token_hash = ?").get(sha256Hex(token)) as
+    | { session_id_hash: string; sub: string; expires_at: number | null; revoked_at: number | null }
+    | undefined;
+  if (!row || row.revoked_at !== null || (row.expires_at !== null && row.expires_at <= ctx.now())) return { status: "invalid" };
+  const s = ctx.sessions.byHash(row.session_id_hash);
+  if (!s || s.sub !== row.sub) return { status: "invalid" };
+  const f = await ctx.sessions.ensureFresh(s);
+  return f.status === "ok" ? { status: "ok", session: f.session } : f.status === "ended" ? { status: "invalid" } : { status: "unavailable" };
+}
+
+/**
+ * The approved, deliverable .deb files of a product edition (catalogue releases and the CURRENT published HCG Store
+ * release of each target), optionally only those this access may receive and those matching a Debian version
+ * (`<version>` or `<version>-<revision>`) and architecture.
+ */
+export function eligibleFiles(ctx: Pick<SileoCtx, "registry" | "cfg">, product: Product, editionId: string | null, a: EditionAccess | null, opts: { version?: string; architecture?: string }) {
+  return deliverableArtifacts(ctx.registry, product, editionId)
+    .filter((f) => f.fileName.endsWith(".deb") && (a === null || mayDownload(a, f.id)))
+    .map((f) => {
+      const facts = debFacts(ctx, f);
+      return facts ? { file: f, version: facts.version, architectures: facts.architectures, size: facts.size } : null;
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x)
+    .filter((x) => (!opts.architecture || x.architectures.includes(opts.architecture)) && (!opts.version || opts.version === x.version || debianVersionMatches(opts.version, x.version)));
 }
 
 /** The single offer a package manager can show (one price): a one-time offer first. */
@@ -387,12 +422,7 @@ export async function sileoRoute(ctx: SileoCtx, req: IncomingMessage, res: Serve
   if (!entitled(mapped.channel, a)) return fail(res, 403, "Your HCG account does not include this package.", { recoveryUrl: `${ctx.cfg.publicOrigin}/apps/${mapped.product.slug}${mapped.editionId ? `?edition=${encodeURIComponent(mapped.editionId)}` : ""}` });
   if (!a.downloadsAvailable) return fail(res, 403, DOWNLOADS_NOT_AVAILABLE);
   if (!updateEligible(ctx, mapped, session.sub, version)) return fail(res, 403, "Your purchase does not include this major version. Check HCG Store for an upgrade.");
-  const file = deliverableArtifacts(ctx.registry, mapped.product, mapped.editionId)
-    .filter((f) => mayDownload(a, f.id) && f.fileName.endsWith(".deb"))
-    .find((f) => {
-      const facts = debFacts(ctx, f);
-      return !!facts && facts.architectures.includes(arch) && (version === facts.version || debianVersionMatches(version, facts.version));
-    });
+  const file = eligibleFiles(ctx, mapped.product, mapped.editionId, a, { version, architecture: arch })[0]?.file;
   if (!file) return fail(res, 404, "No approved file matches this version and architecture.");
   const grant = randomToken(32);
   ctx.db
@@ -416,7 +446,7 @@ async function packageInfo(ctx: SileoCtx, res: ServerResponse, packageId: string
   }
   const sellable = !!offer && a.checkoutReady && purchasesAllowed(ctx).ok;
   return json(res, 200, {
-    price: has ? "Purchased" : offer ? priceText(offer.unitAmount, offer.currency) : "Not for sale",
+    price: has ? (a.owned ? "Purchased" : "Free") : offer ? priceText(offer.unitAmount, offer.currency) : "Not for sale",
     purchased: has ? 1 : 0,
     available: has ? (a.downloadsAvailable ? 1 : 0) : sellable ? 1 : 0,
   });

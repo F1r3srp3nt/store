@@ -21,6 +21,7 @@
  *   POST /api/v1/account/package-managers/:ref/revoke · /revoke-all
  *   GET  /api/v1/account/receipts/:purchaseId  a purchase receipt (the account's own)
  *   /api/v1/commerce/*, /api/v1/repo/packages  commerce administration and the HCG Repo package contract (commerce-admin.ts)
+ *   /api/s2s/v1/repo/*                         HCG Repo server-to-server contract (repo-s2s.ts; HMAC; off by default)
  */
 import { resolveRelease, ResolutionError } from "./release-resolution";
 import { productHead, withProductHead } from "./product-head";
@@ -44,6 +45,7 @@ import { completePackageManagerLogin, LEGACY_SILEO_BASE, packageManagersOf, revo
 import { Commerce, majorOf } from "./commerce";
 import { commerceAdminRoute } from "./commerce-admin";
 import type { CheckoutSession } from "./payments";
+import { createRepoS2s } from "./repo-s2s";
 
 /** HCG's account portal, where an account's HCG licences are managed (main-site handoff, /features links.account). */
 const HCG_ACCOUNT_URL = "https://beta.hakmicapitalgroup.com/client-portal";
@@ -657,6 +659,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
 
   // ---------------------------------------------------------------- router
 
+  const repoS2s = createRepoS2s({ cfg, db, registry, sessions, accessDeps, authority, commerce, now });
   const publishing = createPublishing({ cfg, db, registry, connect, authority, now, freshSession, streamArtifact });
   const sileoCtx: SileoCtx = {
     cfg, db, registry, sessions, accessDeps, ledger, commerce, admin: publishing.admin, now, paymentsReady, startLogin, streamArtifact, simulateTestPayment, hasConnect: !!connect,
@@ -798,6 +801,7 @@ export function createStoreApp(deps: AppDeps): StoreApp {
       return json(res, 200, { format: "hcg.store.published/1", generatedAt: new Date(now()).toISOString(), products }, { ...cors, "cache-control": "public, max-age=60" });
     }
     if (await publishing.route(req, res, url)) return;
+    if (await repoS2s.route(req, res, url)) return;
     if (await commerceAdminRoute(commerceCtx, req, res, url)) return;
     if (p.startsWith(SILEO_BASE) || p.startsWith(LEGACY_SILEO_BASE)) return sileoRoute(sileoCtx, req, res, url);
     // The first, signed-URL scheme put account references in the URL; it is retired (single-use grants replace it).

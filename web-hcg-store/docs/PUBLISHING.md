@@ -170,7 +170,7 @@ Releases with destination `hcg-repo` accept `.deb` files whose package ID maps t
 The Store-held package contract with HCG Repo (HCG Repo `docs/STORE_RELEASES.md`):
 - HCG Repo pins each Store-held package by the Store artifact's SHA-256 (`import-store-release`), lists it as
   `cydia::commercial` with a `Filename` it never serves, and points `payment_endpoint` at
-  `https://store.hakmicapitalgroup.com/repo-api/v1/sileo/` (https only; Sileo refuses http).
+  `https://store.hakmicapitalgroup.com/api/sileo/v1/` (https only; Sileo refuses http).
 - `GET /api/v1/repo/releases?destination=hcg-repo` (signed in, or a publishing client token): releases approved for
   public delivery and those withdrawn after it, with each verified `.deb`'s id, SHA-256, size, architectures and
   control fields. Metadata only. Shown per product to people HCG lets publish or approve that product (HCG has no

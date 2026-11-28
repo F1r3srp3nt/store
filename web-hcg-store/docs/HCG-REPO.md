@@ -54,7 +54,9 @@ qualification and iPhone test instructions are in [SILEO-PAYMENT-PROVIDER.md](SI
   - `GET /api/v1/repo/packages`: channels and approved versions with SHA-256;
   - `POST /api/v1/repo/packages/verify`: refuses orphaned listings and mismatched versions, architectures, repositories
     or hashes;
-  - `GET /api/v1/repo/releases?destination=hcg-repo`: unchanged.
+  - `GET /api/v1/repo/releases?destination=hcg-repo`: unchanged;
+  - for HCG Repo's servers, the HMAC-signed `/api/s2s/v1/repo/` contract ([REPO-ENTITLEMENTS.md](REPO-ENTITLEMENTS.md)),
+    off unless its key is set.
 - **Zebra:** current Zebra uses the same provider contract, and its signed-out `GET` package info is supported. Plain
   APT with HTTP authentication is not offered.
 - **Protected index entries:** done in HCG Repo (16 Nov). A Store-held package is pinned by the Store artifact's SHA-256

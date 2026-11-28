@@ -182,6 +182,10 @@ Permissions:
 - **`GET /api/v1/repo/releases?destination=hcg-repo`** (existing) lists approved and withdrawn releases. HCG Repo's
   `import-store-release` pins the Store artifact's SHA-256.
 
+HCG Repo's servers can use the HMAC-signed server-to-server contract instead of a staff sign-in
+([REPO-ENTITLEMENTS.md](REPO-ENTITLEMENTS.md), `/api/s2s/v1/repo/`, off unless its key is set). It lists the same
+channels, and verifies a package-manager token against the same access decision.
+
 Release approval and artifact verification are unchanged: only releases approved in HCG Store, and their verified
 files, are deliverable.
 
